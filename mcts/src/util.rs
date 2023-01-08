@@ -4,10 +4,12 @@ use lib::State;
 use rand::seq::IteratorRandom;
 
 use crate::tree::Node;
-use crate::TreePolicy;
+use crate::{TreeExpansion, TreePolicy};
 
-pub(crate) struct Bounds {}
+#[derive(Clone)]
+pub struct Bounds {}
 
+#[derive(Debug)]
 pub(crate) struct Average {
   stats: Cell<(f32, u32)>,
 }
@@ -35,8 +37,8 @@ impl Average {
   }
 }
 
-struct RandomTreePolicy;
-struct UctTreePolicy(f32);
+pub struct RandomTreePolicy;
+pub struct UctTreePolicy(f32);
 
 impl<S: State> TreePolicy<S> for RandomTreePolicy {
   fn select_action<'a: 'b, 'b>(
@@ -57,5 +59,39 @@ impl<S: State> TreePolicy<S> for UctTreePolicy {
     bounds: &Bounds,
   ) -> &'b S::Action {
     unimplemented!()
+  }
+}
+
+pub struct EmptyExpansion;
+
+impl<S: State> TreeExpansion<S> for EmptyExpansion {
+  fn create_node_and_estimate_value<'a>(
+    &self,
+    // parent nodes
+    nodes: &Vec<&Node<S::Action, S::Observation>>,
+
+    // the last rewards and observations
+    rewards_and_observations: &Vec<(f32, S::Observation)>,
+    new_state: &S,
+  ) -> Vec<f32> {
+    let current_agent_index: usize = if new_state.is_terminal() {
+      usize::MAX
+    } else {
+      <S::Agent as Into<usize>>::into(new_state.current_agent().unwrap())
+    };
+    for ix in 0..nodes.len() {
+      if nodes[ix]
+        .next_node(&rewards_and_observations[ix].1)
+        .is_none()
+      {
+        let actions = if ix == current_agent_index {
+          new_state.legal_actions()
+        } else {
+          vec![]
+        };
+        nodes[ix].create_new_node(rewards_and_observations[ix].1.clone(), actions);
+      }
+    }
+    vec![0.0; nodes.len()]
   }
 }

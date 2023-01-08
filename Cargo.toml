@@ -1,4 +1,7 @@
 [workspace]
+members = [
+  "examples"
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -7,6 +10,7 @@ edition = "2021"
 
 [workspace.dependencies]
 rand = "*"
+petgraph = "*"
 
 [package]
 name = "ai"
@@ -18,3 +22,4 @@ edition.workspace = true
 [dependencies]
 lib = {path = "lib/"}
 mcts = {path = "mcts/"}
+examples = {path = "examples/"}
