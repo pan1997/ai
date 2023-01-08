@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt::{Debug, Display}};
+use std::{
+  collections::BTreeMap,
+  fmt::{Debug, Display},
+};
 
 use lib::{BeliefState as BeliefState_, State as State_, MPOMDP};
 use rand::{distributions::WeightedIndex, prelude::Distribution};
@@ -203,15 +206,14 @@ impl<'a> BeliefState_ for BeliefState<'a> {
 
 #[cfg(test)]
 mod test {
-  use std::{collections::BTreeMap, fs::File, io::Write, str::FromStr};
+  use std::fs::File;
 
   use lib::{BeliefState, MPOMDP};
   use mcts::{
-    tree::{Node, render::save_tree},
+    tree::{render::save_tree, Node},
     util::{EmptyExpansion, RandomTreePolicy},
     Search,
   };
-  use petgraph::{dot::Dot, Graph};
 
   use crate::{Agent, StaticPOMDP};
 

@@ -1,3 +1,5 @@
+pub mod mmdp;
+
 pub trait MPOMDP {
   type Agent: Copy + TryFrom<usize> + Into<usize>;
   // this is the hidden state
@@ -5,14 +7,10 @@ pub trait MPOMDP {
   type Action: Clone + Ord;
   type Observation: Ord + Clone;
   type BeliefState: BeliefState<State = Self::State, Observation = Self::Observation>;
-
   fn discount(&self) -> f32 {
     1.0
   }
-
   fn start_state(&self) -> Self::BeliefState;
-
-  //fn agent_count(&self) -> usize;
 }
 
 pub trait State {
@@ -39,17 +37,4 @@ pub trait BeliefState {
   type Observation;
   fn sample_state(&self) -> Self::State;
   fn update(&mut self, o: &Self::Observation);
-}
-
-impl<S: State + Clone> BeliefState for S {
-  type State = Self;
-  type Observation = S::Action;
-
-  fn sample_state(&self) -> Self::State {
-    self.clone()
-  }
-
-  fn update(&mut self, o: &Self::Observation) {
-    self.apply_action(o);
-  }
 }

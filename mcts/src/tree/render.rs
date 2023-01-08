@@ -1,8 +1,11 @@
-use std::{fs::File, fmt::Display};
-use std::io::Write;
+use std::{fmt::Display, fs::File, io::Write};
 
-use graphviz_rust::attributes::NodeAttributes;
-use graphviz_rust::{dot_structures::{Graph, Node as GNode, Edge as GEdge, NodeId, Id, Stmt, EdgeTy, Vertex, Attribute}, printer::{PrinterContext, DotPrinter}, attributes::EdgeAttributes};
+use graphviz_rust::{
+  attributes::{EdgeAttributes, NodeAttributes},
+  dot_structures::{Edge as GEdge, EdgeTy, Graph, Id, Node as GNode, NodeId, Port, Stmt, Vertex},
+  printer::{DotPrinter, PrinterContext},
+};
+
 use super::Node;
 
 fn render_dv<A: Ord + Clone, O: Ord + Clone + Display>(
@@ -12,50 +15,81 @@ fn render_dv<A: Ord + Clone, O: Ord + Clone + Display>(
   depth: u32,
   count: &mut u32,
 ) -> NodeId {
-  let id = NodeId(Id::Plain(format!("{}", count)), None);
-  let n = GNode::new(id.clone(), vec![
-    NodeAttributes::label(
-      format!("<{}<BR ALIGN=\"LEFT\"/>{:.4}>", node.select_count(), node.value.mean())
-    ),
-    //NodeAttributes::shape(graphviz_rust::attributes::shape::plaintext)
-  ]);
+  let node_id = *count;
   *count += 1;
+  let leaf = depth == 0 || node.select_count() <= theta;
+  let label = node_format(&node, leaf);
+  let n = GNode::new(
+    NodeId(Id::Plain(format!("{node_id}")), None),
+    vec![
+      NodeAttributes::label(label),
+      NodeAttributes::shape(graphviz_rust::attributes::shape::plaintext),
+    ],
+  );
 
   g.add_stmt(Stmt::Node(n));
 
-  if depth > 0 && node.select_count() > theta {
-    let children = unsafe {&*node.children.get()};
+  if !leaf {
+    let children = unsafe { &*node.children.get() };
 
-    for o in children.keys() {
-      let child_id  = render_dv(&children[o], g, theta, depth - 1, count);
+    for (ix, o) in children.keys().enumerate() {
+      let child_id = render_dv(&children[o], g, theta, depth - 1, count);
 
       let e = GEdge {
-        ty: EdgeTy::Pair(Vertex::N(id.clone()), Vertex::N(child_id)),
-        attributes: vec![
-          EdgeAttributes::label(format!("\"{}\"", o.to_string())),
-        ],
+        ty: EdgeTy::Pair(
+          Vertex::N(NodeId(
+            Id::Plain(format!("{node_id}")),
+            Some(Port(Some(Id::Plain(format!("{ix}"))), None)),
+          )),
+          Vertex::N(child_id),
+        ),
+        attributes: vec![EdgeAttributes::label(format!("\"{}\"", o.to_string()))],
       };
       g.add_stmt(Stmt::Edge(e));
     }
   }
-  id
+  NodeId(Id::Plain(format!("{node_id}")), None)
 }
 
-
-pub fn render_tree<A: Ord + Clone, O: Ord + Clone + Display>(
-  node: &Node<A, O>
-) -> Graph {
-  let mut g = Graph::DiGraph { id: Id::Plain("".to_string()), strict: false, stmts: vec![] };
+pub fn render_tree<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>) -> Graph {
+  let mut g = Graph::DiGraph {
+    id: Id::Plain("".to_string()),
+    strict: false,
+    stmts: vec![],
+  };
   let mut count = 0;
   render_dv(node, &mut g, 0, 4, &mut count);
   g
 }
 
-pub fn save_tree<A: Ord + Clone, O: Ord + Clone + Display>(
-  node: &Node<A, O>,
-  mut f: File
-) {
+pub fn save_tree<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>, mut f: File) {
   let mut g = render_tree(node);
   let mut ctx = PrinterContext::default();
   write!(f, "{}", g.print(&mut ctx)).unwrap();
+}
+
+fn node_format<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>, leaf: bool) -> String {
+  let children = unsafe { &*node.children.get() };
+  let width = std::cmp::max(if leaf { 1 } else { children.len() }, 1);
+  let out_row = if leaf || children.is_empty() {
+    "".to_string()
+  } else {
+    let mut result = "<table border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
+    for (ix, o) in children.keys().enumerate() {
+      result.push_str(&format!("<td port=\"{ix}\">\"{o}\"</td>"));
+    }
+    result.push_str("</tr></table>");
+    result
+  };
+  format!(
+    r#"<
+<table border="0" cellspacing="0" cellborder="1">
+<tr><td>{}</td></tr>
+<tr><td>{:.4}</td></tr>
+<tr><td>{out_row}</td></tr>
+</table>
+    >"#,
+    node.select_count(),
+    node.value.mean(),
+  )
 }

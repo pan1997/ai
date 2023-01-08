@@ -57,7 +57,11 @@ impl<S: State> TreePolicy<S> for UctTreePolicy {
     node: &'a Node<S::Action, S::Observation>,
     bounds: &Bounds,
   ) -> &'b S::Action {
-    unimplemented!()
+    let ln_N = (node.value.mean() as f32).ln();
+    let mut best_a = None;
+    let mut best_score = f32::MIN;
+    for (a, data) in node.actions.iter() {}
+    best_a.unwrap()
   }
 }
 

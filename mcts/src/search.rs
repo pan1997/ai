@@ -97,7 +97,6 @@ where
     mut terminal_value: Vec<f32>,
   ) -> Vec<f32> {
     for step in trajectory.into_iter().rev() {
-      
       if let SelectStepNext::Next {
         agent,
         action,
@@ -133,7 +132,8 @@ where
     trajectory.last().map(|step| {
       let trajectory_value = if let SelectStepNext::ToExpand {
         rewards_and_observations,
-      } = &step.next {
+      } = &step.next
+      {
         self.tree_expansion.create_node_and_estimate_value(
           &step.nodes,
           &rewards_and_observations,
