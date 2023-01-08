@@ -3,8 +3,7 @@ use std::cell::Cell;
 use lib::State;
 use rand::seq::IteratorRandom;
 
-use crate::tree::Node;
-use crate::{TreeExpansion, TreePolicy};
+use crate::{tree::Node, TreeExpansion, TreePolicy};
 
 #[derive(Clone)]
 pub struct Bounds {}

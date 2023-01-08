@@ -1,7 +1,11 @@
+use std::{
+  cell::{Cell, UnsafeCell},
+  collections::BTreeMap,
+};
+
 use crate::util::Average;
-use petgraph::{graph::NodeIndex, Graph};
-use std::cell::{Cell, UnsafeCell};
-use std::collections::BTreeMap;
+
+pub mod render;
 
 #[derive(Debug)]
 pub struct Node<A, O> {
@@ -67,6 +71,7 @@ impl ActionInfo {
     self.select_count.get()
   }
 }
+/*
 
 pub fn render_petg<A: Ord + Clone, O: Clone + Ord>(
   node: &Node<A, O>,
@@ -83,4 +88,4 @@ pub fn render_petg<A: Ord + Clone, O: Clone + Ord>(
     }
   }
   n
-}
+}*/

@@ -26,7 +26,7 @@ pub trait State {
   // we assume that the set of legal actions is the same for the current agent
   // in all states corresponding to this state's belief state equivalence class
   // Ideally, the legal actions should be a part of BeliefState, instead of
-  // state 
+  // state
 
   fn legal_actions(&self) -> Vec<Self::Action>;
   // returns the rewards and observations for each agent

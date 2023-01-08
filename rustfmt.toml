@@ -1,1 +1,4 @@
 tab_spaces = 2
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+condense_wildcard_suffixes = true

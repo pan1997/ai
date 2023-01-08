@@ -1,15 +1,14 @@
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 
 use lib::{State, MPOMDP};
 
-use crate::tree::Node;
-use crate::{Search, TreeExpansion, TreePolicy};
+use crate::{tree::Node, Search, TreeExpansion, TreePolicy};
 
 impl<'a, P, T, E> Search<'a, P, T, E>
 where
   P: MPOMDP,
   T: TreePolicy<P::State>,
-  P::Observation: Clone + Debug,
+  P::Observation: Clone + Display,
   P::Action: Ord + Display,
   E: TreeExpansion<P::State>,
 {
@@ -27,7 +26,7 @@ where
       for tree in trees.iter() {
         tree.increment_select_count();
       }
-      
+
       if state.is_terminal() {
         result.push(SelectStep {
           nodes: trees,
@@ -96,11 +95,9 @@ where
     &self,
     trajectory: &Vec<SelectStep<'b, P::Agent, P::Action, P::Observation>>,
     mut terminal_value: Vec<f32>,
-  ) {
+  ) -> Vec<f32> {
     for step in trajectory.into_iter().rev() {
-      for (agent_ix, node) in step.nodes.iter().enumerate() {
-        node.value.add_sample(terminal_value[agent_ix], 1);
-      }
+      
       if let SelectStepNext::Next {
         agent,
         action,
@@ -117,29 +114,35 @@ where
           terminal_value[ix] += rewards_and_observations[ix].0;
         }
       }
+
+      for (agent_ix, node) in step.nodes.iter().enumerate() {
+        node.value.add_sample(terminal_value[agent_ix], 1);
+      }
     }
+    terminal_value
   }
 
   pub fn once<'b>(&self, state: &mut P::State, trees: Vec<&'b Node<P::Action, P::Observation>>) {
     let trajectory = self.sample(state, trees);
 
     for step in trajectory.iter() {
-      println!("{}", step.next);
+      print!("{}->", step.next);
     }
-    println!("");
+    println!();
 
     trajectory.last().map(|step| {
-      if let SelectStepNext::ToExpand {
+      let trajectory_value = if let SelectStepNext::ToExpand {
         rewards_and_observations,
-      } = &step.next
-      {
-        let w = self.tree_expansion.create_node_and_estimate_value(
+      } = &step.next {
+        self.tree_expansion.create_node_and_estimate_value(
           &step.nodes,
           &rewards_and_observations,
           &state,
-        );
-        self.propagate(&trajectory, w);
-      }
+        )
+      } else {
+        vec![0.0; 1]
+      };
+      self.propagate(&trajectory, trajectory_value);
     });
   }
 }
@@ -161,12 +164,18 @@ enum SelectStepNext<Agent, Action, Observation> {
   },
 }
 
-impl<A, Aa: Display, O: Debug> Display for SelectStepNext<A, Aa, O> {
+impl<A, Aa: Display, O: Display> Display for SelectStepNext<A, Aa, O> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-        SelectStepNext::Terminal => write!(f, "Terminal"),
-        SelectStepNext::ToExpand { rewards_and_observations } => write!(f, "ToExpand({:?})", rewards_and_observations),
-        SelectStepNext::Next { agent, action, rewards_and_observations } => write!(f, "Next({}, {:?})", action, rewards_and_observations)
+      SelectStepNext::Terminal => write!(f, "Terminal"),
+      SelectStepNext::ToExpand {
+        rewards_and_observations,
+      } => write!(f, "ToExpand()"),
+      SelectStepNext::Next {
+        agent,
+        action,
+        rewards_and_observations,
+      } => write!(f, "Next({})", action),
     }
   }
 }

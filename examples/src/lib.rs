@@ -1,6 +1,7 @@
+use std::{collections::BTreeMap, fmt::{Debug, Display}};
+
 use lib::{BeliefState as BeliefState_, State as State_, MPOMDP};
 use rand::{distributions::WeightedIndex, prelude::Distribution};
-use std::{collections::BTreeMap, fmt::Debug};
 
 type Action = usize;
 
@@ -153,7 +154,7 @@ impl TryFrom<usize> for Agent {
   }
 }
 
-impl Debug for Observation {
+impl Display for Observation {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "O({}, a:{})", self.id, self.action)
   }
@@ -202,17 +203,17 @@ impl<'a> BeliefState_ for BeliefState<'a> {
 
 #[cfg(test)]
 mod test {
-  use std::collections::BTreeMap;
-  use std::fs::File;
-  use std::io::Write;
+  use std::{collections::BTreeMap, fs::File, io::Write, str::FromStr};
+
+  use lib::{BeliefState, MPOMDP};
+  use mcts::{
+    tree::{Node, render::save_tree},
+    util::{EmptyExpansion, RandomTreePolicy},
+    Search,
+  };
+  use petgraph::{dot::Dot, Graph};
 
   use crate::{Agent, StaticPOMDP};
-  use lib::{BeliefState, MPOMDP};
-  use mcts::tree::render_petg;
-  use mcts::tree::Node;
-  use mcts::util::{EmptyExpansion, RandomTreePolicy};
-  use mcts::Search;
-  use petgraph::{dot::Dot, Graph};
 
   fn prob1() -> StaticPOMDP {
     let mut m = StaticPOMDP::new(10, 5, 5, vec![0.0; 10], 1.0);
@@ -236,12 +237,10 @@ mod test {
     let s = Search::new(&p, RandomTreePolicy, EmptyExpansion);
     let n = Node::new(&[1, 2]);
     let b_state = p.start_state();
-    let mut g = Graph::new();
     for _ in 0..100 {
       s.once(&mut b_state.sample_state(), vec![&n]);
     }
-    render_petg(&n, &mut g, 0, 5);
-    let mut file = File::create("prob1.dot").unwrap();
-    write!(file, "{:?}", Dot::with_config(&g, &[]));
+    let file = File::create("prob1.dot").unwrap();
+    save_tree(&n, file);
   }
 }

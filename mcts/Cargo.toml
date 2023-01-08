@@ -8,4 +8,4 @@ edition.workspace = true
 [dependencies]
 lib = {path = "../lib"}
 rand.workspace = true
-petgraph.workspace = true
+graphviz-rust.workspace = true
