@@ -243,6 +243,6 @@ mod test {
       s.once(&mut b_state.sample_state(), vec![&n]);
     }
     let file = File::create("prob1.dot").unwrap();
-    save_tree(&n, file);
+    save_tree(&n, file, 10, 3);
   }
 }

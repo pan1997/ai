@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Display;
 
 use lib::{State, MPOMDP};
 
@@ -42,7 +42,7 @@ where
         &state,
         &trees[current_agent_index],
         &self.bounds[current_agent_index],
-        true
+        true,
       );
 
       let rewards_and_observations = state.apply_action(selected_action);
@@ -165,12 +165,12 @@ impl<A, Aa: Display, O: Display> Display for SelectStepNext<A, Aa, O> {
     match self {
       SelectStepNext::Terminal => write!(f, "Terminal"),
       SelectStepNext::ToExpand {
-        rewards_and_observations,
+        rewards_and_observations: _,
       } => write!(f, "ToExpand()"),
       SelectStepNext::Next {
-        agent,
+        agent: _,
         action,
-        rewards_and_observations,
+        rewards_and_observations: _,
       } => write!(f, "Next({})", action),
     }
   }

@@ -30,5 +30,10 @@ fn main() {
     100,
     5,
   );
-  save_tree(&t_white, std::fs::File::create("white.dot").unwrap(), 100, 5);
+  save_tree(
+    &t_white,
+    std::fs::File::create("white.dot").unwrap(),
+    100,
+    5,
+  );
 }

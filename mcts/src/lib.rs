@@ -22,7 +22,7 @@ pub trait TreePolicy<S: State> {
     state: &S,
     node: &'a Node<S::Action, S::Observation>,
     bounds: &Bounds,
-    increment_count: bool
+    increment_count: bool,
   ) -> &'b S::Action;
 }
 

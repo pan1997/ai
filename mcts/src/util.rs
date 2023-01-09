@@ -48,12 +48,17 @@ impl<S: State> TreePolicy<S> for RandomTreePolicy {
     _bounds: &Bounds,
     increment_count: bool,
   ) -> &'b S::Action {
-    node.actions.iter().choose(&mut rand::thread_rng()).map(|(k, v)| {
-      if increment_count {
-        v.increment_select_count();
-      }
-      k
-    }).unwrap()
+    node
+      .actions
+      .iter()
+      .choose(&mut rand::thread_rng())
+      .map(|(k, v)| {
+        if increment_count {
+          v.increment_select_count();
+        }
+        k
+      })
+      .unwrap()
   }
 }
 
@@ -69,8 +74,6 @@ impl<S: State> TreePolicy<S> for UctTreePolicy {
     let mut best_a = None;
     let mut best_data = None;
     let mut best_score = f32::MIN;
-
-    //println!("{}", node.actions.len());
     for (a, data) in node.actions.iter() {
       if data.select_count() == 0 {
         if increment_count {
@@ -80,7 +83,6 @@ impl<S: State> TreePolicy<S> for UctTreePolicy {
       }
       let exploration_score = (ln_N / data.select_count() as f32).sqrt();
       let score = data.action_value() + self.0 * exploration_score;
-      //println!("score: {score}, {}, {exploration_score}, {} ", data.action_value(), data.select_count());
       if score > best_score {
         best_score = score;
         best_a = Some(a);
@@ -128,6 +130,3 @@ impl<S: State> TreeExpansion<S> for EmptyExpansion {
     vec![0.0; nodes.len()]
   }
 }
-
-
-
