@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use graphviz_rust::print;
 use lib::State;
-use rand::seq::IteratorRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 
 use crate::{tree::Node, TreeExpansion, TreePolicy};
 
@@ -74,7 +74,9 @@ impl<S: State> TreePolicy<S> for UctTreePolicy {
     let mut best_a = None;
     let mut best_data = None;
     let mut best_score = f32::MIN;
-    for (a, data) in node.actions.iter() {
+    let mut all_actions: Vec<_> = node.actions.iter().collect();
+    all_actions.shuffle(&mut rand::thread_rng());
+    for (a, data) in all_actions {
       if data.select_count() == 0 {
         if increment_count {
           data.increment_select_count();

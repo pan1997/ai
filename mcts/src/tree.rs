@@ -80,21 +80,3 @@ impl ActionInfo {
     self.action_reward.mean() + self.value_of_next_state.mean()
   }
 }
-/*
-
-pub fn render_petg<A: Ord + Clone, O: Clone + Ord>(
-  node: &Node<A, O>,
-  graph: &mut Graph<(f32, u32), O>,
-  theta: u32,
-  depth: u32,
-) -> petgraph::graph::NodeIndex {
-  let n = graph.add_node((node.value.mean(), node.select_count()));
-  if depth > 0 && node.select_count() > theta {
-    let children = unsafe { &*node.children.get() };
-    for o in children.keys() {
-      let t_ix = render_petg(&children[o], graph, theta, depth - 1);
-      graph.add_edge(n, t_ix, o.clone());
-    }
-  }
-  n
-}*/

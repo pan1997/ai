@@ -12,6 +12,9 @@ pub struct Search<'a, P: MPOMDP, T: TreePolicy<P::State>, E> {
   tree_policy: T,
   tree_expansion: E,
 
+  // to apply the expansion rule on an unseen state or
+  // keep selecting
+  expand_unseen: bool,
   horizon: u32,
   bounds: Vec<Bounds>,
 }
@@ -40,12 +43,19 @@ pub trait TreeExpansion<S: State> {
 }
 
 impl<'a, P: MPOMDP, T: TreePolicy<P::State>, E> Search<'a, P, T, E> {
-  pub fn new(problem: &'a P, tree_policy: T, tree_expansion: E, horizon: u32) -> Self {
+  pub fn new(
+    problem: &'a P,
+    tree_policy: T,
+    tree_expansion: E,
+    horizon: u32,
+    expand_unseen: bool,
+  ) -> Self {
     Search {
       problem,
       tree_policy,
       tree_expansion,
       horizon,
+      expand_unseen,
       bounds: vec![Bounds {}; 10],
     }
   }

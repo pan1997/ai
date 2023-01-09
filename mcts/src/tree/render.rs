@@ -8,7 +8,7 @@ use graphviz_rust::{
 
 use super::Node;
 
-fn render_dv<A: Ord + Clone, O: Ord + Clone + Display>(
+fn render_dv<A: Ord + Clone + Display, O: Ord + Clone + Display>(
   node: &Node<A, O>,
   g: &mut Graph,
   theta: u32,
@@ -51,7 +51,7 @@ fn render_dv<A: Ord + Clone, O: Ord + Clone + Display>(
   NodeId(Id::Plain(format!("{node_id}")), None)
 }
 
-pub fn render_tree<A: Ord + Clone, O: Ord + Clone + Display>(
+pub fn render_tree<A: Ord + Clone + Display, O: Ord + Clone + Display>(
   node: &Node<A, O>,
   theta: u32,
   depth: u32,
@@ -66,7 +66,7 @@ pub fn render_tree<A: Ord + Clone, O: Ord + Clone + Display>(
   g
 }
 
-pub fn save_tree<A: Ord + Clone, O: Ord + Clone + Display>(
+pub fn save_tree<A: Ord + Clone + Display, O: Ord + Clone + Display>(
   node: &Node<A, O>,
   mut f: File,
   theta: u32,
@@ -77,15 +77,19 @@ pub fn save_tree<A: Ord + Clone, O: Ord + Clone + Display>(
   write!(f, "{}", g.print(&mut ctx)).unwrap();
 }
 
-fn node_format<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>, leaf: bool) -> String {
+fn node_format<A: Ord + Clone + Display, O: Ord + Clone + Display>(
+  node: &Node<A, O>,
+  leaf: bool,
+) -> String {
   let children = unsafe { &*node.children.get() };
   let width = std::cmp::max(if leaf { 1 } else { children.len() }, 1);
   let out_row = if leaf || children.is_empty() {
     "".to_string()
   } else {
-    let mut result = "<table border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
+    let mut result =
+      "<table bgcolor=\"tomato\" border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
     for (ix, o) in children.keys().enumerate() {
-      result.push_str(&format!("<td port=\"{ix}\">\"{o}\"</td>"));
+      result.push_str(&format!("<td port=\"{ix}\">{o}</td>"));
     }
     result.push_str("</tr></table>");
     result
@@ -93,12 +97,11 @@ fn node_format<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>, leaf
   let action_row = if leaf || node.actions.is_empty() {
     "".to_string()
   } else {
-    let mut result = "<table border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
+    let mut result =
+      "<table bgcolor=\"gold\" border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
     for (a, data) in node.actions.iter() {
-      let select_count = data.select_count();
-      let sample_count = data.value_of_next_state.sample_count();
       let v = data.action_value();
-      result.push_str(&format!("<td>{v}:{select_count}:{sample_count}</td>"));
+      result.push_str(&format!("<td>{a}<BR/>{v:.4}</td>"));
     }
     result.push_str("</tr></table>");
     result

@@ -22,7 +22,6 @@ where
 
     for _ in 0..self.horizon {
       // increment select count
-      // todo: is only for current agent needed?
       for tree in trees.iter() {
         tree.increment_select_count();
       }
@@ -47,9 +46,10 @@ where
 
       let rewards_and_observations = state.apply_action(selected_action);
 
-      if trees[current_agent_index]
-        .next_node(&rewards_and_observations[current_agent_index].1)
-        .is_none()
+      if self.expand_unseen
+        && trees[current_agent_index]
+          .next_node(&rewards_and_observations[current_agent_index].1)
+          .is_none()
       {
         result.push(SelectStep {
           nodes: trees,
@@ -65,7 +65,12 @@ where
         let next_node = {
           let n = tree.next_node(&rewards_and_observations[ix].1);
           if n.is_none() {
-            tree.create_new_node(rewards_and_observations[ix].1.clone(), vec![]);
+            let actions = if self.expand_unseen || ix != state.current_agent().unwrap().into() {
+              vec![]
+            } else {
+              state.legal_actions()
+            };
+            tree.create_new_node(rewards_and_observations[ix].1.clone(), actions);
             tree.next_node(&rewards_and_observations[ix].1).unwrap()
           } else {
             n.unwrap()
