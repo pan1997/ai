@@ -42,6 +42,7 @@ where
         &state,
         &trees[current_agent_index],
         &self.bounds[current_agent_index],
+        true
       );
 
       let rewards_and_observations = state.apply_action(selected_action);
@@ -122,13 +123,8 @@ where
   }
 
   pub fn once<'b>(&self, state: &mut P::State, trees: Vec<&'b Node<P::Action, P::Observation>>) {
+    let p = trees.len();
     let trajectory = self.sample(state, trees);
-
-    for step in trajectory.iter() {
-      print!("{}->", step.next);
-    }
-    println!();
-
     trajectory.last().map(|step| {
       let trajectory_value = if let SelectStepNext::ToExpand {
         rewards_and_observations,
@@ -140,7 +136,7 @@ where
           &state,
         )
       } else {
-        vec![0.0; 1]
+        vec![0.0; p]
       };
       self.propagate(&trajectory, trajectory_value);
     });

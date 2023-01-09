@@ -24,12 +24,16 @@ pub(crate) struct ActionInfo {
   pub(crate) value_of_next_state: Average,
 
   select_count: Cell<u32>,
+  // used by puct
+  static_policy_score: f32,
 }
 
 impl<A: Ord + Clone, O: Ord> Node<A, O> {
   pub fn new(a: &[A]) -> Self {
+    let l = a.len();
+    let s = if l == 0 { 1.0 } else { 1.0 / l as f32 };
     Self {
-      actions: BTreeMap::from_iter(a.iter().map(|a| (a.clone(), ActionInfo::new()))),
+      actions: BTreeMap::from_iter(a.iter().map(|a| (a.clone(), ActionInfo::new(s)))),
       children: UnsafeCell::new(BTreeMap::new()),
       value: Average::new(),
       select_count: Cell::new(0),
@@ -55,11 +59,12 @@ impl<A: Ord + Clone, O: Ord> Node<A, O> {
 }
 
 impl ActionInfo {
-  fn new() -> Self {
+  fn new(s: f32) -> Self {
     Self {
       action_reward: Average::new(),
       value_of_next_state: Average::new(),
       select_count: Cell::new(0),
+      static_policy_score: s,
     }
   }
 
@@ -69,6 +74,10 @@ impl ActionInfo {
 
   pub(crate) fn select_count(&self) -> u32 {
     self.select_count.get()
+  }
+
+  pub(crate) fn action_value(&self) -> f32 {
+    self.action_reward.mean() + self.value_of_next_state.mean()
   }
 }
 /*

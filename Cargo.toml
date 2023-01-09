@@ -8,7 +8,9 @@ members = [
   "connect6",
   "othello",
   "tzf8",
-  "utils"
+  "ttt",
+  "hex",
+  "chess_"
 ]
 
 [workspace.package]
@@ -19,3 +21,4 @@ edition = "2021"
 [workspace.dependencies]
 rand = "*"
 graphviz-rust = "*"
+num = "*"

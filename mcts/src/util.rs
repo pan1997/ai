@@ -1,5 +1,6 @@
 use std::cell::Cell;
 
+use graphviz_rust::print;
 use lib::State;
 use rand::seq::IteratorRandom;
 
@@ -31,36 +32,64 @@ impl Average {
   pub(crate) fn add_sample(&self, v: f32, n: u32) {
     let (old_s, old_n) = self.stats.get();
     let new_n = old_n + n;
-    let new_s = old_s + (v - old_s) / new_n as f32;
+    let new_s = old_s + (v - old_s) / (new_n as f32);
     self.stats.replace((new_s, new_n));
   }
 }
 
 pub struct RandomTreePolicy;
-pub struct UctTreePolicy(f32);
+pub struct UctTreePolicy(pub f32);
 
 impl<S: State> TreePolicy<S> for RandomTreePolicy {
   fn select_action<'a: 'b, 'b>(
     &self,
-    state: &S,
+    _state: &S,
     node: &'a Node<S::Action, S::Observation>,
-    bounds: &Bounds,
+    _bounds: &Bounds,
+    increment_count: bool,
   ) -> &'b S::Action {
-    node.actions.keys().choose(&mut rand::thread_rng()).unwrap()
+    node.actions.iter().choose(&mut rand::thread_rng()).map(|(k, v)| {
+      if increment_count {
+        v.increment_select_count();
+      }
+      k
+    }).unwrap()
   }
 }
 
 impl<S: State> TreePolicy<S> for UctTreePolicy {
   fn select_action<'a: 'b, 'b>(
     &self,
-    state: &S,
+    _state: &S,
     node: &'a Node<S::Action, S::Observation>,
-    bounds: &Bounds,
+    _bounds: &Bounds,
+    increment_count: bool,
   ) -> &'b S::Action {
-    let ln_N = (node.value.mean() as f32).ln();
+    let ln_N = (node.select_count() as f32).ln();
     let mut best_a = None;
+    let mut best_data = None;
     let mut best_score = f32::MIN;
-    for (a, data) in node.actions.iter() {}
+
+    //println!("{}", node.actions.len());
+    for (a, data) in node.actions.iter() {
+      if data.select_count() == 0 {
+        if increment_count {
+          data.increment_select_count();
+        }
+        return a;
+      }
+      let exploration_score = (ln_N / data.select_count() as f32).sqrt();
+      let score = data.action_value() + self.0 * exploration_score;
+      //println!("score: {score}, {}, {exploration_score}, {} ", data.action_value(), data.select_count());
+      if score > best_score {
+        best_score = score;
+        best_a = Some(a);
+        best_data = Some(data);
+      }
+    }
+    if increment_count {
+      best_data.unwrap().increment_select_count();
+    }
     best_a.unwrap()
   }
 }
@@ -82,6 +111,7 @@ impl<S: State> TreeExpansion<S> for EmptyExpansion {
     } else {
       <S::Agent as Into<usize>>::into(new_state.current_agent().unwrap())
     };
+
     for ix in 0..nodes.len() {
       if nodes[ix]
         .next_node(&rewards_and_observations[ix].1)
@@ -98,3 +128,6 @@ impl<S: State> TreeExpansion<S> for EmptyExpansion {
     vec![0.0; nodes.len()]
   }
 }
+
+
+

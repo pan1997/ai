@@ -51,19 +51,28 @@ fn render_dv<A: Ord + Clone, O: Ord + Clone + Display>(
   NodeId(Id::Plain(format!("{node_id}")), None)
 }
 
-pub fn render_tree<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>) -> Graph {
+pub fn render_tree<A: Ord + Clone, O: Ord + Clone + Display>(
+  node: &Node<A, O>,
+  theta: u32,
+  depth: u32,
+) -> Graph {
   let mut g = Graph::DiGraph {
     id: Id::Plain("".to_string()),
     strict: false,
     stmts: vec![],
   };
   let mut count = 0;
-  render_dv(node, &mut g, 0, 4, &mut count);
+  render_dv(node, &mut g, theta, depth, &mut count);
   g
 }
 
-pub fn save_tree<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>, mut f: File) {
-  let mut g = render_tree(node);
+pub fn save_tree<A: Ord + Clone, O: Ord + Clone + Display>(
+  node: &Node<A, O>,
+  mut f: File,
+  theta: u32,
+  depth: u32,
+) {
+  let mut g = render_tree(node, theta, depth);
   let mut ctx = PrinterContext::default();
   write!(f, "{}", g.print(&mut ctx)).unwrap();
 }
@@ -81,11 +90,25 @@ fn node_format<A: Ord + Clone, O: Ord + Clone + Display>(node: &Node<A, O>, leaf
     result.push_str("</tr></table>");
     result
   };
+  let action_row = if leaf || node.actions.is_empty() {
+    "".to_string()
+  } else {
+    let mut result = "<table border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
+    for (a, data) in node.actions.iter() {
+      let select_count = data.select_count();
+      let sample_count = data.value_of_next_state.sample_count();
+      let v = data.action_value();
+      result.push_str(&format!("<td>{v}:{select_count}:{sample_count}</td>"));
+    }
+    result.push_str("</tr></table>");
+    result
+  };
   format!(
     r#"<
 <table border="0" cellspacing="0" cellborder="1">
 <tr><td>{}</td></tr>
 <tr><td>{:.4}</td></tr>
+<tr><td>{action_row}</td></tr>
 <tr><td>{out_row}</td></tr>
 </table>
     >"#,

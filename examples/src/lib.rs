@@ -236,7 +236,7 @@ mod test {
   #[test]
   fn t1() {
     let p = &prob1();
-    let s = Search::new(&p, RandomTreePolicy, EmptyExpansion);
+    let s = Search::new(&p, RandomTreePolicy, EmptyExpansion, u32::MAX);
     let n = Node::new(&[1, 2]);
     let b_state = p.start_state();
     for _ in 0..100 {

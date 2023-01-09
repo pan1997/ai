@@ -1,4 +1,5 @@
 pub mod mmdp;
+pub mod utils;
 
 pub trait MPOMDP {
   type Agent: Copy + TryFrom<usize> + Into<usize>;
@@ -7,6 +8,7 @@ pub trait MPOMDP {
   type Action: Clone + Ord;
   type Observation: Ord + Clone;
   type BeliefState: BeliefState<State = Self::State, Observation = Self::Observation>;
+
   fn discount(&self) -> f32 {
     1.0
   }
