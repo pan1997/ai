@@ -2,6 +2,7 @@ use lib::{State, MPOMDP};
 use tree::Node;
 use util::Bounds;
 
+pub mod time_manager;
 pub mod tree;
 pub mod util;
 
@@ -17,6 +18,8 @@ pub struct Search<'a, P: MPOMDP, T: TreePolicy<P::State>, E> {
   expand_unseen: bool,
   horizon: u32,
   bounds: Vec<Bounds>,
+
+  block_size: u32,
 }
 
 pub trait TreePolicy<S: State> {
@@ -42,6 +45,19 @@ pub trait TreeExpansion<S: State> {
   ) -> Vec<f32>;
 }
 
+pub trait TreeExpansionBlock<S: State> {
+  // create node and return a value estimate
+  fn create_nodes_and_estimate_values<'a>(
+    &self,
+    // parent nodes
+    nodes_slice: &[Vec<&Node<S::Action, S::Observation>>],
+
+    // the last rewards and observations
+    rewards_and_observations_slice: &[Vec<(f32, S::Observation)>],
+    new_state_slice: &[S],
+  ) -> Vec<Vec<f32>>;
+}
+
 impl<'a, P: MPOMDP, T: TreePolicy<P::State>, E> Search<'a, P, T, E> {
   pub fn new(
     problem: &'a P,
@@ -57,6 +73,7 @@ impl<'a, P: MPOMDP, T: TreePolicy<P::State>, E> Search<'a, P, T, E> {
       horizon,
       expand_unseen,
       bounds: vec![Bounds {}; 10],
+      block_size: 32,
     }
   }
 }

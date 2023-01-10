@@ -7,3 +7,5 @@ edition.workspace = true
 
 [dependencies]
 num.workspace = true
+serde.workspace = true
+serde_with.workspace = true

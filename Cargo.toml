@@ -10,7 +10,8 @@ members = [
   "tzf8",
   "ttt",
   "hex",
-  "chess_"
+  "chess_",
+  "ml"
 ]
 
 [workspace.package]
@@ -22,3 +23,7 @@ edition = "2021"
 rand = "*"
 graphviz-rust = "*"
 num = "*"
+num-traits = "*"
+num-derive = "*"
+serde = {version = "*", features = ["derive"]}
+serde_with = "*"

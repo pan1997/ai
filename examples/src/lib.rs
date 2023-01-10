@@ -60,6 +60,8 @@ impl StaticPOMDP {
   }
 
   fn add_transition(&mut self, si: usize, a: Action, sj: usize, o: usize, r: f32, w: f32) {
+    assert!(a < self.action_count, "invalid action");
+    assert!(o < self.observation_count, "invalid observation");
     if !self.states[si].actions.contains_key(&a) {
       self.states[si].actions.insert(a, ActionResult::new());
     }
@@ -211,7 +213,7 @@ mod test {
   use lib::{BeliefState, MPOMDP};
   use mcts::{
     tree::{render::save_tree, Node},
-    util::{EmptyExpansion, RandomTreePolicy},
+    util::{EmptyExpansion, RandomTreePolicy, UctTreePolicy},
     Search,
   };
 
@@ -236,10 +238,10 @@ mod test {
   #[test]
   fn t1() {
     let p = &prob1();
-    let s = Search::new(&p, RandomTreePolicy, EmptyExpansion, u32::MAX, true);
+    let s = Search::new(&p, UctTreePolicy(2.4), EmptyExpansion, u32::MAX, true);
     let n = Node::new(&[1, 2]);
     let b_state = p.start_state();
-    for _ in 0..100 {
+    for _ in 0..1000 {
       s.once(&mut b_state.sample_state(), vec![&n]);
     }
     let file = File::create("prob1.dot").unwrap();

@@ -1,16 +1,13 @@
 use std::fmt::Display;
 
-use lib::{State, MPOMDP};
+use lib::{BeliefState, State, MPOMDP};
 
-use crate::{tree::Node, Search, TreeExpansion, TreePolicy};
+use crate::{tree::Node, Search, TreeExpansion, TreeExpansionBlock, TreePolicy};
 
 impl<'a, P, T, E> Search<'a, P, T, E>
 where
   P: MPOMDP,
   T: TreePolicy<P::State>,
-  P::Observation: Clone + Display,
-  P::Action: Ord + Display,
-  E: TreeExpansion<P::State>,
 {
   // one tree for each agent
   fn sample<'b>(
@@ -126,7 +123,14 @@ where
     }
     terminal_value
   }
+}
 
+impl<'a, P, T, E> Search<'a, P, T, E>
+where
+  P: MPOMDP,
+  T: TreePolicy<P::State>,
+  E: TreeExpansion<P::State>,
+{
   pub fn once<'b>(&self, state: &mut P::State, trees: Vec<&'b Node<P::Action, P::Observation>>) {
     let p = trees.len();
     let trajectory = self.sample(state, trees);
@@ -145,6 +149,60 @@ where
       };
       self.propagate(&trajectory, trajectory_value);
     });
+  }
+}
+
+impl<'a, P, T, E> Search<'a, P, T, E>
+where
+  P: MPOMDP,
+  T: TreePolicy<P::State>,
+  E: TreeExpansionBlock<P::State>,
+{
+  pub fn one_block<'b>(
+    &self,
+    belief_state: &P::BeliefState,
+    trees: Vec<&'b Node<P::Action, P::Observation>>,
+  ) {
+    let p = trees.len();
+    let mut trajectories = Vec::with_capacity(self.block_size as usize);
+    let mut nodes = Vec::with_capacity(self.block_size as usize);
+    let mut last_rewards_and_observations = Vec::with_capacity(self.block_size as usize);
+    let mut states = Vec::with_capacity(self.block_size as usize);
+    for _ in 0..self.block_size {
+      let mut state = belief_state.sample_state();
+      let trajectory = self.sample(&mut state, trees.clone());
+
+      let process = trajectory
+        .last()
+        .map(|step| {
+          if let SelectStepNext::ToExpand {
+            rewards_and_observations,
+          } = &step.next
+          {
+            nodes.push(step.nodes.clone());
+            last_rewards_and_observations.push(rewards_and_observations.clone());
+            true
+          } else {
+            self.propagate(&trajectory, vec![0.0; p]);
+            false
+          }
+        })
+        .unwrap_or(false);
+      if process {
+        trajectories.push(trajectory);
+        states.push(state);
+      }
+    }
+
+    let expansion_result = self.tree_expansion.create_nodes_and_estimate_values(
+      &nodes,
+      &last_rewards_and_observations,
+      &states,
+    );
+
+    for ix in 0..trajectories.len() {
+      self.propagate(&trajectories[ix], expansion_result[ix].clone());
+    }
   }
 }
 
@@ -177,6 +235,17 @@ impl<A, Aa: Display, O: Display> Display for SelectStepNext<A, Aa, O> {
         action,
         rewards_and_observations: _,
       } => write!(f, "Next({})", action),
+    }
+  }
+}
+
+impl<Agent, Action, Observation> SelectStepNext<Agent, Action, Observation> {
+  fn terminal(&self) -> bool {
+    match self {
+      SelectStepNext::ToExpand {
+        rewards_and_observations,
+      } => false,
+      _ => true,
     }
   }
 }

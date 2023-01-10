@@ -1,5 +1,6 @@
 mod wrap;
-use std::env::Args;
+
+use std::fs::File;
 
 use lib::mmdp::{State, FODMMDP};
 use mcts::{
@@ -10,7 +11,7 @@ use mcts::{
 
 use crate::wrap::Game;
 
-fn main() {
+fn bench1() {
   let args: Vec<String> = std::env::args().collect();
 
   let g = Game {};
@@ -18,23 +19,14 @@ fn main() {
   let t_black = Node::new(&[]);
   let t_white = Node::new(&state.legal_actions());
 
-  let s = Search::new(&g, UctTreePolicy(2.5), EmptyExpansion, 80, false);
+  let s = Search::new(&g, UctTreePolicy(2.5), EmptyExpansion, 80, true);
   let count: u32 = args[1].parse().unwrap();
-  //let count = 5;
   for _ in 0..count {
-    s.once(&mut state.clone(), vec![&t_black, &t_white]);
+    s.one_block(&mut state.clone(), vec![&t_black, &t_white]);
   }
-  /*
-  save_tree(
-    &t_black,
-    std::fs::File::create("black.dot").unwrap(),
-    100,
-    20,
-  );
-  save_tree(
-    &t_white,
-    std::fs::File::create("white.dot").unwrap(),
-    100,
-    20,
-  );*/
+  save_tree(&t_white, File::create("white.dot").unwrap(), 20, 10);
+}
+
+fn main() {
+  bench1();
 }

@@ -4,7 +4,7 @@ use graphviz_rust::print;
 use lib::State;
 use rand::seq::{IteratorRandom, SliceRandom};
 
-use crate::{tree::Node, TreeExpansion, TreePolicy};
+use crate::{tree::Node, TreeExpansion, TreeExpansionBlock, TreePolicy};
 
 #[derive(Clone)]
 pub struct Bounds {}
@@ -130,5 +130,27 @@ impl<S: State> TreeExpansion<S> for EmptyExpansion {
       }
     }
     vec![0.0; nodes.len()]
+  }
+}
+
+impl<S: State, E: TreeExpansion<S>> TreeExpansionBlock<S> for E {
+  fn create_nodes_and_estimate_values<'a>(
+    &self,
+    // parent nodes
+    nodes_slice: &[Vec<&Node<<S as State>::Action, <S as State>::Observation>>],
+
+    // the last rewards and observations
+    rewards_and_observations_slice: &[Vec<(f32, <S as State>::Observation)>],
+    new_state_slice: &[S],
+  ) -> Vec<Vec<f32>> {
+    (0..nodes_slice.len())
+      .map(|ix| {
+        self.create_node_and_estimate_value(
+          &nodes_slice[ix],
+          &rewards_and_observations_slice[ix],
+          &new_state_slice[ix],
+        )
+      })
+      .collect()
   }
 }

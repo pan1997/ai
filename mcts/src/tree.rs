@@ -56,6 +56,23 @@ impl<A: Ord + Clone, O: Ord> Node<A, O> {
     let old = unsafe { (&mut *self.children.get()).insert(o, Node::new(&actions)) };
     debug_assert!(old.is_none(), "reinserting")
   }
+
+  pub(crate) fn pv<'a, 'b: 'a>(&'b self, result: &mut Vec<(&'a O, u32)>) {
+    let children = unsafe { &*self.children.get() };
+    let mut best_o = None;
+    let mut best_count = 0;
+    for (o, n) in children.iter() {
+      if n.select_count() > best_count {
+        best_count = n.select_count();
+        best_o = Some(o);
+      }
+    }
+
+    best_o.map(|o| {
+      result.push((o, best_count));
+      children[o].pv(result)
+    });
+  }
 }
 
 impl ActionInfo {
