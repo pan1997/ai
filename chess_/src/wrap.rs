@@ -18,6 +18,9 @@ impl lib::mmdp::FODMMDP for Game {
       board: Board::default(),
     }
   }
+  fn all_agents(&self) -> Vec<Self::Agent> {
+    vec![Player(Color::White), Player(Color::Black)]
+  }
 }
 
 impl lib::mmdp::State for State {

@@ -57,12 +57,12 @@ impl<A: Ord + Clone, O: Ord> Node<A, O> {
     debug_assert!(old.is_none(), "reinserting")
   }
 
-  pub(crate) fn pv<'a, 'b: 'a>(&'b self, result: &mut Vec<(&'a O, u32)>) {
+  pub(crate) fn pv<'a, 'b: 'a>(&'b self, result: &mut Vec<(&'a O, u32)>, theta: u32) {
     let children = unsafe { &*self.children.get() };
     let mut best_o = None;
     let mut best_count = 0;
     for (o, n) in children.iter() {
-      if n.select_count() > best_count {
+      if n.select_count() > best_count && n.select_count() > theta {
         best_count = n.select_count();
         best_o = Some(o);
       }
@@ -70,7 +70,7 @@ impl<A: Ord + Clone, O: Ord> Node<A, O> {
 
     best_o.map(|o| {
       result.push((o, best_count));
-      children[o].pv(result)
+      children[o].pv(result, theta)
     });
   }
 }

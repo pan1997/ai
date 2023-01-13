@@ -89,6 +89,9 @@ impl<'a> MPOMDP for &'a StaticPOMDP {
       pomdp: self,
     }
   }
+  fn all_agents(&self) -> Vec<Self::Agent> {
+    vec![Agent]
+  }
 }
 
 impl<'a> State_ for State<'a> {

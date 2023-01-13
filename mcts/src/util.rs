@@ -2,7 +2,11 @@ use std::cell::Cell;
 
 use graphviz_rust::print;
 use lib::State;
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::{
+  distributions::WeightedIndex,
+  prelude::Distribution,
+  seq::{IteratorRandom, SliceRandom},
+};
 
 use crate::{tree::Node, TreeExpansion, TreeExpansionBlock, TreePolicy};
 
@@ -39,6 +43,9 @@ impl Average {
 
 pub struct RandomTreePolicy;
 pub struct UctTreePolicy(pub f32);
+
+pub struct GreedyPolicy;
+pub struct MctsPolicy;
 
 impl<S: State> TreePolicy<S> for RandomTreePolicy {
   fn select_action<'a: 'b, 'b>(
@@ -95,6 +102,48 @@ impl<S: State> TreePolicy<S> for UctTreePolicy {
       best_data.unwrap().increment_select_count();
     }
     best_a.unwrap()
+  }
+}
+
+impl<S: State> TreePolicy<S> for GreedyPolicy {
+  fn select_action<'a: 'b, 'b>(
+    &self,
+    _state: &S,
+    node: &'a Node<S::Action, S::Observation>,
+    _bounds: &Bounds,
+    _increment_count: bool,
+  ) -> &'b S::Action {
+    let mut best_a = None;
+    let mut best_score = 0;
+    for (a, data) in node.actions.iter() {
+      let score = data.select_count();
+      if score > best_score {
+        best_score = score;
+        best_a = Some(a);
+      }
+    }
+    best_a.unwrap()
+  }
+}
+
+impl<S: State> TreePolicy<S> for MctsPolicy {
+  fn select_action<'a: 'b, 'b>(
+    &self,
+    _state: &S,
+    node: &'a Node<S::Action, S::Observation>,
+    _bounds: &Bounds,
+    _increment_count: bool,
+  ) -> &'b S::Action {
+    let mut actions = vec![];
+    let mut w = vec![];
+    for (a, data) in node.actions.iter() {
+      actions.push(a);
+      w.push(data.select_count());
+    }
+    let ix = WeightedIndex::new(w)
+      .unwrap()
+      .sample(&mut rand::thread_rng());
+    &actions[ix]
   }
 }
 

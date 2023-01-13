@@ -1,10 +1,13 @@
-use std::{time::{Duration, Instant}, fmt::Display};
+use std::{
+  fmt::Display,
+  time::{Duration, Instant},
+};
 
-use lib::{MPOMDP, BeliefState, State};
+use lib::{BeliefState, State, MPOMDP};
 
 use crate::{tree::Node, Search, TreeExpansionBlock, TreePolicy};
 
-struct Config {
+pub struct Limit {
   // max number of samples
   iteration_limit: Option<u32>,
   // max iteration
@@ -13,24 +16,24 @@ struct Config {
   granularity: u32,
 }
 
-impl Config {
-  fn iterations(l: u32) -> Self {
-    Config {
+impl Limit {
+  pub fn iterations(l: u32, granularity: u32) -> Self {
+    Limit {
       iteration_limit: Some(l),
       duration_limit: None,
-      granularity: 1024,
+      granularity,
     }
   }
 
-  fn time(d: Duration) -> Self {
-    Config {
+  pub fn time(d: Duration, granularity: u32) -> Self {
+    Limit {
       iteration_limit: None,
       duration_limit: Some(d),
-      granularity: 1024,
+      granularity,
     }
   }
 
-  fn start<'a, P, T, E>(
+  pub fn start<'a, P, T, E>(
     &self,
     search: &Search<'a, P, T, E>,
     belief_state: &P::BeliefState,
@@ -39,7 +42,7 @@ impl Config {
     P: MPOMDP,
     T: TreePolicy<P::State>,
     E: TreeExpansionBlock<P::State>,
-    P::Observation: Display
+    P::Observation: Display,
   {
     let current_agent_ix: usize = belief_state.sample_state().current_agent().unwrap().into();
     let iter_count = self.granularity / search.block_size;
@@ -51,15 +54,16 @@ impl Config {
       }
       let time_millis = start_instant.elapsed().as_millis();
       let mut pv = vec![];
-      trees[current_agent_ix].pv(&mut pv);
+      trees[current_agent_ix].pv(&mut pv, 10);
       let estimated_value = trees[current_agent_ix].value.mean();
+      let elapsed_sel = trees[current_agent_ix].select_count() - start_select_count;
 
-      print!("{estimated_value:.4} [ ");
+      print!("{estimated_value:.4} {elapsed_sel} [ ");
       for (ob, _) in pv {
         print!("{ob} ");
       }
       println!("] {time_millis}ms");
-      
+
       if self
         .iteration_limit
         .map(|limit| trees[0].select_count() - start_select_count > limit)

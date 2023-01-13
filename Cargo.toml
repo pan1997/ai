@@ -1,15 +1,13 @@
 [workspace]
 members = [
   "examples",
+  "examples_v2",
   "lib",
+  "lib_v2",
   "mcts",
+  "mcts_v2",
   "blokus",
-  "connect4", 
-  "connect6",
-  "othello",
   "tzf8",
-  "ttt",
-  "hex",
   "chess_",
   "ml"
 ]
@@ -27,3 +25,4 @@ num-traits = "*"
 num-derive = "*"
 serde = {version = "*", features = ["derive"]}
 serde_with = "*"
+tokio = {version = "*", features = ["sync", "rt"]}

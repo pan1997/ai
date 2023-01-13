@@ -94,6 +94,76 @@ where
     result
   }
 
+  /*
+  fn select_step<'b>(
+    &self,
+    state: &mut P::State,
+    nodes: Vec<&'b Node<P::Action, P::Observation>>
+  ) -> SelectStep<'b, P::Agent, P::Action, P::Observation> {
+    // 1. increment select count
+    for node in nodes.iter() {
+      node.increment_select_count();
+    }
+
+    // todo: check if termination info can be stored in trees
+
+    // 2. terminate if state is terminal
+    if state.is_terminal() {
+      return SelectStep {
+        nodes,
+        next: SelectStepNext::Terminal,
+      }
+    }
+
+    let current_agent = state.current_agent().unwrap();
+    let current_agent_index: usize = current_agent.into();
+    // 3. select action using tree policy
+    let selected_action = self.tree_policy.select_action(
+      &state,
+      &nodes[current_agent_index],
+      &self.bounds[current_agent_index],
+      true,
+    );
+
+    // 4. apply action
+    let rewards_and_observations = state.apply_action(selected_action);
+
+    // 5. expand if configured to terminate
+    if self.expand_unseen
+        && nodes[current_agent_index]
+          .next_node(&rewards_and_observations[current_agent_index].1)
+          .is_none()
+      {
+        return SelectStep {
+          nodes,
+          next: SelectStepNext::ToExpand {
+            rewards_and_observations,
+          },
+        }
+      }
+
+      // 6. descend if needed
+      let mut next_trees = Vec::with_capacity(nodes.len());
+      for (ix, tree) in nodes.iter().enumerate() {
+        let next_node = {
+          let n = tree.next_node(&rewards_and_observations[ix].1);
+          if n.is_none() {
+            let actions = if self.expand_unseen || ix != state.current_agent().unwrap().into() {
+              vec![]
+            } else {
+              state.legal_actions()
+            };
+            tree.create_new_node(rewards_and_observations[ix].1.clone(), actions);
+            tree.next_node(&rewards_and_observations[ix].1).unwrap()
+          } else {
+            n.unwrap()
+          }
+        };
+        next_trees.push(next_node);
+      }
+    unimplemented!()
+  }*/
+
   fn propagate<'b>(
     &self,
     trajectory: &Vec<SelectStep<'b, P::Agent, P::Action, P::Observation>>,
@@ -122,6 +192,20 @@ where
       }
     }
     terminal_value
+  }
+
+  pub fn initialize(&self, state: &P::State) -> Vec<Node<P::Action, P::Observation>> {
+    let a = self.problem.all_agents().len();
+    let current_agent_index: usize = state.current_agent().unwrap().into();
+    (0..a)
+      .map(|ix| {
+        if ix == current_agent_index {
+          Node::new(&state.legal_actions())
+        } else {
+          Node::new(&[])
+        }
+      })
+      .collect()
   }
 }
 

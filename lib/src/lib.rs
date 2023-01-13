@@ -13,6 +13,8 @@ pub trait MPOMDP {
     1.0
   }
   fn start_state(&self) -> Self::BeliefState;
+
+  fn all_agents(&self) -> Vec<Self::Agent>;
 }
 
 pub trait State {
@@ -29,10 +31,13 @@ pub trait State {
   // state
 
   fn legal_actions(&self) -> Vec<Self::Action>;
+
   // returns the rewards and observations for each agent
   // agents are assumed to be indexed by their Into<usize> impl
   fn apply_action(&mut self, action: &Self::Action) -> Vec<(f32, Self::Observation)>;
 }
+
+// other than apply_action, everything in State can be a part of Belief state
 
 pub trait BeliefState {
   type State;

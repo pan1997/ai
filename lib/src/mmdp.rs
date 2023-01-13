@@ -7,6 +7,8 @@ pub trait FODMMDP {
   type State: Clone + State<Agent = Self::Agent, Action = Self::Action>;
 
   fn start_state(&self) -> Self::State;
+
+  fn all_agents(&self) -> Vec<Self::Agent>;
 }
 
 impl<P> MPOMDP for P
@@ -21,6 +23,9 @@ where
 
   fn start_state(&self) -> Self::BeliefState {
     self.start_state()
+  }
+  fn all_agents(&self) -> Vec<Self::Agent> {
+    self.all_agents()
   }
 }
 
