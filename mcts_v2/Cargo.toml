@@ -9,3 +9,4 @@ edition = "2021"
 lib_v2 = {path = "../lib_v2"}
 rand.workspace = true
 tokio.workspace = true
+graphviz-rust.workspace = true

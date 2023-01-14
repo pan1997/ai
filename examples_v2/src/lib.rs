@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use lib_v2::MctsProblem;
 use rand::distributions::{Distribution, WeightedIndex};
@@ -165,9 +165,22 @@ impl From<Agent> for u8 {
   }
 }
 
+impl Display for Observation {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "O({}, a:{})", self.id, self.action)
+  }
+}
+
 #[cfg(test)]
 mod tests {
-  use mcts_v2::{bandits::UniformlyRandomBandit, search::Search, SearchLimit};
+  use std::fs::File;
+
+  use mcts_v2::{
+    bandits::{UctBandit, UniformlyRandomBandit},
+    forest::render::save,
+    search::Search,
+    SearchLimit,
+  };
   use tokio::runtime::Runtime;
 
   use super::*;
@@ -176,15 +189,34 @@ mod tests {
   fn test1() {
     let problem = prob1();
     let start_state = problem.start_state();
-    let limit = SearchLimit::new(10);
-    let search = Search::new(&problem, &start_state, 1, limit, UniformlyRandomBandit);
+    let limit = SearchLimit::new(1000);
+    let search = Search::new(&problem, &start_state, 1, limit, UctBandit(2.4));
     let mut rt = tokio::runtime::Builder::new_current_thread()
       .build()
       .unwrap();
     let mut worker = rt.block_on(search.create_workers(1));
     println!("created");
     rt.block_on(search.start(&mut worker[0]));
-    println!("{:?}", search);
+    let forest = search.forest.blocking_read();
+    //println!("{:?}", forest);
+    save(&forest, File::create("agent.dot").unwrap(), 0, 3);
+  }
+
+  #[test]
+  fn test2() {
+    let problem = prob2();
+    let start_state = problem.start_state();
+    let limit = SearchLimit::new(10000);
+    let search = Search::new(&problem, &start_state, 1, limit, UctBandit(1.2));
+    let mut rt = tokio::runtime::Builder::new_current_thread()
+      .build()
+      .unwrap();
+    let mut worker = rt.block_on(search.create_workers(1));
+    println!("created");
+    rt.block_on(search.start(&mut worker[0]));
+    let forest = search.forest.blocking_read();
+    //println!("{:?}", forest);
+    save(&forest, File::create("agent.dot").unwrap(), 500, 5);
   }
 
   fn prob1() -> StaticPOMDP {
@@ -201,6 +233,28 @@ mod tests {
     m.add_transition(5, 2, 7, 0, 0.5, 1.0);
     m.add_transition(6, 3, 8, 3, 1.0, 1.0);
     m.add_transition(6, 4, 9, 4, -1.0, 1.0);
+    m
+  }
+
+  fn prob2() -> StaticPOMDP {
+    let mut m = StaticPOMDP::new(3, 2, 3, vec![1.0, 0.0, 0.0], 1.0);
+
+    m.add_transition(0, 0, 0, 0, 0.0, 0.5);
+    m.add_transition(0, 0, 2, 2, 0.0, 0.5);
+    m.add_transition(0, 1, 2, 2, 0.0, 1.0);
+
+    m.add_transition(1, 0, 0, 0, 5.0, 0.7);
+    m.add_transition(1, 0, 1, 1, 0.0, 0.1);
+    m.add_transition(1, 0, 2, 2, 0.0, 0.2);
+    m.add_transition(1, 1, 1, 1, 0.0, 0.95);
+    m.add_transition(1, 1, 2, 2, 0.0, 0.05);
+    
+    m.add_transition(2, 0, 0, 0, 0.0, 0.4);
+    m.add_transition(2, 0, 2, 2, 0.0, 0.6);
+    m.add_transition(2, 1, 0, 0, -1.0, 0.3);
+    m.add_transition(2, 1, 1, 1, 0.0, 0.3);
+    m.add_transition(2, 1, 2, 2, 0.0, 0.4);
+
     m
   }
 }

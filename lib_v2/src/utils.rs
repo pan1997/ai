@@ -15,6 +15,16 @@ impl RunningAverage {
   pub fn value(&self) -> f32 {
     self.mean
   }
+
+  pub fn count(&self) -> u32 {
+    self.count
+  }
+
+  pub fn add_sample(&mut self, v: f32, c: u32) {
+    let new_c = c + self.count;
+    self.mean += (v - self.mean) * (c as f32) / (new_c as f32);
+    self.count = new_c;
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -30,21 +40,30 @@ impl Bounds {
 
   pub fn new() -> Self {
     Bounds {
-      low: f32::MAX,
-      high: f32::MIN,
+      low: 1.0,
+      high: 0.0,
     }
   }
 
   pub fn normalise(&self, v: f32) -> f32 {
-    (v - self.low) / (self.high - self.low)
+    if self.low >= self.high {
+      0.0
+    } else {
+      (v - self.low) / (self.high - self.low)
+    }
   }
 
   pub fn update_bounds(&mut self, v: f32) {
-    if v < self.low {
+    if self.low > self.high {
       self.low = v;
-    }
-    if v > self.high {
-      self.high = v
+      self.high = v;
+    } else {
+      if v < self.low {
+        self.low = v;
+      }
+      if v > self.high {
+        self.high = v
+      }
     }
   }
 }

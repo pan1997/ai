@@ -25,4 +25,4 @@ num-traits = "*"
 num-derive = "*"
 serde = {version = "*", features = ["derive"]}
 serde_with = "*"
-tokio = {version = "*", features = ["sync", "rt"]}
+tokio = {version = "*", features = ["sync", "rt", "rt-multi-thread"]}

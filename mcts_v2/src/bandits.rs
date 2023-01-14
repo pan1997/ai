@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use lib_v2::{utils::Bounds, MctsProblem};
 use rand::seq::IteratorRandom;
 
@@ -21,10 +23,11 @@ impl<S, A: Clone, O> Bandit<S, A, O> for UniformlyRandomBandit {
   }
 }
 
-struct UctBandit(f32);
+pub struct UctBandit(pub f32);
 
-impl<S, A: Clone, O> Bandit<S, A, O> for UctBandit {
+impl<S, A: Clone + Display, O> Bandit<S, A, O> for UctBandit {
   fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
+    println!("bandit start");
     let ln_n = (node.select_count() as f32).ln();
     let mut best_s = f32::MIN;
     let mut best_a = None;
@@ -34,7 +37,10 @@ impl<S, A: Clone, O> Bandit<S, A, O> for UctBandit {
         return a.clone();
       }
       let exploration_score = (ln_n / n as f32).sqrt();
-      let score = bounds.normalise(data.value()) + self.0 * exploration_score;
+      let v = data.value();
+      let nv = bounds.normalise(v);
+      let score = nv + self.0 * exploration_score;
+      println!("a: {a},  score: {score}, v: {v}, nv: {nv}, es: {exploration_score}");
       if score > best_s {
         best_s = score;
         best_a = Some(a);
