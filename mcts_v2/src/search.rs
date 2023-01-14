@@ -48,7 +48,8 @@ impl<'a, 'b, P: MctsProblem, B> Search<'a, 'b, P, B>
 where
   B: Bandit<P::HiddenState, P::Action, P::Observation>,
   P::Action: Debug,
-  P::Observation: Debug,
+  P::HiddenState: Display,
+  P::Observation: Display,
   // todo: remove this requirement
   P::HiddenState: Clone,
 {
@@ -117,7 +118,7 @@ where
           .map(|(trajectory, state)| {
             // todo: relax assumption that starting state is non terminal
             if self.problem.check_terminal(&state) {
-              //println!("terminal");
+              //println!("terminal, so moved to termimal queue");
               // state is terminal
               worker
                 .trajectories_awaiting_backprop
@@ -128,16 +129,15 @@ where
               self.restart_trajectory(&guard, trajectory);
             }
             // its guaranteed that the state is not terminal
-            let current_agent = self.problem.agent_to_act(state);
-            let current_agent_ix = current_agent.into() as usize;
 
             // this is a new node that has never been selected till now
             // it has to be expanded
             if guard
-              .node(trajectory.current_[current_agent_ix])
+              .node(trajectory.current_[self.problem.agent_to_act(state).into() as usize])
               .select_count()
               == 0
             {
+              //println!("moved to expansion queue");
               // push this state trajectory pair to the expansion queue (processed later)
               worker.states_awaiting_expansion.push(state.clone());
               worker
@@ -148,6 +148,8 @@ where
               self.restart_trajectory(&guard, trajectory);
             }
 
+            // need this before applying action to states that can change the aganet to act
+            let current_agent_ix = self.problem.agent_to_act(state).into() as usize;
             // its guaranteed that the trajectory is not terminal
             (
               current_agent_ix,
@@ -186,6 +188,7 @@ where
           .zip(worker.trajectories_awaiting_expansion.iter_mut())
         {
           let current_agent_ix = self.problem.agent_to_act(state).into() as usize;
+          //println!("expanding :{}, agent: {}", state, current_agent_ix);
           for (ix, node_id) in trajectory.current_.iter().enumerate() {
             let node = guard.node_mut(*node_id);
             if node.select_count() == 0 {
@@ -211,7 +214,8 @@ where
         worker
           .trajectories_in_flight
           .iter_mut()
-          .zip(worker.states_in_flight.iter_mut())
+          // no nooed to mutate states now
+          .zip(worker.states_in_flight.iter())
           .zip(
             actions
               .into_iter()
@@ -222,6 +226,8 @@ where
             |((trajectory, state), ((action, agent_ix), outcomes_and_rewards))| {
               // increment select_counts
               // descend nodes
+              
+              // the state here has the action applied to it, but the trajectory's current points to the old one
 
               // todo: capacity
               let mut children_ix = vec![];
@@ -323,7 +329,6 @@ where
     forest_g: &Forest<P::Action, P::Observation>,
     trajectory: &mut Trajectory<P::Action>,
   ) {
-    //println!("reset reajectory");
     trajectory.current_ = forest_g.roots();
     trajectory.branch = vec![];
   }

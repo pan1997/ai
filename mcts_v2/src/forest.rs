@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Debug};
+use std::{collections::BTreeMap, fmt::{Debug, Display}};
 
 use lib_v2::utils::RunningAverage;
 pub mod render;
@@ -11,6 +11,10 @@ pub struct NodeId(usize);
 
 #[derive(Debug)]
 pub struct Node<A, O> {
+
+  // todo: remove
+  id: usize,
+
   pub(crate) actions: BTreeMap<A, ActionInfo>,
   // index to children
   children: BTreeMap<O, NodeId>,
@@ -36,7 +40,7 @@ pub struct Forest<A, O> {
 impl<A, O> Forest<A, O>
 where
   // todo remove debug
-  O: Ord + Clone + Debug,
+  O: Ord + Clone + Display,
 {
   pub fn new(capacity: usize) -> Self {
     Self {
@@ -58,11 +62,12 @@ where
   fn new_node(&mut self) -> NodeId {
     let id = self.nodes.len();
     self.nodes.push(Node::new());
+    self.nodes[id].id = id;
     NodeId(id)
   }
 
   pub(crate) fn get_id_of_child(&mut self, node_id: NodeId, o: &O) -> NodeId {
-    //print!("fetching child {:?} of {}:", o, node_id.0);
+    //print!("fetching child {} of {}:", o, node_id.0);
     if !self.nodes[node_id.0].children.contains_key(o) {
       let new_node_id = self.new_node();
       self.nodes[node_id.0]
@@ -81,6 +86,7 @@ where
 impl<A, O> Node<A, O> {
   fn new() -> Self {
     Self {
+      id: 0,
       actions: BTreeMap::new(),
       children: BTreeMap::new(),
       select_count: 0,
@@ -134,5 +140,17 @@ impl ActionInfo {
 
   pub(crate) fn value(&self) -> f32 {
     self.action_reward.value() + self.value_of_next_state.value()
+  }
+}
+
+impl<A: Display, O:Display> Display for Node<A, O> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "Node {{\"id\": {}", self.id)?;
+    let actions: Vec<_> = self.actions.keys().map(|k| k.to_string()).collect();
+    write!(f, "\"actions\": {:?}", actions)?;
+    let children: Vec<_> = self.children.iter().map(|(k,v)| (k.to_string(), v)).collect();
+    write!(f, ", \"children:\": {:?}, \"select_count\": {}", children, self.select_count)?;
+    write!(f, "}}")?;
+    Ok(())
   }
 }
