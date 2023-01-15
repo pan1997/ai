@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt::{Debug, Display}};
+use std::{
+  collections::BTreeMap,
+  fmt::{Debug, Display},
+};
 
 use lib_v2::utils::RunningAverage;
 pub mod render;
@@ -11,7 +14,6 @@ pub struct NodeId(usize);
 
 #[derive(Debug)]
 pub struct Node<A, O> {
-
   // todo: remove
   id: usize,
 
@@ -27,20 +29,22 @@ pub(crate) struct ActionInfo {
   pub(crate) action_reward: RunningAverage,
   pub(crate) value_of_next_state: RunningAverage,
   select_count: u32,
-  static_policy_score: f32,
+  pub(crate) static_policy_score: f32,
 }
 
 #[derive(Debug)]
 pub struct Forest<A, O> {
   // one rooted tree for each Agent
   nodes: Vec<Node<A, O>>,
+
+  // the order doesn't change
   roots: Vec<NodeId>,
 }
 
 impl<A, O> Forest<A, O>
 where
   // todo remove debug
-  O: Ord + Clone + Display,
+  O: Ord + Clone,
 {
   pub fn new(capacity: usize) -> Self {
     Self {
@@ -143,13 +147,21 @@ impl ActionInfo {
   }
 }
 
-impl<A: Display, O:Display> Display for Node<A, O> {
+impl<A: Display, O: Display> Display for Node<A, O> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "Node {{\"id\": {}", self.id)?;
     let actions: Vec<_> = self.actions.keys().map(|k| k.to_string()).collect();
     write!(f, "\"actions\": {:?}", actions)?;
-    let children: Vec<_> = self.children.iter().map(|(k,v)| (k.to_string(), v)).collect();
-    write!(f, ", \"children:\": {:?}, \"select_count\": {}", children, self.select_count)?;
+    let children: Vec<_> = self
+      .children
+      .iter()
+      .map(|(k, v)| (k.to_string(), v))
+      .collect();
+    write!(
+      f,
+      ", \"children:\": {:?}, \"select_count\": {}",
+      children, self.select_count
+    )?;
     write!(f, "}}")?;
     Ok(())
   }

@@ -2,42 +2,45 @@ use std::{fmt::Display, fs::File, io::Write};
 
 use graphviz_rust::{
   attributes::{EdgeAttributes, NodeAttributes},
-  dot_structures::{Edge as GEdge, EdgeTy, Graph, Id, Node as GNode, NodeId, Port, Stmt, Vertex},
+  dot_structures::{
+    Edge as GEdge, EdgeTy, Graph, Id, Node as GNode, NodeId as GNid, Port, Stmt, Vertex,
+  },
   printer::{DotPrinter, PrinterContext},
 };
 
-use super::Node;
+use super::Forest;
+use crate::forest::Node;
 
-fn render_dv<A: Ord + Clone + Display, O: Ord + Clone + Display>(
+fn render<A: Ord + Display, O: Ord + Display>(
+  forest: &Forest<A, O>,
   node: &Node<A, O>,
   g: &mut Graph,
   theta: u32,
   depth: u32,
   count: &mut u32,
-) -> NodeId {
+) -> GNid {
   let node_id = *count;
   *count += 1;
   let leaf = depth == 0 || node.select_count() <= theta;
   let label = node_format(&node, leaf);
   let n = GNode::new(
-    NodeId(Id::Plain(format!("{node_id}")), None),
+    GNid(Id::Plain(format!("{node_id}")), None),
     vec![
       NodeAttributes::label(label),
       NodeAttributes::shape(graphviz_rust::attributes::shape::plaintext),
     ],
   );
-
   g.add_stmt(Stmt::Node(n));
 
   if !leaf {
-    let children = unsafe { &*node.children.get() };
+    let children = &node.children;
 
     for (ix, o) in children.keys().enumerate() {
-      let child_id = render_dv(&children[o], g, theta, depth - 1, count);
+      let child_id = render(forest, forest.node(children[o]), g, theta, depth - 1, count);
 
       let e = GEdge {
         ty: EdgeTy::Pair(
-          Vertex::N(NodeId(
+          Vertex::N(GNid(
             Id::Plain(format!("{node_id}")),
             Some(Port(Some(Id::Plain(format!("{ix}"))), None)),
           )),
@@ -48,11 +51,11 @@ fn render_dv<A: Ord + Clone + Display, O: Ord + Clone + Display>(
       g.add_stmt(Stmt::Edge(e));
     }
   }
-  NodeId(Id::Plain(format!("{node_id}")), None)
+  GNid(Id::Plain(format!("{node_id}")), None)
 }
 
-pub fn render_tree<A: Ord + Clone + Display, O: Ord + Clone + Display>(
-  node: &Node<A, O>,
+pub fn render_forest<A: Ord + Display, O: Ord + Display>(
+  forest: &Forest<A, O>,
   theta: u32,
   depth: u32,
 ) -> Graph {
@@ -62,27 +65,25 @@ pub fn render_tree<A: Ord + Clone + Display, O: Ord + Clone + Display>(
     stmts: vec![],
   };
   let mut count = 0;
-  render_dv(node, &mut g, theta, depth, &mut count);
+  for nid in forest.roots.iter() {
+    render(forest, forest.node(*nid), &mut g, theta, depth, &mut count);
+  }
   g
 }
 
-pub fn save_tree<A: Ord + Clone + Display, O: Ord + Clone + Display>(
-  node: &Node<A, O>,
+pub fn save<A: Ord + Display, O: Ord + Display>(
+  forest: &Forest<A, O>,
   mut f: File,
   theta: u32,
   depth: u32,
 ) {
-  let mut g = render_tree(node, theta, depth);
+  let g = render_forest(forest, theta, depth);
   let mut ctx = PrinterContext::default();
   write!(f, "{}", g.print(&mut ctx)).unwrap();
 }
 
-fn node_format<A: Ord + Clone + Display, O: Ord + Clone + Display>(
-  node: &Node<A, O>,
-  leaf: bool,
-) -> String {
-  let children = unsafe { &*node.children.get() };
-  let width = std::cmp::max(if leaf { 1 } else { children.len() }, 1);
+fn node_format<A: Ord + Display, O: Ord + Display>(node: &Node<A, O>, leaf: bool) -> String {
+  let children = &node.children;
   let out_row = if leaf || children.is_empty() {
     "".to_string()
   } else {
@@ -100,9 +101,11 @@ fn node_format<A: Ord + Clone + Display, O: Ord + Clone + Display>(
     let mut result =
       "<table bgcolor=\"gold\" border=\"0\" cellspacing=\"0\" cellborder=\"1\"><tr>".to_string();
     for (a, data) in node.actions.iter() {
-      let v = data.action_value();
       let ac = data.select_count();
-      result.push_str(&format!("<td>{a}<BR/>{v:.4}<BR/>{ac}</td>"));
+      let ss = data.static_policy_score;
+      result.push_str(&format!(
+        "<td>{a}<BR/>{ss:.3}<BR/>{ac}</td>"
+      ));
     }
     result.push_str("</tr></table>");
     result
@@ -111,12 +114,13 @@ fn node_format<A: Ord + Clone + Display, O: Ord + Clone + Display>(
     r#"<
 <table border="0" cellspacing="0" cellborder="1">
 <tr><td>{}</td></tr>
-<tr><td>{:.4}</td></tr>
+<tr><td>{:.4}, {}</td></tr>
 <tr><td>{action_row}</td></tr>
 <tr><td>{out_row}</td></tr>
 </table>
     >"#,
     node.select_count(),
-    node.value.mean(),
+    node.value.value(),
+    node.value.count()
   )
 }

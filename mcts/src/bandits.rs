@@ -1,16 +1,23 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Display;
 
-use lib_v2::{utils::Bounds, MctsProblem};
-use rand::seq::IteratorRandom;
+use lib_v2::utils::Bounds;
+use rand::seq::{IteratorRandom, SliceRandom};
 
 use crate::forest::Node;
 
-pub trait Bandit<S, A, O> {
+pub trait Bandit<S, A, O>: Copy {
   // state is an argument to allow agent/state specific bandit policies
   fn select(&self, state: &S, node: &Node<A, O>, bounds: &Bounds) -> A;
 }
 
+#[derive(Copy, Clone)]
 pub struct UniformlyRandomBandit;
+
+#[derive(Copy, Clone)]
+pub struct UctBandit(pub f32);
+
+#[derive(Copy, Clone)]
+pub struct GreedyBandit;
 
 impl<S, A: Clone, O> Bandit<S, A, O> for UniformlyRandomBandit {
   fn select(&self, _state: &S, node: &Node<A, O>, _bounds: &Bounds) -> A {
@@ -23,15 +30,15 @@ impl<S, A: Clone, O> Bandit<S, A, O> for UniformlyRandomBandit {
   }
 }
 
-pub struct UctBandit(pub f32);
-
 impl<S, A: Clone + Display, O: Display> Bandit<S, A, O> for UctBandit {
   fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
     //println!("bandit start: {node}");
     let ln_n = (node.select_count() as f32).ln();
     let mut best_s = f32::MIN;
     let mut best_a = None;
-    for (a, data) in node.actions.iter() {
+    let mut actions: Vec<_> = node.actions.iter().collect();
+    actions.shuffle(&mut rand::thread_rng());
+    for (a, data) in actions {
       let n = data.select_count();
       if n == 0 {
         return a.clone();

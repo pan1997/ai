@@ -1,11 +1,9 @@
 [workspace]
 members = [
   "examples",
-  "examples_v2",
   "lib",
   "lib_v2",
   "mcts",
-  "mcts_v2",
   "blokus",
   "tzf8",
   "chess_",
@@ -26,3 +24,4 @@ num-derive = "*"
 serde = {version = "*", features = ["derive"]}
 serde_with = "*"
 tokio = {version = "*", features = ["sync", "rt", "rt-multi-thread"]}
+futures = "*"

@@ -6,6 +6,8 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lib = {path = "../lib"}
+lib_v2 = {path = "../lib_v2"}
 rand.workspace = true
+tokio.workspace = true
 graphviz-rust.workspace = true
+futures.workspace = true

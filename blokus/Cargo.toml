@@ -11,4 +11,3 @@ serde_with.workspace = true
 num-traits.workspace = true
 num-derive.workspace = true
 lib = {path = "../lib"}
-mcts = {path = "../mcts"}

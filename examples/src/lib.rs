@@ -1,59 +1,56 @@
-use std::{
-  collections::BTreeMap,
-  fmt::{Debug, Display},
-};
+use std::{collections::BTreeMap, fmt::Display};
 
-use lib::{BeliefState as BeliefState_, State as State_, MPOMDP};
-use rand::{distributions::WeightedIndex, prelude::Distribution};
+use lib_v2::MctsProblem;
+use rand::distributions::{Distribution, WeightedIndex};
 
 type Action = usize;
+#[derive(Copy, Clone, Debug)]
+pub struct Agent;
 
-#[derive(Clone, Copy, Debug)]
-struct Agent;
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Observation {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct Observation {
   id: usize,
   action: Action,
 }
 
-struct StateDef {
-  actions: BTreeMap<Action, ActionResult>,
-}
-
-struct ActionResult {
+struct ActionDef {
   weights: Vec<f32>,
   next_state_id: Vec<usize>,
-  observation: Vec<usize>,
+  observation_id: Vec<usize>,
   reward: Vec<f32>,
 }
 
-struct StaticPOMDP {
-  action_count: usize,
-  observation_count: usize,
-  state_count: usize,
-  states: Vec<StateDef>,
-  starting_probabilities: Vec<f32>,
-  discount: f32,
+struct StateDef {
+  outgoing_actions: BTreeMap<usize, ActionDef>,
 }
-struct State<'a> {
-  id: usize,
-  pomdp: &'a StaticPOMDP,
+
+#[derive(Clone)]
+pub struct BeliefState {
+  state_probs: Vec<f32>,
+}
+
+pub struct StaticPOMDP {
+  state_count: usize,
+  observation_count: usize,
+  action_count: usize,
+  discount: f32,
+  states: Vec<StateDef>,
+  start_state: BeliefState,
 }
 
 impl StaticPOMDP {
-  fn new(s: usize, a: usize, o: usize, starting_probabilities: Vec<f32>, discount: f32) -> Self {
+  fn new(s: usize, a: usize, o: usize, state_probs: Vec<f32>, discount: f32) -> Self {
     let mut result = StaticPOMDP {
       action_count: a,
       observation_count: o,
       state_count: s,
       states: Vec::with_capacity(s),
-      starting_probabilities,
+      start_state: BeliefState { state_probs },
       discount,
     };
     for _ in 0..s {
       result.states.push(StateDef {
-        actions: BTreeMap::new(),
+        outgoing_actions: BTreeMap::new(),
       });
     }
     result
@@ -62,103 +59,109 @@ impl StaticPOMDP {
   fn add_transition(&mut self, si: usize, a: Action, sj: usize, o: usize, r: f32, w: f32) {
     assert!(a < self.action_count, "invalid action");
     assert!(o < self.observation_count, "invalid observation");
-    if !self.states[si].actions.contains_key(&a) {
-      self.states[si].actions.insert(a, ActionResult::new());
+    if !self.states[si].outgoing_actions.contains_key(&a) {
+      self.states[si].outgoing_actions.insert(
+        a,
+        ActionDef {
+          weights: vec![],
+          next_state_id: vec![],
+          observation_id: vec![],
+          reward: vec![],
+        },
+      );
     }
-    let ar = self.states[si].actions.get_mut(&a).unwrap();
+    let ar = self.states[si].outgoing_actions.get_mut(&a).unwrap();
     ar.weights.push(w);
     ar.next_state_id.push(sj);
-    ar.observation.push(o);
+    ar.observation_id.push(o);
     ar.reward.push(r);
   }
 }
 
-impl<'a> MPOMDP for &'a StaticPOMDP {
-  type Action = Action;
+impl MctsProblem for StaticPOMDP {
+  type Action = usize;
   type Agent = Agent;
-  type Observation = Observation;
-  type State = State<'a>;
-  type BeliefState = BeliefState<'a>;
-  fn discount(&self) -> f32 {
-    self.discount
-  }
-
-  fn start_state(&self) -> Self::BeliefState {
-    BeliefState {
-      prob_dist: self.starting_probabilities.clone(),
-      pomdp: self,
-    }
-  }
-  fn all_agents(&self) -> Vec<Self::Agent> {
-    vec![Agent]
-  }
-}
-
-impl<'a> State_ for State<'a> {
-  type Action = Action;
-  // only one agent
-  type Agent = Agent;
+  type BeliefState = BeliefState;
+  type HiddenState = usize;
   type Observation = Observation;
 
-  fn is_terminal(&self) -> bool {
-    self.legal_actions().is_empty()
-  }
-
-  fn apply_action(&mut self, action: &Self::Action) -> Vec<(f32, Self::Observation)> {
-    let action_result = &self.pomdp.states[self.id].actions[action];
+  fn apply_action(
+    &self,
+    h_state: &mut Self::HiddenState,
+    action: &Self::Action,
+  ) -> Vec<(f32, Self::Observation)> {
+    let action_result = &self.states[*h_state].outgoing_actions[action];
     let wi = WeightedIndex::new(&action_result.weights).unwrap();
     let index = wi.sample(&mut rand::thread_rng());
-    self.id = action_result.next_state_id[index];
+    *h_state = action_result.next_state_id[index];
     vec![(
       action_result.reward[index],
       Observation {
-        id: action_result.observation[index],
+        id: action_result.observation_id[index],
         action: *action,
       },
     )]
   }
 
-  fn current_agent(&self) -> Option<Self::Agent> {
-    if self.is_terminal() {
-      None
-    } else {
-      Some(Agent)
+  fn belief_update(&self, b_state: &mut Self::BeliefState, obs: &Self::Observation) {
+    let mut new_dist = vec![0.0; b_state.state_probs.len()];
+    for s_i in 0..self.state_count {
+      if self.states[s_i].outgoing_actions.contains_key(&obs.action) {
+        let transitions = &self.states[s_i].outgoing_actions[&obs.action];
+        let mut total_w = 0.0;
+        for ix in 0..transitions.weights.len() {
+          if transitions.observation_id[ix] == obs.id {
+            total_w += transitions.weights[ix];
+          }
+        }
+
+        for ix in 0..transitions.weights.len() {
+          if transitions.observation_id[ix] == obs.id {
+            new_dist[transitions.next_state_id[ix]] +=
+              b_state.state_probs[s_i] * transitions.weights[ix] / total_w;
+          }
+        }
+      }
     }
+    b_state.state_probs = new_dist;
   }
 
-  fn legal_actions(&self) -> Vec<Self::Action> {
-    self.pomdp.states[self.id]
-      .actions
+  fn legal_actions(&self, h_state: &Self::HiddenState) -> Vec<Self::Action> {
+    self.states[*h_state]
+      .outgoing_actions
       .keys()
       .map(|x| *x)
       .collect()
   }
-}
 
-impl ActionResult {
-  fn new() -> Self {
-    ActionResult {
-      weights: vec![],
-      next_state_id: vec![],
-      observation: vec![],
-      reward: vec![],
-    }
+  fn sample_h_state(&self, b_state: &Self::BeliefState) -> Self::HiddenState {
+    let wi = WeightedIndex::new(&b_state.state_probs).unwrap();
+    wi.sample(&mut rand::thread_rng())
+  }
+
+  fn check_terminal(&self, h_state: &Self::HiddenState) -> bool {
+    self.legal_actions(h_state).is_empty()
+  }
+
+  fn start_state(&self) -> Self::BeliefState {
+    self.start_state.clone()
+  }
+
+  fn agents(&self) -> Vec<Self::Agent> {
+    vec![Agent]
+  }
+
+  fn agent_to_act(&self, h_state: &Self::HiddenState) -> Self::Agent {
+    Agent
+  }
+  fn discount(&self) -> f32 {
+    self.discount
   }
 }
 
-impl Into<usize> for Agent {
-  fn into(self) -> usize {
+impl From<Agent> for u8 {
+  fn from(_: Agent) -> Self {
     0
-  }
-}
-
-impl TryFrom<usize> for Agent {
-  type Error = ();
-  fn try_from(value: usize) -> Result<Self, Self::Error> {
-    match value {
-      0 => Ok(Agent),
-      _ => Err(()),
-    }
   }
 }
 
@@ -168,64 +171,80 @@ impl Display for Observation {
   }
 }
 
-struct BeliefState<'a> {
-  prob_dist: Vec<f32>,
-  pomdp: &'a StaticPOMDP,
+pub fn prob2() -> StaticPOMDP {
+  let mut m = StaticPOMDP::new(3, 2, 3, vec![1.0, 0.0, 0.0], 1.0);
+
+  m.add_transition(0, 0, 0, 0, 0.0, 0.5);
+  m.add_transition(0, 0, 2, 2, 0.0, 0.5);
+  m.add_transition(0, 1, 2, 2, 0.0, 1.0);
+
+  m.add_transition(1, 0, 0, 0, 5.0, 0.7);
+  m.add_transition(1, 0, 1, 1, 0.0, 0.1);
+  m.add_transition(1, 0, 2, 2, 0.0, 0.2);
+  m.add_transition(1, 1, 1, 1, 0.0, 0.95);
+  m.add_transition(1, 1, 2, 2, 0.0, 0.05);
+
+  m.add_transition(2, 0, 0, 0, 0.0, 0.4);
+  m.add_transition(2, 0, 2, 2, 0.0, 0.6);
+  m.add_transition(2, 1, 0, 0, -1.0, 0.3);
+  m.add_transition(2, 1, 1, 1, 0.0, 0.3);
+  m.add_transition(2, 1, 2, 2, 0.0, 0.4);
+
+  m
 }
-
-impl<'a> BeliefState_ for BeliefState<'a> {
-  type Observation = Observation;
-  type State = State<'a>;
-  fn sample_state(&self) -> Self::State {
-    let wi = WeightedIndex::new(&self.prob_dist).unwrap();
-    let si = wi.sample(&mut rand::thread_rng());
-    State {
-      id: si,
-      pomdp: self.pomdp,
-    }
-  }
-  fn update(&mut self, o: &Self::Observation) {
-    let mut new_dist = vec![0.0; self.prob_dist.len()];
-    for s_i in 0..self.pomdp.state_count {
-      if self.pomdp.states[s_i].actions.contains_key(&o.action) {
-        let transitions = &self.pomdp.states[s_i].actions[&o.action];
-        let mut total_w = 0.0;
-        for ix in 0..transitions.weights.len() {
-          if transitions.observation[ix] == o.id {
-            total_w += transitions.weights[ix];
-          }
-        }
-
-        for ix in 0..transitions.weights.len() {
-          if transitions.observation[ix] == o.id {
-            new_dist[transitions.next_state_id[ix]] +=
-              self.prob_dist[s_i] * transitions.weights[ix] / total_w;
-          }
-        }
-      }
-    }
-
-    self.prob_dist = new_dist;
-  }
-}
-
 #[cfg(test)]
-mod test {
+pub mod tests {
   use std::fs::File;
 
-  use lib::{BeliefState, MPOMDP};
   use mcts::{
-    tree::{render::save_tree, Node},
-    util::{EmptyExpansion, RandomTreePolicy, UctTreePolicy},
-    Search,
+    bandits::{UctBandit, UniformlyRandomBandit},
+    forest::render::save,
+    search::Search,
+    EmptyInit, SearchLimit,
   };
+  use tokio::runtime::Runtime;
 
-  use crate::{Agent, StaticPOMDP};
+  use super::*;
 
-  fn prob1() -> StaticPOMDP {
-    let mut m = StaticPOMDP::new(10, 5, 5, vec![0.0; 10], 1.0);
-    m.starting_probabilities[0] = 0.5;
-    m.starting_probabilities[5] = 0.5;
+  #[test]
+  fn test1() {
+    let problem = prob1();
+    let start_state = problem.start_state();
+    let limit = SearchLimit::new(1000);
+    let search = Search::new(&problem, &start_state, 1, limit, UctBandit(2.4), EmptyInit);
+    let mut rt = tokio::runtime::Builder::new_current_thread()
+      .build()
+      .unwrap();
+    let mut worker = rt.block_on(search.create_workers(1));
+    println!("created");
+    rt.block_on(search.start(&mut worker[0]));
+    let forest = search.forest.blocking_read();
+    //println!("{:?}", forest);
+    save(&forest, File::create("agent.dot").unwrap(), 0, 3);
+  }
+
+  #[test]
+  fn test2() {
+    let problem = prob2();
+    let start_state = problem.start_state();
+    let limit = SearchLimit::new(10000);
+    let search = Search::new(&problem, &start_state, 1, limit, UctBandit(1.2), EmptyInit);
+    let mut rt = tokio::runtime::Builder::new_current_thread()
+      .build()
+      .unwrap();
+    let mut worker = rt.block_on(search.create_workers(1));
+    println!("created");
+    rt.block_on(search.start(&mut worker[0]));
+    let forest = search.forest.blocking_read();
+    //println!("{:?}", forest);
+    save(&forest, File::create("agent.dot").unwrap(), 500, 5);
+  }
+
+  pub fn prob1() -> StaticPOMDP {
+    let mut s_prob = vec![0.0; 10];
+    s_prob[0] = 0.5;
+    s_prob[5] = 0.5;
+    let mut m = StaticPOMDP::new(10, 5, 5, s_prob, 1.0);
     m.add_transition(0, 1, 1, 0, 0.0, 1.0);
     m.add_transition(0, 2, 2, 0, 0.5, 1.0);
     m.add_transition(1, 3, 3, 1, -1.0, 1.0);
@@ -236,18 +255,5 @@ mod test {
     m.add_transition(6, 3, 8, 3, 1.0, 1.0);
     m.add_transition(6, 4, 9, 4, -1.0, 1.0);
     m
-  }
-
-  #[test]
-  fn t1() {
-    let p = &prob1();
-    let s = Search::new(&p, UctTreePolicy(2.4), EmptyExpansion, u32::MAX, true);
-    let n = Node::new(&[1, 2]);
-    let b_state = p.start_state();
-    for _ in 0..1000 {
-      s.once(&mut b_state.sample_state(), vec![&n]);
-    }
-    let file = File::create("prob1.dot").unwrap();
-    save_tree(&n, file, 10, 3);
   }
 }

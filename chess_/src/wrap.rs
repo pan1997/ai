@@ -1,65 +1,52 @@
-use std::fmt::Display;
-
 use chess::{Board, BoardStatus, ChessMove, Color, MoveGen};
+use lib_v2::FullyObservableDeterministicMctsProblem;
 
-#[derive(Clone)]
-pub struct State {
-  board: Board,
-}
+pub struct Game2;
 
-pub struct Game;
+#[derive(Clone, Copy)]
+pub struct Player(Color);
 
-impl lib::mmdp::FODMMDP for Game {
-  type Action = Action;
+impl FullyObservableDeterministicMctsProblem for Game2 {
   type Agent = Player;
-  type State = State;
-  fn start_state(&self) -> Self::State {
-    State {
-      board: Board::default(),
-    }
-  }
-  fn all_agents(&self) -> Vec<Self::Agent> {
-    vec![Player(Color::White), Player(Color::Black)]
-  }
-}
+  type Action = ChessMove;
+  type State = Board;
 
-impl lib::mmdp::State for State {
-  type Agent = Player;
-  type Action = Action;
-  fn current_agent(&self) -> Option<Self::Agent> {
-    Some(Player(self.board.side_to_move()))
+  fn agent_to_act(&self, state: &Self::State) -> Self::Agent {
+    Player(state.side_to_move())
   }
 
-  fn is_terminal(&self) -> bool {
-    self.board.status() != BoardStatus::Ongoing
-  }
-
-  fn legal_actions(&self) -> Vec<Self::Action> {
-    MoveGen::new_legal(&self.board).map(|m| Action(m)).collect()
-  }
-
-  fn apply_action(&mut self, action: &Self::Action) -> Vec<f32> {
-    let l = self.board.make_move_new(action.0);
-    self.board = l;
-    match self.board.status() {
+  fn apply_action(&self, state: &mut Self::State, action: &Self::Action) -> Vec<f32> {
+    let l = state.make_move_new(*action);
+    *state = l;
+    match state.status() {
       BoardStatus::Ongoing | BoardStatus::Stalemate => vec![0.0, 0.0],
-      BoardStatus::Checkmate => match self.board.side_to_move() {
+      BoardStatus::Checkmate => match state.side_to_move() {
         Color::White => vec![0.0, 1.0],
         Color::Black => vec![1.0, 0.0],
       },
     }
   }
+
+  fn start_state(&self) -> Self::State {
+    Board::default()
+  }
+
+  fn check_terminal(&self, state: &Self::State) -> bool {
+    state.status() != BoardStatus::Ongoing
+  }
+
+  fn legal_actions(&self, state: &Self::State) -> Vec<Self::Action> {
+    MoveGen::new_legal(state).collect()
+  }
+
+  fn agents(&self) -> Vec<Self::Agent> {
+    vec![Player(Color::White), Player(Color::Black)]
+  }
 }
 
-#[derive(Clone, Copy)]
-pub struct Player(Color);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Action(ChessMove);
-
-impl TryFrom<usize> for Player {
+impl TryFrom<u8> for Player {
   type Error = ();
-  fn try_from(value: usize) -> Result<Self, Self::Error> {
+  fn try_from(value: u8) -> Result<Self, Self::Error> {
     match value {
       0 => Ok(Player(Color::Black)),
       1 => Ok(Player(Color::White)),
@@ -68,17 +55,11 @@ impl TryFrom<usize> for Player {
   }
 }
 
-impl Into<usize> for Player {
-  fn into(self) -> usize {
+impl Into<u8> for Player {
+  fn into(self) -> u8 {
     match self.0 {
       Color::Black => 0,
       Color::White => 1,
     }
-  }
-}
-
-impl Display for Action {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.0)
   }
 }
