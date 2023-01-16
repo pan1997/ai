@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use lib_v2::MctsProblem;
+use lib::MctsProblem;
 use rand::distributions::{Distribution, WeightedIndex};
 
 type Action = usize;
@@ -151,7 +151,7 @@ impl MctsProblem for StaticPOMDP {
     vec![Agent]
   }
 
-  fn agent_to_act(&self, h_state: &Self::HiddenState) -> Self::Agent {
+  fn agent_to_act(&self, _h_state: &Self::HiddenState) -> Self::Agent {
     Agent
   }
   fn discount(&self) -> f32 {
@@ -197,12 +197,11 @@ pub mod tests {
   use std::fs::File;
 
   use mcts::{
-    bandits::{UctBandit, UniformlyRandomBandit},
+    bandits::Uct,
     forest::render::save,
     search::Search,
     EmptyInit, SearchLimit,
   };
-  use tokio::runtime::Runtime;
 
   use super::*;
 
@@ -211,8 +210,8 @@ pub mod tests {
     let problem = prob1();
     let start_state = problem.start_state();
     let limit = SearchLimit::new(1000);
-    let search = Search::new(&problem, &start_state, 1, limit, UctBandit(2.4), EmptyInit);
-    let mut rt = tokio::runtime::Builder::new_current_thread()
+    let search = Search::new(&problem, &start_state, 1, limit, Uct(2.4), EmptyInit);
+    let rt = tokio::runtime::Builder::new_current_thread()
       .build()
       .unwrap();
     let mut worker = rt.block_on(search.create_workers(1));
@@ -228,8 +227,8 @@ pub mod tests {
     let problem = prob2();
     let start_state = problem.start_state();
     let limit = SearchLimit::new(10000);
-    let search = Search::new(&problem, &start_state, 1, limit, UctBandit(1.2), EmptyInit);
-    let mut rt = tokio::runtime::Builder::new_current_thread()
+    let search = Search::new(&problem, &start_state, 1, limit, Uct(1.2), EmptyInit);
+    let rt = tokio::runtime::Builder::new_current_thread()
       .build()
       .unwrap();
     let mut worker = rt.block_on(search.create_workers(1));

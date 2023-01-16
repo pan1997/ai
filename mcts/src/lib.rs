@@ -1,5 +1,5 @@
 use forest::{Forest, Node};
-use lib_v2::MctsProblem;
+use lib::MctsProblem;
 use search::Trajectory;
 
 pub mod bandits;

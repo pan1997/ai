@@ -3,7 +3,7 @@ use std::{
   fmt::{Debug, Display},
 };
 
-use lib_v2::utils::RunningAverage;
+use lib::utils::RunningAverage;
 pub mod render;
 
 // an arena based tree
@@ -119,6 +119,7 @@ impl<A: Ord, O> Forest<A, O> {
 impl<A: Ord, O> Node<A, O> {
   pub(crate) fn create_actions(&mut self, actions: Vec<A>) {
     debug_assert!(self.actions.is_empty(), "recreating actions");
+    let s = 1.0 / actions.len() as f32;
     actions.into_iter().for_each(|action| {
       self.actions.insert(
         action,
@@ -126,7 +127,7 @@ impl<A: Ord, O> Node<A, O> {
           action_reward: RunningAverage::new(),
           value_of_next_state: RunningAverage::new(),
           select_count: 0,
-          static_policy_score: 1.0,
+          static_policy_score: s,
         },
       );
     });

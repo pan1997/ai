@@ -2,12 +2,12 @@
 members = [
   "examples",
   "lib",
-  "lib_v2",
   "mcts",
   "blokus",
   "tzf8",
   "chess_",
-  "ml"
+  "ml",
+  "sat"
 ]
 
 [workspace.package]

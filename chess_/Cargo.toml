@@ -9,5 +9,4 @@ edition.workspace = true
 chess = "*"
 lib = {path = "../lib"}
 mcts = {path = "../mcts"}
-lib_v2 = {path = "../lib_v2"}
 tokio.workspace = true

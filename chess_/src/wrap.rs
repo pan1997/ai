@@ -1,12 +1,12 @@
 use chess::{Board, BoardStatus, ChessMove, Color, MoveGen};
-use lib_v2::FullyObservableDeterministicMctsProblem;
+use lib::FullyObservableDeterministicMctsProblem;
 
-pub struct Game2;
+pub struct Game;
 
 #[derive(Clone, Copy)]
 pub struct Player(Color);
 
-impl FullyObservableDeterministicMctsProblem for Game2 {
+impl FullyObservableDeterministicMctsProblem for Game {
   type Agent = Player;
   type Action = ChessMove;
   type State = Board;

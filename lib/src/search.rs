@@ -1,4 +1,3 @@
-pub mod utils;
 
 pub trait MctsProblem {
   type Agent: Copy + Into<u8>;

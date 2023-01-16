@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use futures::executor::block_on;
-use lib_v2::MctsProblem;
+use lib::MctsProblem;
 use mcts::{bandits::Bandit, search::Search, NodeInit, SearchLimit};
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::{Deserialize, Serialize};
@@ -87,8 +87,8 @@ impl<Ag, Ac: Display, O: Display> Debug for PlayoutStep<Ag, Ac, O> {
 #[cfg(test)]
 mod test {
   use examples::prob2;
-  use lib_v2::MctsProblem;
-  use mcts::{bandits::UctBandit, EmptyInit, SearchLimit};
+  use lib::MctsProblem;
+  use mcts::{bandits::Uct, EmptyInit, SearchLimit};
 
   use super::playout;
 
@@ -97,7 +97,7 @@ mod test {
     let m = prob2();
     let start = m.start_state();
     let limit = SearchLimit::new(64);
-    let bandit_policy = UctBandit(1.8);
+    let bandit_policy = Uct(1.8);
     let t = playout(&m, &start, 1, limit, bandit_policy, 20, EmptyInit);
     println!("{:?}", t);
   }

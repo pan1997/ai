@@ -1,6 +1,4 @@
-use std::fmt::Display;
-
-use lib_v2::utils::Bounds;
+use lib::utils::Bounds;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use crate::forest::Node;
@@ -14,7 +12,10 @@ pub trait Bandit<S, A, O>: Copy {
 pub struct UniformlyRandomBandit;
 
 #[derive(Copy, Clone)]
-pub struct UctBandit(pub f32);
+pub struct Uct(pub f32);
+
+#[derive(Copy, Clone)]
+pub struct Puct(pub f32);
 
 #[derive(Copy, Clone)]
 pub struct GreedyBandit;
@@ -30,9 +31,8 @@ impl<S, A: Clone, O> Bandit<S, A, O> for UniformlyRandomBandit {
   }
 }
 
-impl<S, A: Clone + Display, O: Display> Bandit<S, A, O> for UctBandit {
+impl<S, A: Clone, O> Bandit<S, A, O> for Uct {
   fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
-    //println!("bandit start: {node}");
     let ln_n = (node.select_count() as f32).ln();
     let mut best_s = f32::MIN;
     let mut best_a = None;
@@ -44,10 +44,25 @@ impl<S, A: Clone + Display, O: Display> Bandit<S, A, O> for UctBandit {
         return a.clone();
       }
       let exploration_score = (ln_n / n as f32).sqrt();
-      let v = data.value();
-      let nv = bounds.normalise(v);
-      let score = nv + self.0 * exploration_score;
-      //println!("a: {a},  score: {score}, v: {v}, nv: {nv}, es: {exploration_score}");
+      let score = bounds.normalise(data.value()) + self.0 * exploration_score;
+      if score > best_s {
+        best_s = score;
+        best_a = Some(a);
+      }
+    }
+    best_a.unwrap().clone()
+  }
+}
+
+
+impl<S, A: Clone, O> Bandit<S, A, O> for Puct {
+  fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
+    let sqrt_sum = (node.select_count() as f32).sqrt();
+    let mut best_s = f32::MIN;
+    let mut best_a = None;
+    for (a, data) in node.actions.iter() {
+      let exploration_score = data.static_policy_score * sqrt_sum / (1 + data.select_count()) as f32;
+      let score = bounds.normalise(data.value()) + self.0 * exploration_score;
       if score > best_s {
         best_s = score;
         best_a = Some(a);

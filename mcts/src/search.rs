@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use lib_v2::{utils::Bounds, MctsProblem};
+use lib::{utils::Bounds, MctsProblem};
 use tokio::sync::RwLock;
 
 use crate::{
