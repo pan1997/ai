@@ -103,9 +103,7 @@ fn node_format<A: Ord + Display, O: Ord + Display>(node: &Node<A, O>, leaf: bool
     for (a, data) in node.actions.iter() {
       let ac = data.select_count();
       let ss = data.static_policy_score;
-      result.push_str(&format!(
-        "<td>{a}<BR/>{ss:.3}<BR/>{ac}</td>"
-      ));
+      result.push_str(&format!("<td>{a}<BR/>{ss:.3}<BR/>{ac}</td>"));
     }
     result.push_str("</tr></table>");
     result

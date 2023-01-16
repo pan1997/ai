@@ -93,6 +93,7 @@ where
         if node.select_count() == 0 {
           node.create_actions(self.problem.legal_actions(state));
           // todo remove this hack to avoid re expansion
+          // println!("block init setup");
           self.node_init.block_init(
             self.problem,
             &worker.states_in_flight,
@@ -214,21 +215,23 @@ where
 
         // todo: expansion
         if worker.states_awaiting_expansion.len() >= self.block_size as usize {
+          
+          //println!("block init expansion");
           // todo: fetch values by using block expansion
 
-          self.node_init.block_init(
+          let values = self.node_init.block_init(
             self.problem,
             &worker.states_awaiting_expansion,
             &mut guard,
             &worker.trajectories_awaiting_expansion,
           );
 
-          for trajectory in worker.trajectories_awaiting_expansion.iter() {
+          for (trajectory, value) in worker.trajectories_awaiting_expansion.iter().zip(values.into_iter()) {
             self.backpropogate(
               &mut guard,
               &mut bound_guard,
               trajectory,
-              vec![0.0; trajectory.current_.len()],
+              value,
             );
           }
           worker.trajectories_awaiting_expansion.clear();

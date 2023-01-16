@@ -40,7 +40,7 @@ impl FullyObservableDeterministicMctsProblem for Game {
   }
 
   fn agents(&self) -> Vec<Self::Agent> {
-    vec![Player(Color::White), Player(Color::Black)]
+    vec![Player(Color::Black), Player(Color::White)]
   }
 }
 

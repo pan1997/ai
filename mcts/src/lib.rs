@@ -4,6 +4,7 @@ use search::Trajectory;
 
 pub mod bandits;
 pub mod forest;
+pub mod rollout;
 pub mod search;
 
 pub trait NodeInit<P: MctsProblem>: Copy {
@@ -18,6 +19,7 @@ pub trait NodeInit<P: MctsProblem>: Copy {
     state: &P::HiddenState,
     node_of_current_agent: &mut Node<P::Action, P::Observation>,
   ) -> Vec<f32>;
+
   fn block_init(
     &self,
     problem: &P,
@@ -37,9 +39,6 @@ pub trait NodeInit<P: MctsProblem>: Copy {
     result
   }
 }
-
-#[derive(Clone, Copy)]
-pub struct EmptyInit;
 
 #[derive(Clone, Copy)]
 pub struct SearchLimit {
@@ -63,20 +62,4 @@ impl SearchLimit {
   }
 }
 
-impl<P: MctsProblem> NodeInit<P> for EmptyInit {
-  fn init_node(
-    &self,
-    problem: &P,
-    _state: &<P as MctsProblem>::HiddenState,
-    node_of_current_agent: &mut Node<<P as MctsProblem>::Action, <P as MctsProblem>::Observation>,
-  ) -> Vec<f32> {
-    let ac = node_of_current_agent.actions.len();
-    if ac > 0 {
-      let v = 1.0 / ac as f32;
-      for (_, data) in node_of_current_agent.actions.iter_mut() {
-        data.static_policy_score = v;
-      }
-    }
-    vec![0.0; problem.agents().len()]
-  }
-}
+pub use rollout::EmptyInit;

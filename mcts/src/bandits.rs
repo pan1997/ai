@@ -54,14 +54,14 @@ impl<S, A: Clone, O> Bandit<S, A, O> for Uct {
   }
 }
 
-
 impl<S, A: Clone, O> Bandit<S, A, O> for Puct {
   fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
     let sqrt_sum = (node.select_count() as f32).sqrt();
     let mut best_s = f32::MIN;
     let mut best_a = None;
     for (a, data) in node.actions.iter() {
-      let exploration_score = data.static_policy_score * sqrt_sum / (1 + data.select_count()) as f32;
+      let exploration_score =
+        data.static_policy_score * sqrt_sum / (1 + data.select_count()) as f32;
       let score = bounds.normalise(data.value()) + self.0 * exploration_score;
       if score > best_s {
         best_s = score;
