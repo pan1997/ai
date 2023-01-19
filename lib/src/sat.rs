@@ -1,18 +1,16 @@
-
-
-
-
 pub struct CNF {
   pub var_count: usize,
   // variables are numbered 1, 2, 3...
   // negative signify negated var
-  pub clauses: Vec<Vec<i64>>
+  pub clauses: Vec<Vec<i64>>,
 }
 
-
 impl CNF {
-  pub fn new(vc: usize) -> Self{
-    Self { var_count: vc, clauses: vec![] }
+  pub fn new(vc: usize) -> Self {
+    Self {
+      var_count: vc,
+      clauses: vec![],
+    }
   }
 
   pub fn add_clause(&mut self, clause: Vec<i64>) {

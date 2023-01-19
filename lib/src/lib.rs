@@ -1,8 +1,6 @@
 pub mod utils;
 
-
-pub mod search;
 pub mod sat;
+pub mod search;
 
-pub use search::MctsProblem;
-pub use search::FullyObservableDeterministicMctsProblem;
+pub use search::{FullyObservableDeterministicMctsProblem, MctsProblem};

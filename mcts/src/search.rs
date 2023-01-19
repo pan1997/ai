@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use crate::{
   bandits::Bandit,
   forest::{Forest, NodeId},
-  NodeInit, SearchLimit,
+  Expansion, SearchLimit,
 };
 
 pub struct Search<'a, 'b, P: MctsProblem, B, E> {
@@ -17,7 +17,7 @@ pub struct Search<'a, 'b, P: MctsProblem, B, E> {
   block_size: u32,
   limit: SearchLimit,
   bandit_policy: B,
-  node_init: E,
+  static_estimator: E,
   score_bounds: RwLock<Vec<Bounds>>,
 }
 
@@ -50,7 +50,7 @@ where
   B: Bandit<P::HiddenState, P::Action, P::Observation>,
   // todo: remove this requirement
   P::HiddenState: Clone,
-  E: NodeInit<P>,
+  E: Expansion<P>,
 {
   pub fn new(
     problem: &'a P,
@@ -74,7 +74,7 @@ where
       limit,
       bandit_policy,
       score_bounds: RwLock::new(vec![Bounds::new(); agent_count]),
-      node_init,
+      static_estimator: node_init,
     }
   }
 
@@ -90,20 +90,12 @@ where
         let current_agent_ix = self.problem.agent_to_act(state).into() as usize;
         let node_id = trajectory.current_[current_agent_ix];
         let node = guard.node_mut(node_id);
-        if node.select_count() == 0 {
+        if !node.actions_created() {
           node.create_actions(self.problem.legal_actions(state));
-          // todo remove this hack to avoid re expansion
-          // println!("block init setup");
-          self.node_init.block_init(
-            self.problem,
-            &worker.states_in_flight,
-            &mut guard,
-            &worker.trajectories_in_flight,
-          );
-          guard
-            .roots()
-            .into_iter()
-            .for_each(|id| guard.node_mut(id).increment_select_count());
+          let (_, p) = self.static_estimator.expand(self.problem, state);
+          for (a, pa) in p {
+            node.actions.get_mut(&a).unwrap().static_policy_score = pa;
+          }
         }
       }
     }
@@ -137,16 +129,10 @@ where
               self.restart_trajectory(&guard, trajectory);
             }
             // its guaranteed that the state is not terminal
-
-            // this is a new node that has never been selected till now
-            // it has to be expanded
-            if guard
+            if !guard
               .node(trajectory.current_[self.problem.agent_to_act(state).into() as usize])
-              .select_count()
-              == 0
+              .actions_created()
             {
-              //println!("moved to expansion queue");
-              // push this state trajectory pair to the expansion queue (processed later)
               worker.states_awaiting_expansion.push(state.clone());
               worker
                 .trajectories_awaiting_expansion
@@ -177,13 +163,22 @@ where
         .problem
         .apply_action_batched(&mut worker.states_in_flight, &actions);
 
+      let expansion_result = if worker.states_awaiting_expansion.len() >= self.block_size as usize {
+        Some(
+          self
+            .static_estimator
+            .block_expand(self.problem, &worker.states_awaiting_expansion),
+        )
+      } else {
+        None
+      };
+
       // process backprop for trajectories that were terminated during select
       // expand nodes that are to be expanded
       // descend tree
       {
         let mut guard = self.forest.write().await;
         let mut bound_guard = self.score_bounds.write().await;
-        // process backprop queue
         for trajectory in worker.trajectories_awaiting_backprop.iter() {
           self.backpropogate(
             &mut guard,
@@ -201,38 +196,33 @@ where
           .zip(worker.trajectories_awaiting_expansion.iter_mut())
         {
           let current_agent_ix = self.problem.agent_to_act(state).into() as usize;
-          //println!("expanding :{}, agent: {}", state, current_agent_ix);
-          for (ix, node_id) in trajectory.current_.iter().enumerate() {
-            let node = guard.node_mut(*node_id);
-            if node.select_count() == 0 {
-              node.increment_select_count();
-              if current_agent_ix == ix {
-                node.create_actions(self.problem.legal_actions(state));
-              }
-            }
+          if !guard
+            .node(trajectory.current_[current_agent_ix])
+            .actions_created()
+          {
+            let node = guard.node_mut(trajectory.current_[current_agent_ix]);
+            node.create_actions(self.problem.legal_actions(state));
           }
         }
 
-        // todo: expansion
-        if worker.states_awaiting_expansion.len() >= self.block_size as usize {
-          
-          //println!("block init expansion");
-          // todo: fetch values by using block expansion
-
-          let values = self.node_init.block_init(
-            self.problem,
-            &worker.states_awaiting_expansion,
-            &mut guard,
-            &worker.trajectories_awaiting_expansion,
-          );
-
-          for (trajectory, value) in worker.trajectories_awaiting_expansion.iter().zip(values.into_iter()) {
-            self.backpropogate(
-              &mut guard,
-              &mut bound_guard,
-              trajectory,
-              value,
-            );
+        if expansion_result.is_some() {
+          let (v, p) = expansion_result.unwrap();
+          for ((state, trajectory), (value, static_policy)) in worker
+            .states_awaiting_expansion
+            .iter()
+            .zip(worker.trajectories_awaiting_expansion.iter())
+            .zip(v.into_iter().zip(p.into_iter()))
+          {
+            self.backpropogate(&mut guard, &mut bound_guard, trajectory, value);
+            let current_agent_ix = self.problem.agent_to_act(state).into() as usize;
+            for (a, pa) in static_policy {
+              guard
+                .node_mut(trajectory.current_[current_agent_ix])
+                .actions
+                .get_mut(&a)
+                .unwrap()
+                .static_policy_score = pa;
+            }
           }
           worker.trajectories_awaiting_expansion.clear();
           worker.states_awaiting_expansion.clear();
@@ -241,7 +231,6 @@ where
         worker
           .trajectories_in_flight
           .iter_mut()
-          // no nooed to mutate states now
           .zip(worker.states_in_flight.iter())
           .zip(
             actions
@@ -256,22 +245,12 @@ where
 
               // the state here has the action applied to it, but the trajectory's current points to the old one
 
-              // todo: capacity
-              let mut children_ix = vec![];
-              let mut branch_entry = vec![];
+              let mut children_ix = Vec::with_capacity(trajectory.current_.len());
+              let mut branch_entry = Vec::with_capacity(trajectory.current_.len());
               for (ix, node_id) in trajectory.current_.iter().enumerate() {
                 {
                   let node = guard.node_mut(*node_id);
                   node.increment_select_count();
-                  // on the first selection, we need to create the actions map
-                  // the policy weights are updated when the node is expanded
-                  // till then, the nodes are descended randomly
-                  // this not needed as the state will always be expanded first
-                  if ix == agent_ix && node.select_count() == 1 {
-                    println!(" this needed -----------------------------------<<----------------");
-                    node.create_actions(self.problem.legal_actions(state));
-                  }
-
                   if ix == agent_ix {
                     node
                       .actions

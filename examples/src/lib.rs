@@ -196,12 +196,7 @@ pub fn prob2() -> StaticPOMDP {
 pub mod tests {
   use std::fs::File;
 
-  use mcts::{
-    bandits::Uct,
-    forest::render::save,
-    search::Search,
-    EmptyInit, SearchLimit,
-  };
+  use mcts::{bandits::Uct, forest::render::save, search::Search, EmptyInit, SearchLimit};
 
   use super::*;
 

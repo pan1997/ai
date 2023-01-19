@@ -16,7 +16,7 @@ pub struct NodeId(usize);
 pub struct Node<A, O> {
   // todo: remove
   id: usize,
-
+  actions_created: bool,
   pub(crate) actions: BTreeMap<A, ActionInfo>,
   // index to children
   children: BTreeMap<O, NodeId>,
@@ -91,6 +91,7 @@ impl<A, O> Node<A, O> {
   fn new() -> Self {
     Self {
       id: 0,
+      actions_created: false,
       actions: BTreeMap::new(),
       children: BTreeMap::new(),
       select_count: 0,
@@ -103,6 +104,10 @@ impl<A, O> Node<A, O> {
 
   pub(crate) fn increment_select_count(&mut self) {
     self.select_count += 1;
+  }
+
+  pub(crate) fn actions_created(&self) -> bool {
+    self.actions_created
   }
 }
 
@@ -118,7 +123,9 @@ impl<A: Ord, O> Forest<A, O> {
 
 impl<A: Ord, O> Node<A, O> {
   pub(crate) fn create_actions(&mut self, actions: Vec<A>) {
-    debug_assert!(self.actions.is_empty(), "recreating actions");
+    println!("Creating actions on node:{}", self.id);
+    debug_assert!(!self.actions_created, "recreating actions");
+    self.actions_created = true;
     let s = 1.0 / actions.len() as f32;
     actions.into_iter().for_each(|action| {
       self.actions.insert(

@@ -7,36 +7,25 @@ pub mod forest;
 pub mod rollout;
 pub mod search;
 
-pub trait NodeInit<P: MctsProblem>: Copy {
-  // one node per player
+pub trait Expansion<P>: Copy
+where
+  P: MctsProblem,
+{
+  // scores per agent, and then static policy per action
+  fn expand(&self, p: &P, s: &P::HiddenState) -> (Vec<f32>, Vec<(P::Action, f32)>);
 
-  // we assume that the legal actions have been populated by search, and this is responsible for
-  // putting in the static policy scores, and providing a value estimate for the states
-
-  fn init_node(
+  fn block_expand(
     &self,
-    problem: &P,
-    state: &P::HiddenState,
-    node_of_current_agent: &mut Node<P::Action, P::Observation>,
-  ) -> Vec<f32>;
-
-  fn block_init(
-    &self,
-    problem: &P,
+    p: &P,
     states: &[P::HiddenState],
-    forest: &mut Forest<P::Action, P::Observation>,
-    trajectories: &[Trajectory<P::Action>],
-  ) -> Vec<Vec<f32>> {
-    let mut result = Vec::with_capacity(states.len());
-    for ix in 0..states.len() {
-      let current_agent_ix = problem.agent_to_act(&states[ix]).into() as usize;
-      result.push(self.init_node(
-        problem,
-        &states[ix],
-        forest.node_mut(trajectories[ix].current_[current_agent_ix]),
-      ));
-    }
-    result
+  ) -> (Vec<Vec<f32>>, Vec<Vec<(P::Action, f32)>>) {
+    let mut r1 = vec![];
+    let mut r2 = vec![];
+    states.iter().map(|s| self.expand(p, s)).for_each(|(v, p)| {
+      r1.push(v);
+      r2.push(p);
+    });
+    (r1, r2)
   }
 }
 

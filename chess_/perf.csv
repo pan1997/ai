@@ -10,3 +10,6 @@ vesrion,rollout,sample_count,time
 1,random,10000,4784
 2,zero,200000,1682
 2,zero,200000,1622
+2,random,10000,1277
+2,random,10000,1220
+2,random,10000,1237
