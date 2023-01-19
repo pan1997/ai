@@ -1,14 +1,14 @@
-use std::fmt::{Debug, Display};
+use std::{fmt::{Debug, Display}, sync::Arc};
 
 use futures::executor::block_on;
 use lib::MctsProblem;
-use mcts::{bandits::Bandit, search::Search, NodeInit, SearchLimit};
+use mcts::{bandits::Bandit, search::Search, SearchLimit, Expansion};
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
-fn playout<P: MctsProblem, B: Bandit<P::HiddenState, P::Action, P::Observation>, E: NodeInit<P>>(
-  problem: &P,
-  b_state: &P::BeliefState,
+fn playout<P: MctsProblem, B: Bandit<P::HiddenState, P::Action, P::Observation>, E: Expansion<P>>(
+  problem: Arc<P>,
+  b_state: Arc<P::BeliefState>,
   block_size: u32,
   limit: SearchLimit,
   bandit_policy: B,
@@ -18,23 +18,23 @@ fn playout<P: MctsProblem, B: Bandit<P::HiddenState, P::Action, P::Observation>,
 where
   P::HiddenState: Clone,
 {
-  let mut h_state = problem.sample_h_state(b_state);
+  let mut h_state = problem.sample_h_state(&b_state);
 
   let mut result = vec![];
   while horizon != 0 && !problem.check_terminal(&h_state) {
     horizon -= 1;
 
     let search = Search::new(
-      problem,
-      &b_state,
+      problem.clone(),
+      b_state.clone(),
       block_size,
       limit,
       bandit_policy,
       node_init,
     );
-    let mut workers = block_on(search.create_workers(1));
-    block_on(search.start(&mut workers[0]));
-    let computed_policy = block_on(search.get_policy());
+    let mut workers = search.create_workers(1);
+    search.start(&mut workers[0]);
+    let computed_policy = search.get_policy();
     let index = WeightedIndex::new(computed_policy.iter().map(|(_, w)| w)).unwrap();
     let selected_action = computed_policy[index.sample(&mut rand::thread_rng())]
       .0
@@ -87,6 +87,7 @@ impl<Ag, Ac: Display, O: Display> Debug for PlayoutStep<Ag, Ac, O> {
 #[cfg(test)]
 mod test {
   use examples::prob2;
+  use std::sync::Arc;
   use lib::MctsProblem;
   use mcts::{bandits::Uct, EmptyInit, SearchLimit};
 
@@ -94,11 +95,11 @@ mod test {
 
   #[test]
   fn t1() {
-    let m = prob2();
-    let start = m.start_state();
+    let m = Arc::new(prob2());
+    let start = Arc::new(m.start_state());
     let limit = SearchLimit::new(64);
     let bandit_policy = Uct(1.8);
-    let t = playout(&m, &start, 1, limit, bandit_policy, 20, EmptyInit);
+    let t = playout(m, start, 1, limit, bandit_policy, 20, EmptyInit);
     println!("{:?}", t);
   }
 }

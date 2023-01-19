@@ -123,7 +123,7 @@ impl<A: Ord, O> Forest<A, O> {
 
 impl<A: Ord, O> Node<A, O> {
   pub(crate) fn create_actions(&mut self, actions: Vec<A>) {
-    println!("Creating actions on node:{}", self.id);
+    //println!("Creating actions on node:{}", self.id);
     debug_assert!(!self.actions_created, "recreating actions");
     self.actions_created = true;
     let s = 1.0 / actions.len() as f32;

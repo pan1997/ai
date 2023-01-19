@@ -8,6 +8,6 @@ edition.workspace = true
 [dependencies]
 lib = {path = "../lib"}
 rand.workspace = true
-tokio.workspace = true
+crossbeam.workspace = true
 graphviz-rust.workspace = true
 futures.workspace = true

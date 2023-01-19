@@ -213,13 +213,10 @@ pub mod tests {
       Uct(2.4),
       EmptyInit,
     );
-    let rt = tokio::runtime::Builder::new_current_thread()
-      .build()
-      .unwrap();
-    let mut worker = rt.block_on(search.create_workers(1));
+    let mut worker = search.create_workers(1);
     println!("created");
-    rt.block_on(search.start(&mut worker[0]));
-    let forest = search.forest.blocking_read();
+    search.start(&mut worker[0]);
+    let forest = search.forest.read().unwrap();
     //println!("{:?}", forest);
     save(&forest, File::create("agent.dot").unwrap(), 0, 3);
   }
@@ -237,13 +234,10 @@ pub mod tests {
       Uct(1.2),
       EmptyInit,
     );
-    let rt = tokio::runtime::Builder::new_current_thread()
-      .build()
-      .unwrap();
-    let mut worker = rt.block_on(search.create_workers(1));
+    let mut worker = search.create_workers(1);
     println!("created");
-    rt.block_on(search.start(&mut worker[0]));
-    let forest = search.forest.blocking_read();
+    search.start(&mut worker[0]);
+    let forest = search.forest.read().unwrap();
     //println!("{:?}", forest);
     save(&forest, File::create("agent.dot").unwrap(), 500, 5);
   }

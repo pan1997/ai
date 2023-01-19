@@ -25,27 +25,20 @@ fn bench3() {
     Uct(2.5),
     RandomRollout(120),
   ));
-  let rt = tokio::runtime::Builder::new_multi_thread().build().unwrap();
-  let wc = 20;
-  //println!("created");
+  let wc = 12;
 
-  let join_hanldes = (0..wc).map(|_| {
-    let search_local = search.clone();
-    rt.spawn(async move {
-      let mut w = search_local.create_workers(1).await;
-      search_local.start(&mut w[0]).await
-    })
-  });
-
-  rt.block_on(async move {
-    for handle in join_hanldes {
-      handle.await;
+  crossbeam::scope(|s| {
+    for _ in 0..wc {
+      s.spawn(|_| {
+        let mut worker = search.create_workers(1);
+        search.start(&mut worker[0]);
+      });
     }
-  });
+  }).unwrap();
 
-  let forest = search.forest.blocking_read();
-  //println!("{:?}", forest);
-  //save(&forest, File::create("chess.dot").unwrap(), 500, 10);
+  let forest = search.forest.read().unwrap();
+  println!("{:?}", forest);
+  save(&forest, File::create("chess.dot").unwrap(), 5000, 10);
 }
 
 fn main() {

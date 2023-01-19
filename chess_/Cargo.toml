@@ -9,4 +9,4 @@ edition.workspace = true
 chess = "*"
 lib = {path = "../lib"}
 mcts = {path = "../mcts"}
-tokio.workspace = true
+crossbeam.workspace = true

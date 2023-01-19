@@ -1,8 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use lib::{utils::Bounds, MctsProblem};
-//use std::sync::RwLock;
-use tokio::sync::RwLock;
+use std::sync::RwLock;
 
 use crate::{
   bandits::Bandit,
@@ -79,10 +78,10 @@ where
     }
   }
 
-  pub async fn start(&self, worker: &mut Worker<P::HiddenState, P::Action>) {
+  pub fn start(&self, worker: &mut Worker<P::HiddenState, P::Action>) {
     // initialize root node if needed
     {
-      let mut guard = self.forest.write().await;
+      let mut guard = self.forest.write().unwrap();
       for (state, trajectory) in worker
         .states_in_flight
         .iter()
@@ -105,8 +104,8 @@ where
       //println!("worker trajectories: {:?}", worker.trajectories_in_flight);
       // select actions
       let agents_and_actions: Vec<_> = {
-        let guard = self.forest.read().await;
-        let bounds_guard = self.score_bounds.read().await;
+        let guard = self.forest.read().unwrap();
+        let bounds_guard = self.score_bounds.read().unwrap();
         // check if search budget remains
         let select_count_root = guard.node(guard.roots()[0]).select_count();
         if !self.limit.more(select_count_root) {
@@ -173,8 +172,8 @@ where
       // expand nodes that are to be expanded
       // descend tree
       {
-        let mut guard = self.forest.write().await;
-        let mut bound_guard = self.score_bounds.write().await;
+        let mut guard = self.forest.write().unwrap();
+        let mut bound_guard = self.score_bounds.write().unwrap();
         for trajectory in worker.trajectories_awaiting_backprop.iter() {
           self.backpropogate(
             &mut guard,
@@ -299,8 +298,8 @@ where
     //println!();
   }
 
-  pub async fn create_workers(&self, count: usize) -> Vec<Worker<P::HiddenState, P::Action>> {
-    let guard = self.forest.write().await;
+  pub fn create_workers(&self, count: usize) -> Vec<Worker<P::HiddenState, P::Action>> {
+    let guard = self.forest.write().unwrap();
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
       result.push(Worker {
@@ -316,8 +315,8 @@ where
     result
   }
 
-  pub async fn get_policy(&self) -> Vec<(P::Action, f32)> {
-    let guard = self.forest.read().await;
+  pub fn get_policy(&self) -> Vec<(P::Action, f32)> {
+    let guard = self.forest.read().unwrap();
     let agent_ix = self
       .problem
       .agent_to_act(&self.problem.sample_h_state(&self.b_state))

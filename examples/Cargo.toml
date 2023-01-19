@@ -9,4 +9,4 @@ edition = "2021"
 lib = {path = "../lib"}
 mcts = {path = "../mcts"}
 rand.workspace = true
-tokio.workspace = true
+crossbeam.workspace = true
