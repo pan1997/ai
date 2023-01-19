@@ -1,6 +1,7 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use lib::{utils::Bounds, MctsProblem};
+//use std::sync::RwLock;
 use tokio::sync::RwLock;
 
 use crate::{
@@ -9,9 +10,9 @@ use crate::{
   Expansion, SearchLimit,
 };
 
-pub struct Search<'a, 'b, P: MctsProblem, B, E> {
-  problem: &'a P,
-  b_state: &'b P::BeliefState,
+pub struct Search<P: MctsProblem, B, E> {
+  problem: Arc<P>,
+  b_state: Arc<P::BeliefState>,
   // todo: remove pub
   pub forest: RwLock<Forest<P::Action, P::Observation>>,
   block_size: u32,
@@ -45,7 +46,7 @@ pub struct Trajectory<A: Clone> {
   branch: Vec<(Vec<(NodeId, f32)>, (usize, A))>,
 }
 
-impl<'a, 'b, P: MctsProblem, B, E> Search<'a, 'b, P, B, E>
+impl<P: MctsProblem, B, E> Search<P, B, E>
 where
   B: Bandit<P::HiddenState, P::Action, P::Observation>,
   // todo: remove this requirement
@@ -53,8 +54,8 @@ where
   E: Expansion<P>,
 {
   pub fn new(
-    problem: &'a P,
-    b_state: &'b P::BeliefState,
+    problem: Arc<P>,
+    b_state: Arc<P::BeliefState>,
     block_size: u32,
     limit: SearchLimit,
     bandit_policy: B,
@@ -92,7 +93,7 @@ where
         let node = guard.node_mut(node_id);
         if !node.actions_created() {
           node.create_actions(self.problem.legal_actions(state));
-          let (_, p) = self.static_estimator.expand(self.problem, state);
+          let (_, p) = self.static_estimator.expand(&self.problem, state);
           for (a, pa) in p {
             node.actions.get_mut(&a).unwrap().static_policy_score = pa;
           }
@@ -116,16 +117,11 @@ where
           .iter_mut()
           .zip(worker.states_in_flight.iter_mut())
           .map(|(trajectory, state)| {
-            // todo: relax assumption that starting state is non terminal
             if self.problem.check_terminal(&state) {
-              //println!("terminal, so moved to termimal queue");
-              // state is terminal
               worker
                 .trajectories_awaiting_backprop
                 .push(trajectory.clone());
-              //self.backpropogate(trajectory, vec![0.0]);
-              // todo add batching support
-              *state = self.problem.sample_h_state(self.b_state);
+              *state = self.problem.sample_h_state(&self.b_state);
               self.restart_trajectory(&guard, trajectory);
             }
             // its guaranteed that the state is not terminal
@@ -138,7 +134,7 @@ where
                 .trajectories_awaiting_expansion
                 .push(trajectory.clone());
 
-              *state = self.problem.sample_h_state(self.b_state);
+              *state = self.problem.sample_h_state(&self.b_state);
               self.restart_trajectory(&guard, trajectory);
             }
 
@@ -167,7 +163,7 @@ where
         Some(
           self
             .static_estimator
-            .block_expand(self.problem, &worker.states_awaiting_expansion),
+            .block_expand(&self.problem, &worker.states_awaiting_expansion),
         )
       } else {
         None
@@ -310,7 +306,7 @@ where
       result.push(Worker {
         states_in_flight: self
           .problem
-          .sample_h_state_batched(self.b_state, self.block_size as usize),
+          .sample_h_state_batched(&self.b_state, self.block_size as usize),
         trajectories_in_flight: vec![self.empty_trajectory(&guard); self.block_size as usize],
         trajectories_awaiting_expansion: vec![],
         states_awaiting_expansion: vec![],
@@ -324,7 +320,7 @@ where
     let guard = self.forest.read().await;
     let agent_ix = self
       .problem
-      .agent_to_act(&self.problem.sample_h_state(self.b_state))
+      .agent_to_act(&self.problem.sample_h_state(&self.b_state))
       .into() as usize;
     let root_id = guard.roots()[agent_ix];
     let root = guard.node(root_id);

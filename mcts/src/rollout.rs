@@ -16,7 +16,11 @@ where
   P::HiddenState: Clone,
   P::Action: Display,
 {
-  fn expand(&self, problem: &P, state: &<P as MctsProblem>::HiddenState) -> (Vec<f32>, Vec<(<P as MctsProblem>::Action, f32)>) {
+  fn expand(
+    &self,
+    problem: &P,
+    state: &<P as MctsProblem>::HiddenState,
+  ) -> (Vec<f32>, Vec<(<P as MctsProblem>::Action, f32)>) {
     let mut _state = state.clone();
     let mut total = vec![0.0; problem.agents().len()];
     let mut factor = 1.0;

@@ -194,7 +194,7 @@ pub fn prob2() -> StaticPOMDP {
 }
 #[cfg(test)]
 pub mod tests {
-  use std::fs::File;
+  use std::{fs::File, sync::Arc};
 
   use mcts::{bandits::Uct, forest::render::save, search::Search, EmptyInit, SearchLimit};
 
@@ -202,10 +202,17 @@ pub mod tests {
 
   #[test]
   fn test1() {
-    let problem = prob1();
-    let start_state = problem.start_state();
+    let problem = Arc::new(prob1());
+    let start_state = Arc::new(problem.start_state());
     let limit = SearchLimit::new(1000);
-    let search = Search::new(&problem, &start_state, 1, limit, Uct(2.4), EmptyInit);
+    let search = Search::new(
+      problem.clone(),
+      start_state.clone(),
+      1,
+      limit,
+      Uct(2.4),
+      EmptyInit,
+    );
     let rt = tokio::runtime::Builder::new_current_thread()
       .build()
       .unwrap();
@@ -219,10 +226,17 @@ pub mod tests {
 
   #[test]
   fn test2() {
-    let problem = prob2();
-    let start_state = problem.start_state();
+    let problem = Arc::new(prob2());
+    let start_state = Arc::new(problem.start_state());
     let limit = SearchLimit::new(10000);
-    let search = Search::new(&problem, &start_state, 1, limit, Uct(1.2), EmptyInit);
+    let search = Search::new(
+      problem.clone(),
+      start_state.clone(),
+      1,
+      limit,
+      Uct(1.2),
+      EmptyInit,
+    );
     let rt = tokio::runtime::Builder::new_current_thread()
       .build()
       .unwrap();
