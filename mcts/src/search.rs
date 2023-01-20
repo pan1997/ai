@@ -315,7 +315,7 @@ where
     result
   }
 
-  pub fn get_policy(&self) -> Vec<(P::Action, f32)> {
+  pub fn get_policy(&self) -> Vec<(P::Action, f32, f32)> {
     let guard = self.forest.read().unwrap();
     let agent_ix = self
       .problem
@@ -327,7 +327,7 @@ where
     root
       .actions
       .iter()
-      .map(|(a, data)| (a.clone(), data.select_count() as f32 / root_s_count))
+      .map(|(a, data)| (a.clone(), data.select_count() as f32 / root_s_count, data.value()))
       .collect()
   }
 

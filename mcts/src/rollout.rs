@@ -14,7 +14,7 @@ pub struct EmptyInit;
 impl<P: MctsProblem> Expansion<P> for RandomRollout
 where
   P::HiddenState: Clone,
-  P::Action: Display,
+  //P::Action: Display,
 {
   fn expand(
     &self,

@@ -26,3 +26,4 @@ serde_with = "*"
 tokio = {version = "*", features = ["sync", "rt", "rt-multi-thread"]}
 crossbeam = "*"
 futures = "*"
+text_io = "*"
