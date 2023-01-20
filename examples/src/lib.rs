@@ -24,7 +24,7 @@ struct StateDef {
   outgoing_actions: BTreeMap<usize, ActionDef>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BeliefState {
   state_probs: Vec<f32>,
 }

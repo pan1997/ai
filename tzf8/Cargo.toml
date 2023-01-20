@@ -10,9 +10,14 @@ lib = {path = "../lib"}
 mcts = {path = "../mcts"}
 rand.workspace = true
 text_io.workspace = true
+ml = {path = "../ml"}
+crossbeam.workspace = true
 
 [[bin]]
 name = "tzf8_expert"
 
 [[bin]]
 name = "tzf8_game"
+
+[[bin]]
+name = "tzf8_sample"

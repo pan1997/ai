@@ -71,3 +71,19 @@ impl<S, A: Clone, O> Bandit<S, A, O> for Puct {
     best_a.unwrap().clone()
   }
 }
+
+
+impl<S, A: Clone, O> Bandit<S, A, O> for GreedyBandit {
+  fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
+    let mut best_s = 0;
+    let mut best_a = None;
+    for (a, data) in node.actions.iter() {
+      let score = data.select_count();
+      if score > best_s {
+        best_s = score;
+        best_a = Some(a);
+      }
+    }
+    best_a.unwrap().clone()
+  }
+}

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 
 use lib::MctsProblem;
 use rand::{seq::IteratorRandom, Rng};
@@ -210,6 +210,18 @@ impl State {
     };
     (v, r as u8, c as u8)
   }
+
+  pub fn largest_tile(&self) -> u32 {
+    let mut max = 0;
+    for r in 0..4 {
+      for c in 0..4 {
+        if max < self.board[r][c] {
+          max = self.board[r][c];
+        }
+      }
+    }
+    max
+  }
 }
 
 fn compress(row: &mut [u32]) -> bool {
@@ -258,6 +270,12 @@ impl Display for Observation {
   }
 }
 
+impl Debug for Observation {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      write!(f, "{}", self)
+  }
+}
+
 impl Display for State {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{:2}", ' ')?;
@@ -276,6 +294,11 @@ impl Display for State {
   }
 }
 
+impl Debug for State {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      write!(f, "{}", self)
+  }
+}
 
 #[cfg(test)]
 mod tests {
@@ -284,6 +307,7 @@ mod tests {
   use mcts::{
     bandits::Uct, forest::render::save, rollout::RandomRollout, search::Search, SearchLimit,
   };
+  use ml::{playout, accumulate_rewards};
 
   use crate::*;
 
@@ -318,5 +342,17 @@ mod tests {
     let forest = search.forest.read().unwrap();
     //println!("{:?}", forest);
     save(&forest, File::create("tzf8.dot").unwrap(), 500, 5);
+  }
+
+  #[test]
+  fn test_tzf8_playout() {
+    let m = Arc::new(Tzf8);
+    let mut start = m.start_state();
+    let limit = SearchLimit::new(128);
+    let bandit_policy = Uct(1.8);
+    let t = playout(m, &mut start, 1, limit, bandit_policy, u32::MAX, RandomRollout(20), true);
+    let r = accumulate_rewards(&Tzf8, &t);
+    println!("{}", start);
+    println!("total: {r:?}")
   }
 }

@@ -1,0 +1,30 @@
+Uct(1.8), 128 node, random rollout(20)
+counts: {256: 6, 512: 27, 1024: 62, 2048: 5}
+
+
+Uct(1.8), 256 node, random rollout(20)
+counts: {512: 30, 1024: 56, 2048: 14}
+
+
+Uct(1.8), 128 node, random rollout(40)
+counts: {128: 1, 256: 3, 512: 39, 1024: 52, 2048: 5}
+
+
+Uct(2.4), 256 node, random rollout(40)
+counts: {512: 20, 1024: 72, 2048: 8}
+
+
+Uct(1.2), 256 node, random rollout(40)
+counts: {512: 23, 1024: 63, 2048: 14}
+
+
+Uct(1.2), 512 node, random rollout(40)
+counts: {256: 2, 512: 9, 1024: 70, 2048: 19}
+counts: Mutex { data: {512: 21, 1024: 63, 2048: 16}, poisoned: false, .. }
+
+Uct(1.2), 2048 node, random rollout(40)
+counts: Mutex { data: {512: 5, 1024: 55, 2048: 40}, poisoned: false, .. }
+
+Uct(1.2), 10000 node, random rollout(40)
+counts: Mutex { data: {512: 8, 1024: 40, 2048: 50, 4096: 2}, poisoned: false, .. }
+
