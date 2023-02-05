@@ -1,8 +1,9 @@
-use tzf8::{Tzf8, State, Move};
-use lib::MctsProblem;
-use text_io::read;
 use std::sync::Arc;
-use mcts::{SearchLimit, search::Search, rollout::RandomRollout, bandits::Uct};
+
+use lib::MctsProblem;
+use mcts::{bandits::Uct, rollout::RandomRollout, search::Search, SearchLimit};
+use text_io::read;
+use tzf8::{Move, State, Tzf8};
 
 fn main() {
   let game = Arc::new(Tzf8);
@@ -48,8 +49,10 @@ fn main() {
       }
       "d" => {
         current_state.apply_move(&Move::Down);
-      },
-      _ => {panic!("unknown move")}
+      }
+      _ => {
+        panic!("unknown move")
+      }
     }
     let r: u8 = read!();
     let c: u8 = read!();

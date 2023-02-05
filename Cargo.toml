@@ -1,10 +1,12 @@
 [workspace]
 members = [
   "examples",
+  "experiment",
   "lib",
   "mcts",
   "blokus",
   "tzf8",
+  "connection",
   "chess_",
   "ml",
   "sat"
@@ -18,12 +20,10 @@ edition = "2021"
 [workspace.dependencies]
 rand = "*"
 graphviz-rust = "*"
-num = "*"
-num-traits = "*"
-num-derive = "*"
 serde = {version = "*", features = ["derive"]}
 serde_with = "*"
-tokio = {version = "*", features = ["sync", "rt", "rt-multi-thread"]}
+# tokio = {version = "*", features = ["sync", "rt", "rt-multi-thread"]}
 crossbeam = "*"
 futures = "*"
 text_io = "*"
+fixedbitset = "*"

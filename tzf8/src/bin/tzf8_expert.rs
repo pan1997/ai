@@ -1,7 +1,8 @@
-use mcts::{SearchLimit, search::Search, rollout::RandomRollout, bandits::Uct};
-use text_io::read;
-use tzf8::{Tzf8, State, Move};
 use std::sync::Arc;
+
+use mcts::{bandits::Uct, rollout::RandomRollout, search::Search, SearchLimit};
+use text_io::read;
+use tzf8::{Move, State, Tzf8};
 
 fn main() {
   let prompt = ">";

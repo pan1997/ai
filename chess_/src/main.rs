@@ -34,11 +34,12 @@ fn bench3() {
         search.start(&mut worker[0]);
       });
     }
-  }).unwrap();
+  })
+  .unwrap();
 
-  let forest = search.forest.read().unwrap();
-  println!("{:?}", forest);
-  save(&forest, File::create("chess.dot").unwrap(), 5000, 10);
+  //let forest = search.forest.read().unwrap();
+  //println!("{:?}", forest);
+  //save(&forest, File::create("chess.dot").unwrap(), 5000, 10);
 }
 
 fn main() {

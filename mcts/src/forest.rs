@@ -14,8 +14,6 @@ pub struct NodeId(usize);
 
 #[derive(Debug)]
 pub struct Node<A, O> {
-  // todo: remove
-  id: usize,
   actions_created: bool,
   pub(crate) actions: BTreeMap<A, ActionInfo>,
   // index to children
@@ -66,7 +64,7 @@ where
   fn new_node(&mut self) -> NodeId {
     let id = self.nodes.len();
     self.nodes.push(Node::new());
-    self.nodes[id].id = id;
+    //self.nodes[id].id = id;
     NodeId(id)
   }
 
@@ -90,7 +88,7 @@ where
 impl<A, O> Node<A, O> {
   fn new() -> Self {
     Self {
-      id: 0,
+      //id: 0,
       actions_created: false,
       actions: BTreeMap::new(),
       children: BTreeMap::new(),
@@ -157,7 +155,7 @@ impl ActionInfo {
 
 impl<A: Display, O: Display> Display for Node<A, O> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Node {{\"id\": {}", self.id)?;
+    //write!(f, "Node {{\"id\": {}", self.id)?;
     let actions: Vec<_> = self.actions.keys().map(|k| k.to_string()).collect();
     write!(f, "\"actions\": {:?}", actions)?;
     let children: Vec<_> = self

@@ -1,7 +1,9 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{
+  fmt::Debug,
+  sync::{Arc, RwLock},
+};
 
 use lib::{utils::Bounds, MctsProblem};
-use std::sync::RwLock;
 
 use crate::{
   bandits::Bandit,
@@ -327,7 +329,13 @@ where
     root
       .actions
       .iter()
-      .map(|(a, data)| (a.clone(), data.select_count() as f32 / root_s_count, data.value()))
+      .map(|(a, data)| {
+        (
+          a.clone(),
+          data.select_count() as f32 / root_s_count,
+          data.value(),
+        )
+      })
       .collect()
   }
 

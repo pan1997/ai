@@ -72,7 +72,6 @@ impl<S, A: Clone, O> Bandit<S, A, O> for Puct {
   }
 }
 
-
 impl<S, A: Clone, O> Bandit<S, A, O> for GreedyBandit {
   fn select(&self, _state: &S, node: &Node<A, O>, bounds: &Bounds) -> A {
     let mut best_s = 0;

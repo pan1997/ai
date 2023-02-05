@@ -1,12 +1,23 @@
-use std::{fmt::{Debug, Display}, sync::Arc};
+use std::{
+  fmt::{Debug, Display},
+  sync::Arc,
+};
 
 use futures::executor::block_on;
 use lib::MctsProblem;
-use mcts::{bandits::{Bandit, GreedyBandit}, search::Search, SearchLimit, Expansion};
+use mcts::{
+  bandits::{Bandit, GreedyBandit},
+  search::Search,
+  Expansion, SearchLimit,
+};
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
-pub fn playout<P: MctsProblem, B: Bandit<P::HiddenState, P::Action, P::Observation>, E: Expansion<P>>(
+pub fn playout<
+  P: MctsProblem,
+  B: Bandit<P::HiddenState, P::Action, P::Observation>,
+  E: Expansion<P>,
+>(
   problem: Arc<P>,
   b_state: &mut P::BeliefState,
   block_size: u32,
@@ -14,7 +25,7 @@ pub fn playout<P: MctsProblem, B: Bandit<P::HiddenState, P::Action, P::Observati
   bandit_policy: B,
   mut horizon: u32,
   node_init: E,
-  best_only: bool
+  best_only: bool,
 ) -> Vec<PlayoutStep<P::Agent, P::Action, P::Observation>>
 where
   P::HiddenState: Clone + Debug,
@@ -42,13 +53,14 @@ where
     search.start(&mut workers[0]);
     let computed_policy = search.get_policy();
     let selected_action = if best_only {
-        computed_policy
+      computed_policy
         .iter()
         .max_by(|(_, a, _), (_, b, _)| a.total_cmp(b))
-        .map(|(action, _, _)| action.clone()).unwrap()
+        .map(|(action, ..)| action.clone())
+        .unwrap()
     } else {
-        let index = WeightedIndex::new(computed_policy.iter().map(|(_, w, _)| w)).unwrap();
-        computed_policy[index.sample(&mut rand::thread_rng())]
+      let index = WeightedIndex::new(computed_policy.iter().map(|(_, w, _)| w)).unwrap();
+      computed_policy[index.sample(&mut rand::thread_rng())]
         .0
         .clone()
     };
@@ -103,8 +115,9 @@ impl<Ag, Ac: Display + Debug, O: Display> Debug for PlayoutStep<Ag, Ac, O> {
 
 #[cfg(test)]
 mod test {
-  use examples::prob2;
   use std::sync::Arc;
+
+  use examples::prob2;
   use lib::MctsProblem;
   use mcts::{bandits::Uct, EmptyInit, SearchLimit};
 

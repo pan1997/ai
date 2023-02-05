@@ -171,6 +171,23 @@ impl Display for Observation {
   }
 }
 
+pub fn prob1() -> StaticPOMDP {
+  let mut s_prob = vec![0.0; 10];
+  s_prob[0] = 0.5;
+  s_prob[5] = 0.5;
+  let mut m = StaticPOMDP::new(10, 5, 5, s_prob, 1.0);
+  m.add_transition(0, 1, 1, 0, 0.0, 1.0);
+  m.add_transition(0, 2, 2, 0, 0.5, 1.0);
+  m.add_transition(1, 3, 3, 1, -1.0, 1.0);
+
+  m.add_transition(1, 4, 4, 2, 1.0, 1.0);
+  m.add_transition(5, 1, 6, 0, 0.0, 1.0);
+  m.add_transition(5, 2, 7, 0, 0.5, 1.0);
+  m.add_transition(6, 3, 8, 3, 1.0, 1.0);
+  m.add_transition(6, 4, 9, 4, -1.0, 1.0);
+  m
+}
+
 pub fn prob2() -> StaticPOMDP {
   let mut m = StaticPOMDP::new(3, 2, 3, vec![1.0, 0.0, 0.0], 1.0);
 
@@ -240,22 +257,5 @@ pub mod tests {
     let forest = search.forest.read().unwrap();
     //println!("{:?}", forest);
     save(&forest, File::create("agent.dot").unwrap(), 500, 5);
-  }
-
-  pub fn prob1() -> StaticPOMDP {
-    let mut s_prob = vec![0.0; 10];
-    s_prob[0] = 0.5;
-    s_prob[5] = 0.5;
-    let mut m = StaticPOMDP::new(10, 5, 5, s_prob, 1.0);
-    m.add_transition(0, 1, 1, 0, 0.0, 1.0);
-    m.add_transition(0, 2, 2, 0, 0.5, 1.0);
-    m.add_transition(1, 3, 3, 1, -1.0, 1.0);
-
-    m.add_transition(1, 4, 4, 2, 1.0, 1.0);
-    m.add_transition(5, 1, 6, 0, 0.0, 1.0);
-    m.add_transition(5, 2, 7, 0, 0.5, 1.0);
-    m.add_transition(6, 3, 8, 3, 1.0, 1.0);
-    m.add_transition(6, 4, 9, 4, -1.0, 1.0);
-    m
   }
 }

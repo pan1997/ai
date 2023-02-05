@@ -1,4 +1,4 @@
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 
 use lib::MctsProblem;
 use rand::{seq::IteratorRandom, Rng};
@@ -272,7 +272,7 @@ impl Display for Observation {
 
 impl Debug for Observation {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-      write!(f, "{}", self)
+    write!(f, "{}", self)
   }
 }
 
@@ -283,20 +283,20 @@ impl Display for State {
       write!(f, "|{c:7}")?;
     }
     writeln!(f, "|\n")?;
-      for r in 0..4 {
-        write!(f, "{:2}", 3 - r)?;
-        for c in 0..4 {
-          write!(f, "|{:7}", self.board[r][c])?;
-        }
-        writeln!(f, "|")?;
+    for r in 0..4 {
+      write!(f, "{:2}", 3 - r)?;
+      for c in 0..4 {
+        write!(f, "|{:7}", self.board[r][c])?;
       }
-      Ok(())
+      writeln!(f, "|")?;
+    }
+    Ok(())
   }
 }
 
 impl Debug for State {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-      write!(f, "{}", self)
+    write!(f, "{}", self)
   }
 }
 
@@ -307,7 +307,7 @@ mod tests {
   use mcts::{
     bandits::Uct, forest::render::save, rollout::RandomRollout, search::Search, SearchLimit,
   };
-  use ml::{playout, accumulate_rewards};
+  use ml::{accumulate_rewards, playout};
 
   use crate::*;
 
@@ -350,7 +350,16 @@ mod tests {
     let mut start = m.start_state();
     let limit = SearchLimit::new(128);
     let bandit_policy = Uct(1.8);
-    let t = playout(m, &mut start, 1, limit, bandit_policy, u32::MAX, RandomRollout(20), true);
+    let t = playout(
+      m,
+      &mut start,
+      1,
+      limit,
+      bandit_policy,
+      u32::MAX,
+      RandomRollout(20),
+      true,
+    );
     let r = accumulate_rewards(&Tzf8, &t);
     println!("{}", start);
     println!("total: {r:?}")

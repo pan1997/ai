@@ -2,6 +2,7 @@ pub trait MctsProblem {
   type Agent: Copy + Into<u8>;
 
   type Action: Clone + Ord;
+  //type Actions: IntoIterator<Item = Self::Action>;
 
   type Observation: Clone + Ord;
 

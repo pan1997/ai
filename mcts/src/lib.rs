@@ -6,6 +6,7 @@ pub mod bandits;
 pub mod forest;
 pub mod rollout;
 pub mod search;
+mod experiments;
 
 pub trait Expansion<P>: Copy
 where
