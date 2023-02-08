@@ -106,10 +106,13 @@ where
       //println!("worker trajectories: {:?}", worker.trajectories_in_flight);
       // select actions
       let agents_and_actions: Vec<_> = {
-        let guard = self.forest.read().unwrap();
+        //let guard = self.forest.read().unwrap();
         let bounds_guard = self.score_bounds.read().unwrap();
         // check if search budget remains
-        let select_count_root = guard.node(guard.roots()[0]).select_count();
+        let select_count_root = {
+          let guard = self.forest.read().unwrap();
+          guard.node(guard.roots()[0]).select_count()
+        };
         if !self.limit.more(select_count_root) {
           return;
         }
@@ -118,6 +121,7 @@ where
           .iter_mut()
           .zip(worker.states_in_flight.iter_mut())
           .map(|(trajectory, state)| {
+            let guard = self.forest.read().unwrap();
             if self.problem.check_terminal(&state) {
               worker
                 .trajectories_awaiting_backprop
