@@ -64,18 +64,26 @@ use lib::utils::RunningAverage;
 use std::sync::Arc;
 
 
+/*
 struct Node<A, O> {
   // children are behind a mutex
   children: RwLock<BTreeMap<O, Arc<Node<A, O>>>>,
   // data is behind rw lock
   // is none when the node has never been expanded
-  data: RwLock<Option<NodeData<A>>>
+  data: RwLock<Option<NodeData<A, O>>>
+}*/
+
+type Node<A, O> = RwLock<NodeData<A, O>>;
+
+struct NodeData<A, O> {
+  stats: Option<A>,
+  children: BTreeMap<O, Arc<Node<A, O>>>
 }
 
-struct NodeData<A> {
+struct NodeStats<A> {
   action_data: BTreeMap<A, ActionInfo>,
   select_count: u32,
-  value: RunningAverage
+  value: RunningAverage,
 }
 
 struct ActionInfo {
@@ -85,32 +93,26 @@ struct ActionInfo {
   static_policy_score: f32,
 }
 
-impl<A,O> Node<A, O> {
+impl<A,O> NodeData<A, O> {
   fn new() -> Self {
     Self { 
-      children: RwLock::new(BTreeMap::new()), 
-      data: RwLock::new(None) 
+      children: BTreeMap::new(),
+      stats: None
     }
   }
 }
 
-impl<A, O: Ord + Clone> Node<A, O>{
-  fn get_child(&self, o: O) -> Arc<Self> {
-    let guard = self.children.read().unwrap();
-    if !guard.contains_key(&o) {
-      drop(guard);
-      let mut lock = self.children.write().unwrap();
+impl<A, O: Ord + Clone> NodeData<A, O>{
+  fn get_child(&mut self, o: O) -> Arc<Node<A, O>> {
+    //let guard = self.children.read().unwrap();
+    if !self.children.contains_key(&o) {
       // we need to check once again if the child hasn't been created by a 
       // competing thread
-      if !lock.contains_key(&o) {
-        let result = Arc::new(Node::new());
-        lock.insert(o.clone(), result.clone());
-        result
-      } else {
-        lock[&o].clone()
-      }
+      let result = Arc::new(RwLock::new(NodeData::new()));
+      self.children.insert(o.clone(), result.clone());
+      result
     } else {
-      guard[&o].clone()
+      self.children[&o].clone()
     }
   }
 }
