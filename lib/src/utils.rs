@@ -1,3 +1,5 @@
+use std::sync::{Condvar, Mutex, RwLock};
+
 #[derive(Debug)]
 pub struct RunningAverage {
   mean: f32,
@@ -67,3 +69,43 @@ impl Bounds {
     }
   }
 }
+
+/*
+struct Batch<A, B, C> {
+  size: usize,
+  computation: C,
+  
+  input: Mutex<Vec<A>>,
+  output: RwLock<Option<Vec<B>>>,
+  full: Condvar
+}
+
+impl<A, B, C> Batch<A, B, C> {
+  fn new(size: usize, computation: C) -> Self {
+    Self {
+      size,
+      computation,
+      input: Mutex::new(Vec::with_capacity(N)),
+      output: RwLock::new(None),
+      full: Condvar::new()
+    }
+  }
+
+  fn process(&self, x: A) -> B where C: Fn(&[A]) -> [B] {
+    let mut input_guard = self.input.lock().unwrap();
+    // clear if full?
+    let index = input_guard.len();
+    input_guard.push(x);
+
+    if input_guard.len() >= self.size {
+      let mut output_guard = self.output.write().unwrap();
+      output_guard.replace((self.computation)(&input_guard));
+      self.full.notify_all();
+    } else {
+      let _guard = self.full.wait_while(input_guard, |g| g.len() < self.size).unwrap();
+    }
+    self.output.read().unwrap()
+
+    unimplemented!()
+  }
+}*/

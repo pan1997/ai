@@ -3,10 +3,10 @@ use lib::MctsProblem;
 use search::Trajectory;
 
 pub mod bandits;
+mod experiments;
 pub mod forest;
 pub mod rollout;
 pub mod search;
-mod experiments;
 
 pub trait Expansion<P>: Copy
 where
