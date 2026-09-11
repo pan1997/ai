@@ -87,7 +87,8 @@ impl SequentialScheduler {
                     if !child.is_valid() {
                         // Newly discovered node
                         tree.set_edge_reward(edge, outcome.reward);
-                        let inserted = tree.insert_node(edge, mcts_traits::AgentId(0));
+                        let agent = dynamics.current_agent(&state);
+                        let inserted = tree.insert_node(edge, agent);
                         current_node = inserted;
                         if outcome.terminated {
                             tree.mark_terminal(current_node);

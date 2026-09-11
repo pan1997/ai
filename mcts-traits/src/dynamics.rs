@@ -72,6 +72,14 @@ pub trait AgentDynamics {
     /// Modifies `s` directly without heap allocation or intermediate cloning, returning the
     /// immediate reward and termination status.
     fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward>;
+
+    /// Returns the active agent ID whose turn it is to act in state `s`.
+    ///
+    /// Defaults to `AgentId(0)` for single-agent environments.
+    #[inline]
+    fn current_agent(&self, _s: &Self::State) -> crate::AgentId {
+        crate::AgentId(0)
+    }
 }
 
 /// High-throughput batched dynamics for vectorized environments or MuZero neural dynamics.

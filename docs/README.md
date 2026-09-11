@@ -52,7 +52,8 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 |---|---|---|
 | [`mcts-traits`](file:///home/pankaj/Projects/ai/mcts-traits) | `mcts-traits/` | Core abstractions: `AgentDynamics`, `BatchedAgentDynamics`, `Model`, `BatchedModel`, `World`, `Evaluation`, `AgentId`. |
 | [`mcts-engine`](file:///home/pankaj/Projects/ai/mcts-engine) | `mcts-engine/` | SoA `TreeStore`, `UctSelection`, `MultiAgentPuctSelection`, `GumbelPuctSelection`, `VectorBackup`, and schedulers. |
-| [`mcts-envs`](file:///home/pankaj/Projects/ai/mcts-envs) | `mcts-envs/` | Reference environments: Connect 4, Hex, 2048, Kuhn Poker, plus rollout and baseline uniform evaluators. |
+| [`mcts-envs`](file:///home/pankaj/Projects/ai/mcts-envs) | `mcts-envs/` | Reference environments: Hex, 2048, Kuhn Poker, plus rollout and baseline uniform evaluators. |
+| [`connect4`](file:///home/pankaj/Projects/ai/connect4) | `connect4/` | Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players (`connect4-play`, `connect4-tournament`). |
 
 ---
 

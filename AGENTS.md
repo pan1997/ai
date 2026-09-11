@@ -6,18 +6,20 @@ This document provides operational instructions, architectural invariants, and d
 
 ## 1. Project Overview & Boundaries
 
-This repository is a high-performance, zero-allocation Monte Carlo Tree Search (MCTS) toolkit partitioned into three decoupled crates:
+This repository is a high-performance, zero-allocation Monte Carlo Tree Search (MCTS) toolkit partitioned into decoupled crates:
 
 ```
 mcts-traits/  --> Zero-dependency traits and interfaces (abstractions only)
 mcts-engine/  --> Core Structure-of-Arrays (SoA) engine, selection, backup, and schedulers
 mcts-envs/    --> Reference environments, benchmark games, and heuristic/rollout evaluators
+connect4/     --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
 ```
 
 ### Dependency Rules
-1. `mcts-traits` **must never** depend on `mcts-engine` or `mcts-envs`.
-2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`.
+1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, or `connect4`.
+2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs` or `connect4`.
 3. `mcts-envs` depends on `mcts-traits` and optionally `mcts-engine` (for testing and integration).
+4. Environment crates (e.g. `connect4`) depend on `mcts-traits` and `mcts-engine`.
 
 ---
 

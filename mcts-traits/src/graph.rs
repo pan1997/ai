@@ -100,6 +100,10 @@ impl<const N: usize> AgentDynamics for GraphEnv<N> {
         *s = t.next_state;
         StepOutcome::new(t.reward, t.terminated)
     }
+
+    fn current_agent(&self, s: &Self::State) -> crate::AgentId {
+        *self.state_agents.get(s).unwrap_or(&crate::AgentId(0))
+    }
 }
 
 impl<const N: usize> BatchedAgentDynamics for GraphEnv<N> {

@@ -1,0 +1,20 @@
+[package]
+name = "connect4"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance Connect 4 game engine, MCTS agents, and interactive CLI players"
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+rand = { workspace = true }
+
+[[bin]]
+name = "connect4-play"
+path = "src/bin/play.rs"
+
+[[bin]]
+name = "connect4-tournament"
+path = "src/bin/tournament.rs"

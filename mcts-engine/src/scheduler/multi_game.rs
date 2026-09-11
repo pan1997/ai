@@ -142,7 +142,8 @@ impl MultiGameScheduler {
                     let child = trees[b].edge_child(edge);
                     if !child.is_valid() {
                         trees[b].set_edge_reward(edge, outcome.reward.clone());
-                        let inserted = trees[b].insert_node(edge, mcts_traits::AgentId(0));
+                        let agent = dynamics.current_agent(&current_state[b]);
+                        let inserted = trees[b].insert_node(edge, agent);
                         current_node[b] = inserted;
                         if outcome.terminated {
                             trees[b].mark_terminal(inserted);

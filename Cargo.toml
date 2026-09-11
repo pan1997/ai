@@ -4,6 +4,7 @@ members = [
     "mcts-traits",
     "mcts-engine",
     "mcts-envs",
+    "connect4",
 ]
 
 [workspace.package]
@@ -16,5 +17,6 @@ license = "MIT OR Apache-2.0"
 mcts-traits = { path = "mcts-traits" }
 mcts-engine = { path = "mcts-engine" }
 mcts-envs = { path = "mcts-envs" }
+connect4 = { path = "connect4" }
 rand = "0.8"
 rand_distr = "0.4"

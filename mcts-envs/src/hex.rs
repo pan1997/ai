@@ -17,6 +17,14 @@ impl HexPlayer {
             HexPlayer::White => HexPlayer::Black,
         }
     }
+
+    /// Returns 0 for Black, 1 for White.
+    pub fn index(self) -> usize {
+        match self {
+            HexPlayer::Black => 0,
+            HexPlayer::White => 1,
+        }
+    }
 }
 
 /// State of an $N \times N$ Hex board with Disjoint Set Union (DSU) win tracking.
@@ -222,6 +230,10 @@ impl<const N: usize> AgentDynamics for HexDynamics<N> {
             s.current_player = player.other();
             StepOutcome::new([0.0, 0.0], false)
         }
+    }
+
+    fn current_agent(&self, s: &Self::State) -> mcts_traits::AgentId {
+        mcts_traits::AgentId(s.current_player.index() as u32)
     }
 }
 
