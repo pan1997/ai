@@ -6,7 +6,8 @@
 //!
 //! ## Modules
 //! - [`game`]: Core board state, piece dropping, and bitboard/grid win checking.
-//! - [`dynamics`]: Planning transition steps and two-player referee arbitration.
+//! - [`world`]: Impartial ground-truth referee and tournament match arbitration.
+//! - [`dynamics`]: Planning transition steps (standard alternating and macro-action).
 //! - [`evaluator`]: Prior policy and state value estimation models (rollouts, uniform).
 //! - [`render`]: Terminal rendering with ANSI colors and MCTS search candidate tables.
 //! - [`agent`]: Unified player interface with human, random, and MCTS implementations.
@@ -16,13 +17,17 @@ pub mod dynamics;
 pub mod evaluator;
 pub mod game;
 pub mod render;
+pub mod world;
 
 #[cfg(test)]
 mod tests;
 
 pub use agent::{Agent, HumanAgent, MctsAgent, RandomAgent};
-pub use dynamics::Connect4Dynamics;
+pub use dynamics::{
+    Connect4Dynamics, MacroConnect4Dynamics, OpponentPolicy, RandomOpponent, TacticalOpponent,
+};
 pub use evaluator::{RolloutEvaluator, UniformEvaluator};
 pub use game::{Connect4State, Player};
 pub use render::{format_move_candidates, render_board, render_board_styled, MoveCandidate};
+pub use world::Connect4World;
 

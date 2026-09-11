@@ -4,7 +4,8 @@ use crate::agent::{Agent, HeuristicAgent, MctsAgent, RandomAgent};
 use crate::dynamics::{compute_rank_rewards, BlokusDuoDynamics};
 use crate::game::{BlokusAction, BlokusClassicState, BlokusDuoState};
 use crate::pieces::{piece_size, registry, NUM_PIECES, TOTAL_SQUARES_PER_PLAYER};
-use mcts_traits::World;
+use crate::world::BlokusDuoWorld;
+use mcts_traits::{AgentDynamics, World};
 
 #[test]
 fn test_piece_registry_and_canonical_orientations() {
@@ -229,18 +230,23 @@ fn test_compute_rank_rewards_zero_sum() {
 
 #[test]
 fn test_dynamics_and_world_trait() {
-    let env = BlokusDuoDynamics::default();
-    let mut ws = World::initial(&env);
-    assert_eq!(env.n_players(), 2);
-    assert!(!env.terminal(&ws));
+    let world = BlokusDuoWorld::new();
+    let mut ws = World::initial(&world);
+    assert_eq!(world.n_players(), 2);
+    assert!(!world.terminal(&ws));
 
     let mut actions = Vec::new();
-    World::actions(&env, &ws, 0, &mut actions);
+    World::actions(&world, &ws, 0, &mut actions);
     assert!(!actions.is_empty());
 
-    let (rewards, term) = World::step(&env, &mut ws, &[actions[0], BlokusAction::Pass]);
+    let (rewards, term) = World::step(&world, &mut ws, &[actions[0], BlokusAction::Pass]);
     assert_eq!(rewards.len(), 2);
     assert!(!term);
+
+    let dyn_env = BlokusDuoDynamics::default();
+    let mut s = AgentDynamics::initial(&dyn_env);
+    let outcome = AgentDynamics::step(&dyn_env, &mut s, &actions[0]);
+    assert_eq!(outcome.reward.len(), 2);
 }
 
 #[test]

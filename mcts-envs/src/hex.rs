@@ -186,37 +186,30 @@ impl<const N: usize> Default for HexState<N> {
     }
 }
 
-/// Parametric Hex game dynamics on an $N \times N$ board.
+/// Ground-truth referee and external match environment for Hex on an $N \times N$ board.
 ///
-/// Implements:
-/// - [`AgentDynamics`]: Planning state transitions and legal cell generation.
-/// - [`World`]: 2-player match referee with path-connectivity detection.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HexDynamics<const N: usize = 11>;
+/// Implements [`World`] for 2-player match arbitration with path-connectivity detection,
+/// while providing zero-allocation single-action step methods.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HexWorld<const N: usize = 11>;
 
-impl<const N: usize> AgentDynamics for HexDynamics<N> {
-    type State = HexState<N>;
-    type Action = usize;
-    type Reward = [f32; 2];
-
-    fn initial(&self) -> Self::State {
-        HexState::new()
+impl<const N: usize> HexWorld<N> {
+    /// Creates a new `HexWorld` referee.
+    pub const fn new() -> Self {
+        Self
     }
 
-    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
-        out.clear();
-        for idx in 0..N * N {
-            if s.board[idx].is_none() {
-                out.push(idx);
-            }
-        }
-    }
-
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
-        let idx = *action;
-        assert!(idx < N * N && s.board[idx].is_none(), "Hex: invalid action");
-        let player = s.current_player;
-        let won = s.play_move(idx);
+    /// Transitions `ws` forward by `action` for the active player without heap allocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `action >= N * N` or if the selected cell is already occupied.
+    #[inline]
+    pub fn step_action(&self, ws: &mut HexState<N>, action: usize) -> StepOutcome<[f32; 2]> {
+        let idx = action;
+        assert!(idx < N * N && ws.board[idx].is_none(), "Hex: invalid action");
+        let player = ws.current_player;
+        let won = ws.play_move(idx);
 
         if won {
             let reward = match player {
@@ -224,14 +217,126 @@ impl<const N: usize> AgentDynamics for HexDynamics<N> {
                 HexPlayer::White => [-1.0, 1.0],
             };
             StepOutcome::new(reward, true)
-        } else if s.board.iter().all(|c| c.is_some()) {
+        } else if ws.board.iter().all(|c| c.is_some()) {
             StepOutcome::new([0.0, 0.0], true)
         } else {
-            s.current_player = player.other();
+            ws.current_player = player.other();
             StepOutcome::new([0.0, 0.0], false)
         }
     }
 
+    /// Populates `out` with all legal, unoccupied cell indices on the board.
+    #[inline]
+    pub fn legal_actions(&self, ws: &HexState<N>, out: &mut Vec<usize>) {
+        out.clear();
+        for idx in 0..N * N {
+            if ws.board[idx].is_none() {
+                out.push(idx);
+            }
+        }
+    }
+
+    /// Returns `true` if either player has won or the board is completely filled.
+    #[inline]
+    pub fn is_terminal(&self, ws: &HexState<N>) -> bool {
+        ws.is_won(HexPlayer::Black)
+            || ws.is_won(HexPlayer::White)
+            || ws.board.iter().all(|c| c.is_some())
+    }
+}
+
+impl<const N: usize> World for HexWorld<N> {
+    type WorldState = HexState<N>;
+    type Action = usize;
+    type Observation = HexState<N>;
+
+    #[inline]
+    fn n_players(&self) -> usize {
+        2
+    }
+
+    #[inline]
+    fn initial(&self) -> Self::WorldState {
+        HexState::new()
+    }
+
+    #[inline]
+    fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
+        ws.clone()
+    }
+
+    #[inline]
+    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
+        out.clear();
+        let active = match ws.current_player {
+            HexPlayer::Black => 0,
+            HexPlayer::White => 1,
+        };
+        if player == active && !self.terminal(ws) {
+            self.legal_actions(ws, out);
+        }
+    }
+
+    #[inline]
+    fn step(
+        &self,
+        ws: &mut Self::WorldState,
+        joint: &[Self::Action],
+    ) -> (Vec<f32>, bool) {
+        let active = match ws.current_player {
+            HexPlayer::Black => 0,
+            HexPlayer::White => 1,
+        };
+        let outcome = self.step_action(ws, joint[active]);
+        (outcome.reward.to_vec(), outcome.terminated)
+    }
+
+    #[inline]
+    fn terminal(&self, ws: &Self::WorldState) -> bool {
+        self.is_terminal(ws)
+    }
+}
+
+/// Parametric Hex game dynamics on an $N \times N$ board.
+///
+/// Wraps the ground-truth [`HexWorld`] referee, exposing an [`AgentDynamics`] interface
+/// for MCTS planning.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HexDynamics<const N: usize = 11>;
+
+impl<const N: usize> HexDynamics<N> {
+    /// Creates a new `HexDynamics` instance.
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Returns the underlying [`HexWorld`] referee.
+    pub const fn world(&self) -> HexWorld<N> {
+        HexWorld
+    }
+}
+
+impl<const N: usize> AgentDynamics for HexDynamics<N> {
+    type State = HexState<N>;
+    type Action = usize;
+    type Reward = [f32; 2];
+
+    #[inline]
+    fn initial(&self) -> Self::State {
+        HexWorld::<N>.initial()
+    }
+
+    #[inline]
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        HexWorld::<N>.legal_actions(s, out);
+    }
+
+    #[inline]
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+        HexWorld::<N>.step_action(s, *action)
+    }
+
+    #[inline]
     fn current_agent(&self, s: &Self::State) -> mcts_traits::AgentId {
         mcts_traits::AgentId(s.current_player.index() as u32)
     }
@@ -242,46 +347,38 @@ impl<const N: usize> World for HexDynamics<N> {
     type Action = usize;
     type Observation = HexState<N>;
 
+    #[inline]
     fn n_players(&self) -> usize {
-        2
+        HexWorld::<N>.n_players()
     }
 
+    #[inline]
     fn initial(&self) -> Self::WorldState {
-        HexState::new()
+        HexWorld::<N>.initial()
     }
 
-    fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
-        ws.clone()
+    #[inline]
+    fn observe(&self, ws: &Self::WorldState, player: usize) -> Self::Observation {
+        HexWorld::<N>.observe(ws, player)
     }
 
+    #[inline]
     fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
-        out.clear();
-        let active = match ws.current_player {
-            HexPlayer::Black => 0,
-            HexPlayer::White => 1,
-        };
-        if player == active {
-            AgentDynamics::actions(self, ws, out);
-        }
+        HexWorld::<N>.actions(ws, player, out);
     }
 
+    #[inline]
     fn step(
         &self,
         ws: &mut Self::WorldState,
         joint: &[Self::Action],
     ) -> (Vec<f32>, bool) {
-        let active = match ws.current_player {
-            HexPlayer::Black => 0,
-            HexPlayer::White => 1,
-        };
-        let outcome = AgentDynamics::step(self, ws, &joint[active]);
-        (outcome.reward.to_vec(), outcome.terminated)
+        HexWorld::<N>.step(ws, joint)
     }
 
+    #[inline]
     fn terminal(&self, ws: &Self::WorldState) -> bool {
-        ws.is_won(HexPlayer::Black)
-            || ws.is_won(HexPlayer::White)
-            || ws.board.iter().all(|c| c.is_some())
+        HexWorld::<N>.terminal(ws)
     }
 }
 

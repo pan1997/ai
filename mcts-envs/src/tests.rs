@@ -1,7 +1,7 @@
 //! Comprehensive unit and integration tests for `mcts-envs` games and evaluators.
 
 use crate::evaluators::{RolloutEvaluator, UniformRandomModel};
-use crate::hex::{HexDynamics, HexPlayer, HexState};
+use crate::hex::{HexDynamics, HexPlayer, HexState, HexWorld};
 use crate::kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnWorld};
 use crate::tzf8::{Direction, Tzf8Dynamics, Tzf8State};
 use mcts_engine::backup::{SingleAgentBackup, VectorBackup};
@@ -44,17 +44,17 @@ fn test_hex_white_win_detection() {
 
 #[test]
 fn test_hex_world_interface() {
-    let env = HexDynamics::<3>;
-    let mut ws = World::initial(&env);
+    let world = HexWorld::<3>::new();
+    let mut ws = World::initial(&world);
 
-    assert_eq!(World::n_players(&env), 2);
+    assert_eq!(World::n_players(&world), 2);
     let mut acts = Vec::new();
-    World::actions(&env, &ws, 0, &mut acts);
+    World::actions(&world, &ws, 0, &mut acts);
     assert_eq!(acts.len(), 9);
-    World::actions(&env, &ws, 1, &mut acts);
+    World::actions(&world, &ws, 1, &mut acts);
     assert_eq!(acts.len(), 0);
 
-    let (rewards, terminated) = World::step(&env, &mut ws, &[0, 0]);
+    let (rewards, terminated) = World::step(&world, &mut ws, &[0, 0]);
     assert!(!terminated);
     assert_eq!(rewards, vec![0.0, 0.0]);
     assert_eq!(ws.current_player, HexPlayer::White);

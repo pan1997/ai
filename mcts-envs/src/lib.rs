@@ -25,7 +25,7 @@ pub mod evaluators;
 #[cfg(test)]
 mod tests;
 
-pub use hex::{HexDynamics, HexState, HexPlayer};
+pub use hex::{HexDynamics, HexPlayer, HexState, HexWorld};
 pub use tzf8::{Tzf8Dynamics, Tzf8State, Direction};
 pub use kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnObservation, KuhnWorld, KuhnWorldState};
 pub use evaluators::{RolloutEvaluator, UniformRandomModel};

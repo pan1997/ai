@@ -9,6 +9,7 @@
 
 pub mod pieces;
 pub mod game;
+pub mod world;
 pub mod dynamics;
 pub mod evaluator;
 pub mod render;
@@ -23,6 +24,7 @@ pub use pieces::{
 };
 pub use game::{BlokusAction, BlokusState, Player, EMPTY};
 pub use dynamics::{compute_rank_rewards, BlokusDynamics};
+pub use world::{BlokusClassicWorld, BlokusDuoWorld, BlokusWorld};
 pub use evaluator::{
     AreaHeuristicEvaluator, HeuristicRolloutEvaluator, HeuristicUtilityEvaluator, RolloutEvaluator,
     UniformEvaluator,

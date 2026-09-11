@@ -1,10 +1,11 @@
 //! Comprehensive unit and integration tests for Connect 4 game engine, dynamics, and MCTS agents.
 
 use crate::agent::{Agent, MctsAgent, RandomAgent};
-use crate::dynamics::Connect4Dynamics;
+use crate::dynamics::{Connect4Dynamics, MacroConnect4Dynamics, TacticalOpponent};
 use crate::evaluator::{RolloutEvaluator, UniformEvaluator};
 use crate::game::{Connect4State, Player};
 use crate::render::{render_board, render_board_styled};
+use crate::world::Connect4World;
 use mcts_traits::{AgentDynamics, Model, World};
 
 #[test]
@@ -146,7 +147,7 @@ fn test_diagonal_up_right_win() {
 
 #[test]
 fn test_dynamics_step_and_turn_alternation() {
-    let env = Connect4Dynamics::<6, 7>;
+    let env = Connect4Dynamics::<6, 7>::new();
     let mut state = AgentDynamics::initial(&env);
 
     assert_eq!(state.current_player, Player::Red);
@@ -162,28 +163,44 @@ fn test_dynamics_step_and_turn_alternation() {
 
 #[test]
 fn test_world_referee_actions_and_terminal() {
-    let env = Connect4Dynamics::<6, 7>;
-    let mut state = World::initial(&env);
+    let world = Connect4World::<6, 7>::new();
+    let mut state = World::initial(&world);
 
     let mut actions_p0 = Vec::new();
     let mut actions_p1 = Vec::new();
 
     // Player 0 is active
-    World::actions(&env, &state, 0, &mut actions_p0);
-    World::actions(&env, &state, 1, &mut actions_p1);
+    World::actions(&world, &state, 0, &mut actions_p0);
+    World::actions(&world, &state, 1, &mut actions_p1);
     assert_eq!(actions_p0.len(), 7);
     assert!(actions_p1.is_empty());
 
     // Step with joint action: player 0 plays col 0
-    let (rewards, term) = World::step(&env, &mut state, &[0, 0]);
+    let (rewards, term) = World::step(&world, &mut state, &[0, 0]);
     assert!(!term);
     assert_eq!(rewards, vec![0.0, 0.0]);
 
     // Now player 1 is active
-    World::actions(&env, &state, 0, &mut actions_p0);
-    World::actions(&env, &state, 1, &mut actions_p1);
+    World::actions(&world, &state, 0, &mut actions_p0);
+    World::actions(&world, &state, 1, &mut actions_p1);
     assert!(actions_p0.is_empty());
     assert_eq!(actions_p1.len(), 7);
+}
+
+#[test]
+fn test_macro_dynamics_full_round() {
+    let macro_env = MacroConnect4Dynamics::<TacticalOpponent, 6, 7>::new(TacticalOpponent, Player::Red);
+    let mut state = AgentDynamics::initial(&macro_env);
+
+    assert_eq!(state.current_player, Player::Red);
+    // Red plays col 0. TacticalOpponent plays in response.
+    let outcome = AgentDynamics::step(&macro_env, &mut state, &0);
+    assert!(!outcome.terminated);
+    // After the macro step, it is STILL Red's turn!
+    assert_eq!(state.current_player, Player::Red);
+    // 2 pieces have been dropped on the board (one Red, one Yellow)
+    let piece_count: usize = state.board.iter().flatten().filter(|c| c.is_some()).count();
+    assert_eq!(piece_count, 2);
 }
 
 #[test]
