@@ -1,12 +1,15 @@
 use super::{MultiAgentPuctStats, SelectionPolicy};
 use crate::tree_store::{EdgeId, NodeId, TreeStore};
 
-/// Gumbel AlphaZero selection.
+/// Gumbel AlphaZero selection policy.
 ///
 /// In Gumbel MCTS (Danihelka et al., 2022):
-/// - Gumbel noise is applied to the policy logits at the ROOT node to guarantee policy improvement.
-/// - Child / interior nodes use deterministic PUCT selection to avoid variance accumulation.
+/// - Gumbel noise $g(a) = -\ln(-\ln(U)), U \sim \text{Uniform}(0, 1)$ is added to policy logits
+///   at the **root node** to guarantee asymptotic and finite-budget policy improvement.
+/// - Non-root / interior nodes use standard deterministic PUCT selection to prevent variance
+///   accumulation down deep search branches.
 pub struct GumbelPuctSelection<const N: usize> {
+    /// Exploration constant $c_{\text{puct}}$ scaling the Gumbel-perturbed exploration bonus.
     pub c_puct: f32,
 }
 

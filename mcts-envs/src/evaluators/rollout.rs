@@ -1,12 +1,22 @@
 use mcts_traits::{AgentDynamics, Evaluation, Model};
 
+/// Classical Monte Carlo rollout evaluation model.
+///
+/// Estimates leaf value by simulating `num_rollouts` random playouts up to `max_depth`
+/// or terminal state, averaging the observed returns:
+///
+/// $$V(s) \approx \frac{1}{M} \sum_{m=1}^{M} G^{(m)}$$
 pub struct RolloutEvaluator<D> {
+    /// Reference dynamics used to generate legal actions and execute transitions.
     pub dynamics: D,
+    /// Number of random simulation trajectories sampled per evaluation.
     pub num_rollouts: usize,
+    /// Maximum search depth before aborting a rollout trajectory.
     pub max_depth: usize,
 }
 
 impl<D> RolloutEvaluator<D> {
+    /// Constructs a `RolloutEvaluator` with designated rollout budget and depth cut-off.
     pub fn new(dynamics: D, num_rollouts: usize, max_depth: usize) -> Self {
         Self {
             dynamics,

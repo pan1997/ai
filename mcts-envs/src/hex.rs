@@ -1,13 +1,17 @@
 use mcts_traits::{AgentDynamics, Transition, World};
 use std::collections::VecDeque;
 
+/// Players in the game of Hex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HexPlayer {
-    Black, // Connects Top to Bottom
-    White, // Connects Left to Right
+    /// Black player: connects the Top boundary to the Bottom boundary (moves first).
+    Black,
+    /// White player: connects the Left boundary to the Right boundary (moves second).
+    White,
 }
 
 impl HexPlayer {
+    /// Returns the opponent player.
     pub fn other(self) -> Self {
         match self {
             HexPlayer::Black => HexPlayer::White,
@@ -16,9 +20,12 @@ impl HexPlayer {
     }
 }
 
+/// State of an $N \times N$ Hex board.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HexState<const N: usize = 11> {
+    /// Cell states stored in row-major order: `board[r * N + c]`.
     pub board: Vec<Option<HexPlayer>>,
+    /// Current player to move.
     pub current_player: HexPlayer,
 }
 
@@ -119,6 +126,11 @@ impl<const N: usize> Default for HexState<N> {
     }
 }
 
+/// Parametric Hex game dynamics on an $N \times N$ board.
+///
+/// Implements:
+/// - [`AgentDynamics`]: Planning state transitions and legal cell generation.
+/// - [`World`]: 2-player match referee with path-connectivity detection.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct HexDynamics<const N: usize = 11>;
 

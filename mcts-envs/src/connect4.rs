@@ -1,12 +1,16 @@
 use mcts_traits::{AgentDynamics, BatchedAgentDynamics, Transition, World};
 
+/// Players in Connect 4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Player {
+    /// First player (moves first, index 0).
     Red,
+    /// Second player (moves second, index 1).
     Yellow,
 }
 
 impl Player {
+    /// Returns the opponent player.
     #[inline]
     pub fn other(self) -> Self {
         match self {
@@ -16,13 +20,17 @@ impl Player {
     }
 }
 
+/// State representation of a Connect 4 board of size $R \times C$.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Connect4State<const R: usize = 6, const C: usize = 7> {
+    /// Grid cells where `[0][col]` is the top cell and `[R-1][col]` is the bottom cell.
     pub board: [[Option<Player>; C]; R],
+    /// Player whose turn it is to drop a checker.
     pub current_player: Player,
 }
 
 impl<const R: usize, const C: usize> Connect4State<R, C> {
+    /// Creates a new, empty Connect 4 board with `Player::Red` to move.
     pub fn new() -> Self {
         Self {
             board: [[None; C]; R],
@@ -30,14 +38,17 @@ impl<const R: usize, const C: usize> Connect4State<R, C> {
         }
     }
 
+    /// Returns `true` if the specified column cannot accept further checkers.
     pub fn is_column_full(&self, col: usize) -> bool {
         self.board[0][col].is_some()
     }
 
+    /// Returns `true` if all columns are filled to capacity.
     pub fn is_board_full(&self) -> bool {
         (0..C).all(|c| self.is_column_full(c))
     }
 
+    /// Checks if placing a checker for player `p` at `(r, c)` forms a line of 4.
     pub fn check_win_at(&self, r: usize, c: usize, p: Player) -> bool {
         // Horizontal
         let mut count = 0;
@@ -130,6 +141,12 @@ impl<const R: usize, const C: usize> Default for Connect4State<R, C> {
     }
 }
 
+/// Parametric Connect 4 game dynamics with $R$ rows and $C$ columns.
+///
+/// Implements:
+/// - [`AgentDynamics`]: Single-player planning transition steps.
+/// - [`BatchedAgentDynamics`]: Vectorized batch steps.
+/// - [`World`]: 2-player match referee with simultaneous joint-action steps.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Connect4Dynamics<const R: usize = 6, const C: usize = 7>;
 

@@ -16,6 +16,7 @@ pub struct GraphEnv<const N: usize = 1> {
 }
 
 impl<const N: usize> GraphEnv<N> {
+    /// Creates a new `GraphEnv` with the designated initial state index.
     pub fn new(initial_state: u32) -> Self {
         Self {
             initial_state,
@@ -26,6 +27,7 @@ impl<const N: usize> GraphEnv<N> {
         }
     }
 
+    /// Inserts a deterministic directed transition `(from_state, action) -> (next_state, reward, terminated)`.
     pub fn add_transition(
         &mut self,
         from_state: u32,
@@ -43,14 +45,17 @@ impl<const N: usize> GraphEnv<N> {
         }
     }
 
+    /// Sets the list of legal action IDs available from `state`.
     pub fn set_actions(&mut self, state: u32, actions: Vec<u32>) {
         self.legal_actions.insert(state, actions);
     }
 
+    /// Sets which agent is acting at `state`.
     pub fn set_agent(&mut self, state: u32, agent: AgentId) {
         self.state_agents.insert(state, agent);
     }
 
+    /// Marks or unmarks `state` as terminal.
     pub fn set_terminal(&mut self, state: u32, terminated: bool) {
         if terminated {
             self.terminal_states.insert(state);
@@ -59,10 +64,12 @@ impl<const N: usize> GraphEnv<N> {
         }
     }
 
+    /// Returns the agent active at `state` (defaults to `AgentId(0)` if not set).
     pub fn current_agent(&self, state: &u32) -> AgentId {
         *self.state_agents.get(state).unwrap_or(&AgentId(0))
     }
 
+    /// Returns `true` if `state` is a terminal state.
     pub fn is_terminal(&self, state: &u32) -> bool {
         self.terminal_states.contains(state)
     }

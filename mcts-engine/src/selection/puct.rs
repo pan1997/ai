@@ -3,15 +3,24 @@ use crate::tree_store::{
     EdgeId, EdgeStatsStore, NodeId, PriorStore, TreeStore, VirtualLossStore,
 };
 
+/// Statistics storage for multi-agent AlphaZero-style PUCT selection.
+///
+/// Tracks visit counts, policy priors, running mean return vectors for $N$ agents,
+/// and virtual loss weights for batched search.
 #[derive(Debug, Clone)]
 pub struct MultiAgentPuctStats<const N: usize> {
+    /// Number of times each edge has been traversed during search.
     pub visits: Vec<u32>,
+    /// Policy prior probability $P(s, a)$ assigned to each edge by the evaluation model.
     pub priors: Vec<f32>,
+    /// Running mean value estimates $\mathbf{Q}(s, a) \in \mathbb{R}^N$ for all agents.
     pub mean_value: Vec<[f32; N]>,
+    /// Temporary virtual loss weight accumulated during batched parallel traversals.
     pub virtual_loss: Vec<f32>,
 }
 
 impl<const N: usize> MultiAgentPuctStats<N> {
+    /// Creates a new, empty `MultiAgentPuctStats` container.
     pub fn new() -> Self {
         Self {
             visits: Vec::new(),
@@ -60,7 +69,18 @@ impl<const N: usize> VirtualLossStore for MultiAgentPuctStats<N> {
     }
 }
 
+/// Predictor Upper Confidence Bounds for Trees (PUCT) selection policy with virtual loss.
+///
+/// Computes edge scores using the AlphaZero formulation adjusted for active agent perspective and virtual loss:
+///
+/// $$\text{Score}(s, a) = Q_{\text{eff}}(s, a) + c_{\text{puct}} \cdot P(s, a) \cdot \frac{\sqrt{N(s)}}{1 + N_{\text{eff}}(s, a)}$$
+///
+/// Where:
+/// - $N_{\text{eff}}(s, a) = N(s, a) + v_{\text{loss}}(s, a)$
+/// - $Q_{\text{eff}}(s, a) = \frac{Q_i(s, a) \cdot N(s, a) - v_{\text{loss}}(s, a)}{N_{\text{eff}}(s, a)}$ (if $N_{\text{eff}} > 0$)
+/// - $i$ is the active agent at node $s$.
 pub struct MultiAgentPuctSelection<const N: usize> {
+    /// Exploration constant $c_{\text{puct}}$ scaling the influence of the prior policy distribution.
     pub c_puct: f32,
 }
 

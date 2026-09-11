@@ -1,17 +1,26 @@
 use mcts_traits::{AgentDynamics, Transition};
 
+/// Shift direction for sliding tiles in 2048.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
+    /// Shift all tiles towards the left.
     Left,
+    /// Shift all tiles towards the right.
     Right,
+    /// Shift all tiles upwards.
     Up,
+    /// Shift all tiles downwards.
     Down,
 }
 
+/// State of a 2048 ($4 \times 4$) puzzle board.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tzf8State {
+    /// $4 \times 4$ tile matrix (values are powers of 2, e.g. 2, 4, 8, ... or 0 for empty).
     pub board: [[u32; 4]; 4],
+    /// Cumulative score achieved through tile merges.
     pub score: u32,
+    /// Flag indicating whether the game is currently ongoing.
     pub ongoing: bool,
     rng_seed: u64,
 }
@@ -178,6 +187,9 @@ impl Tzf8State {
     }
 }
 
+/// Single-player 2048 game dynamics.
+///
+/// Implements [`AgentDynamics`] for single-agent discounted return planning ($Q = r + \gamma V$).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Tzf8Dynamics;
 

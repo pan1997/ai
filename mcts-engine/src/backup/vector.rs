@@ -5,10 +5,18 @@ use mcts_traits::{HasPolicy, HasValue};
 
 /// Vector backup strategy across $N$ agents.
 ///
-/// Accumulates discounted returns element-wise for all agents.
-/// Completely avoids the negation convention bug class, naturally handles non-zero-sum games,
-/// and satisfies $Q_1 = -Q_0$ for 2-player zero-sum games.
+/// Accumulates discounted returns element-wise for all agents:
+///
+/// $$\mathbf{G}_t = \mathbf{r}(s_t, a_t) + \gamma \mathbf{G}_{t+1}$$
+///
+/// And incrementally updates running mean vector estimates $\mathbf{Q}(s_t, a_t) \in \mathbb{R}^N$:
+///
+/// $$\mathbf{Q}(s_t, a_t) \leftarrow \mathbf{Q}(s_t, a_t) + \frac{\mathbf{G}_t - \mathbf{Q}(s_t, a_t)}{N(s_t, a_t)}$$
+///
+/// Completely avoids the negation convention bug class ($Q \leftarrow -Q$), naturally handles
+/// non-zero-sum games, and preserves game-theoretic invariants across any player count $N$.
 pub struct VectorBackup<const N: usize> {
+    /// Discount factor $\gamma \in [0, 1]$ applied element-wise to future value vectors.
     pub gamma: f32,
 }
 
@@ -19,6 +27,7 @@ impl<const N: usize> Default for VectorBackup<N> {
 }
 
 impl<const N: usize> VectorBackup<N> {
+    /// Creates a new `VectorBackup` policy with the specified discount factor $\gamma$.
     pub fn new(gamma: f32) -> Self {
         Self { gamma }
     }

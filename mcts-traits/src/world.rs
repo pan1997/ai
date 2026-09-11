@@ -13,32 +13,37 @@ use std::fmt::Debug;
 /// - **Delta Observation**: Incremental event log since the player's last decision
 ///   (e.g. "Opponent raised by 50", common in streaming or continuous games).
 pub trait World {
+    /// The complete ground-truth representation of the game/environment.
     type WorldState;
+    /// Action representation for individual player moves.
     type Action: Eq + Debug;
+    /// Player-specific observation type (e.g. filtered view or event delta).
     type Observation;
 
     /// Number of players/agents participating in the environment.
     fn n_players(&self) -> usize;
 
-    /// Returns the initial world state.
+    /// Returns the initial ground-truth world state.
     fn initial(&self) -> Self::WorldState;
 
-    /// Generates an observation for `player` from the world state (full-state or delta).
+    /// Generates a player-specific observation from `ws` (full-state snapshot or delta).
     fn observe(&self, ws: &Self::WorldState, player: usize) -> Self::Observation;
 
-    /// Legal actions available for `player` in the current world state.
+    /// Returns legal actions available for `player` in the current world state.
+    ///
     /// Inactive players in turn-based games return an empty list or a single Noop action.
     fn actions(&self, ws: &Self::WorldState, player: usize) -> Vec<Self::Action>;
 
-    /// Executes joint actions from all players.
-    /// Returns (next_world_state, per_player_rewards, is_terminal).
+    /// Executes joint actions from all players simultaneously.
+    ///
+    /// Returns `(next_world_state, per_player_rewards, is_terminal)`.
     fn step(
         &self,
         ws: Self::WorldState,
         joint: &[Self::Action],
     ) -> (Self::WorldState, Vec<f32>, bool);
 
-    /// Checks if the world state is terminal.
+    /// Checks if the world state is in a terminal condition.
     fn terminal(&self, ws: &Self::WorldState) -> bool;
 }
 

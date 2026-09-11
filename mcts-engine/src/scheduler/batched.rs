@@ -5,12 +5,23 @@ use crate::tree_store::{
 };
 use mcts_traits::{AgentDynamics, BatchedModel, Evaluation};
 
+/// Batched MCTS scheduler for accelerating neural network evaluation within a single tree.
+///
+/// In each batch iteration:
+/// 1. Simulates `batch_size` trajectories from the root using virtual loss to encourage diversity.
+/// 2. Deduplicates unique leaf states to minimize redundant inference calls.
+/// 3. Queries [`BatchedModel::evaluate_batch`] in a single GPU/tensor-friendly pass.
+/// 4. Expands new leaves and backpropagates returns along all paths.
+/// 5. Removes all temporary virtual losses.
 pub struct BatchedScheduler {
+    /// Number of concurrent simulation trajectories launched per batch.
     pub batch_size: usize,
+    /// Penalty weight applied to traversed edges during selection to enforce path diversity.
     pub virtual_loss_weight: f32,
 }
 
 impl BatchedScheduler {
+    /// Creates a new `BatchedScheduler` with the specified batch size and virtual loss weight.
     pub fn new(batch_size: usize, virtual_loss_weight: f32) -> Self {
         Self {
             batch_size,
@@ -18,6 +29,7 @@ impl BatchedScheduler {
         }
     }
 
+    /// Executes `num_iterations` batched search passes (total simulations = `num_iterations * batch_size`).
     #[allow(clippy::too_many_arguments)]
     pub fn search<D, M, S, B, Action, Reward, Stats>(
         &self,

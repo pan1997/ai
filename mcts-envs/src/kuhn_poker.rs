@@ -1,31 +1,51 @@
 use mcts_traits::{AgentDynamics, Transition, World};
 
+/// Actions available in Kuhn Poker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KuhnAction {
+    /// Pass action without adding chips to the pot.
     Check,
+    /// Bet 1 additional chip into the pot.
     Bet,
+    /// Match the opponent's bet with 1 chip.
     Call,
+    /// Concede the pot to the opponent.
     Fold,
 }
 
+/// Impartial ground-truth world state for Kuhn Poker.
+///
+/// Contains true hole cards for both players, pot contributions, action history,
+/// and acting player index.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KuhnWorldState {
-    pub cards: [u8; 2], // Private cards: 0 = Jack, 1 = Queen, 2 = King
+    /// Private hole cards: 0 = Jack, 1 = Queen, 2 = King.
+    pub cards: [u8; 2],
+    /// Chips contributed to the pot by player 0 and player 1.
     pub pot: [f32; 2],
+    /// Complete sequence of betting actions played so far.
     pub history: Vec<KuhnAction>,
+    /// Index of the player whose turn it is to act (0 or 1).
     pub current_player: usize,
+    /// Whether the hand has reached showdown or folded termination.
     pub terminated: bool,
 }
 
+/// Player-specific observation in Kuhn Poker (imperfect information).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KuhnObservation {
+    /// The player's private card (0 = Jack, 1 = Queen, 2 = King).
     pub my_card: u8,
+    /// Visible public betting sequence.
     pub history: Vec<KuhnAction>,
+    /// Whether the hand is complete.
     pub terminal: bool,
 }
 
+/// External referee and match manager for Kuhn Poker implementing [`World`].
 #[derive(Default)]
 pub struct KuhnWorld {
+    /// Optional predetermined card deal `[p0_card, p1_card]` for deterministic test scenarios.
     pub fixed_deal: Option<[u8; 2]>,
 }
 
@@ -136,9 +156,12 @@ impl World for KuhnWorld {
 }
 
 /// Agent-centric internal planning dynamics for Kuhn Poker.
-/// Opponent cards and responses are sampled from belief distribution / opponent policy.
+///
+/// Models belief-state determinization and hypothetical lines against modeled opponent policies.
 pub struct KuhnAgentDynamics {
+    /// Private card held by the planning agent.
     pub my_card: u8,
+    /// Probability with which opponent calls bets when holding Queen.
     pub opponent_call_rate: f32,
 }
 

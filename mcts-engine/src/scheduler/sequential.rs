@@ -3,11 +3,24 @@ use crate::selection::SelectionPolicy;
 use crate::tree_store::{EdgeStatsStore, NodeId, NodeStatus, TreeStore};
 use mcts_traits::{AgentDynamics, Evaluation, Model};
 
+/// Single-threaded sequential MCTS execution scheduler.
+///
+/// Runs classic 1-by-1 simulation passes. Each iteration carries out:
+/// 1. **Selection**: Descends from the root node to a leaf via [`SelectionPolicy`].
+/// 2. **Expansion**: Adds legal action child edges if the leaf node is unexpanded.
+/// 3. **Evaluation**: Evaluates the leaf state priors and value using [`Model`].
+/// 4. **Backup**: Propagates values backwards along the trajectory via [`BackupPolicy`].
 pub struct SequentialScheduler;
 
 impl SequentialScheduler {
-    /// Runs `num_iterations` sequential MCTS sweeps.
-    /// Each iteration performs exactly 1 root-to-leaf traversal, 1 evaluation, and 1 backprop.
+    /// Executes `num_iterations` sequential MCTS sweeps starting from `root`.
+    ///
+    /// # Generic Parameters
+    ///
+    /// - `D`: Environment dynamics implementing [`AgentDynamics`].
+    /// - `M`: Evaluation model implementing [`Model`].
+    /// - `S`: Selection policy implementing [`SelectionPolicy`].
+    /// - `B`: Backup strategy implementing [`BackupPolicy`].
     #[allow(clippy::too_many_arguments)]
     pub fn search<D, M, S, B, Action, Reward, Stats>(
         &self,

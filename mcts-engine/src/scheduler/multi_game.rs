@@ -3,15 +3,28 @@ use crate::selection::SelectionPolicy;
 use crate::tree_store::{EdgeStatsStore, NodeId, NodeStatus, TreeStore};
 use mcts_traits::{BatchedAgentDynamics, BatchedModel, Evaluation};
 
+/// Vectorized MCTS scheduler for executing parallel searches across multiple distinct games.
+///
+/// Designed for high-throughput self-play data generation in reinforcement learning:
+/// - Steps multiple independent environment instances simultaneously via [`BatchedAgentDynamics::step_batch`].
+/// - Combines leaf evaluations across all game trees into unified batches via [`BatchedModel::evaluate_batch`].
+/// - Keeps neural network accelerators saturated and eliminates CPU idle bubbles.
 pub struct MultiGameScheduler {
+    /// Number of concurrent game search trees managed in each sweep.
     pub batch_size: usize,
 }
 
 impl MultiGameScheduler {
+    /// Creates a new `MultiGameScheduler` configured for `batch_size` concurrent games.
     pub fn new(batch_size: usize) -> Self {
         Self { batch_size }
     }
 
+    /// Executes `num_iterations` vectorized MCTS sweeps across `trees`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `trees.len()`, `roots.len()`, or `root_states.len()` do not match `self.batch_size`.
     #[allow(clippy::too_many_arguments)]
     pub fn search<D, M, S, B, Action, Reward, Stats>(
         &self,

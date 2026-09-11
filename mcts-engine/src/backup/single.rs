@@ -3,11 +3,19 @@ use crate::selection::MultiAgentPuctStats;
 use crate::tree_store::{EdgeId, NodeId, NodeStatus, PriorStore, TreeStore};
 use mcts_traits::{HasPolicy, HasValue};
 
-/// Single-agent backup strategy (N=1).
+/// Single-agent discounted backup strategy ($N = 1$).
 ///
-/// Accumulates scalar discounted returns: Q = r + γ * V.
-/// Ideal for single-player environments (2048), MuZero latent models, and opponent-modeled ISMCTS (Poker).
+/// Accumulates scalar discounted returns backwards along the path:
+///
+/// $$G_t = r(s_t, a_t) + \gamma G_{t+1}$$
+///
+/// And updates running edge means incrementally:
+///
+/// $$Q(s_t, a_t) \leftarrow Q(s_t, a_t) + \frac{G_t - Q(s_t, a_t)}{N(s_t, a_t)}$$
+///
+/// Ideal for single-player environments (e.g. 2048), MuZero latent dynamics, and belief-state determinizations.
 pub struct SingleAgentBackup {
+    /// Discount factor $\gamma \in [0, 1]$ applied to future values.
     pub gamma: f32,
 }
 
@@ -18,6 +26,7 @@ impl Default for SingleAgentBackup {
 }
 
 impl SingleAgentBackup {
+    /// Creates a new `SingleAgentBackup` with the specified discount factor $\gamma$.
     pub fn new(gamma: f32) -> Self {
         Self { gamma }
     }

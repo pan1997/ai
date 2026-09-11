@@ -1,7 +1,19 @@
 use super::{MultiAgentPuctStats, SelectionPolicy};
 use crate::tree_store::{EdgeId, NodeId, TreeStore};
 
+/// Classic Upper Confidence Bounds for Trees (UCT) selection policy.
+///
+/// Balances exploitation of high-value actions with exploration of rarely visited actions:
+///
+/// $$\text{Score}(s, a) = \begin{cases} +\infty & \text{if } N(s, a) = 0 \\ Q_i(s, a) + c_{\text{uct}} \sqrt{\frac{\ln(N(s) + 1)}{N(s, a)}} & \text{if } N(s, a) > 0 \end{cases}$$
+///
+/// Where:
+/// - $N(s, a)$ is the visit count of child edge $a$.
+/// - $N(s)$ is the total visit count of parent node $s$.
+/// - $Q_i(s, a)$ is the running mean value for active agent $i$.
+/// - $c_{\text{uct}}$ is the exploration constant (defaults to $\sqrt{2} \approx 1.4142$).
 pub struct UctSelection<const N: usize> {
+    /// Exploration constant scaling the confidence interval.
     pub c_uct: f32,
 }
 
