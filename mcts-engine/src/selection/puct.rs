@@ -1,0 +1,132 @@
+use super::SelectionPolicy;
+use crate::tree_store::{
+    EdgeId, EdgeStatsStore, NodeId, PriorStore, TreeStore, VirtualLossStore,
+};
+
+#[derive(Debug, Clone)]
+pub struct MultiAgentPuctStats<const N: usize> {
+    pub visits: Vec<u32>,
+    pub priors: Vec<f32>,
+    pub mean_value: Vec<[f32; N]>,
+    pub virtual_loss: Vec<f32>,
+}
+
+impl<const N: usize> MultiAgentPuctStats<N> {
+    pub fn new() -> Self {
+        Self {
+            visits: Vec::new(),
+            priors: Vec::new(),
+            mean_value: Vec::new(),
+            virtual_loss: Vec::new(),
+        }
+    }
+}
+
+impl<const N: usize> Default for MultiAgentPuctStats<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> EdgeStatsStore for MultiAgentPuctStats<N> {
+    fn resize(&mut self, new_len: usize) {
+        self.visits.resize(new_len, 0);
+        self.priors.resize(new_len, 0.0);
+        self.mean_value.resize(new_len, [0.0; N]);
+        self.virtual_loss.resize(new_len, 0.0);
+    }
+
+    fn clear(&mut self) {
+        self.visits.clear();
+        self.priors.clear();
+        self.mean_value.clear();
+        self.virtual_loss.clear();
+    }
+}
+
+impl<const N: usize> PriorStore for MultiAgentPuctStats<N> {
+    fn set_prior(&mut self, edge: EdgeId, prior: f32) {
+        self.priors[edge.as_usize()] = prior;
+    }
+}
+
+impl<const N: usize> VirtualLossStore for MultiAgentPuctStats<N> {
+    fn add_virtual_loss(&mut self, edge: EdgeId, weight: f32) {
+        self.virtual_loss[edge.as_usize()] += weight;
+    }
+
+    fn remove_virtual_loss(&mut self, edge: EdgeId, weight: f32) {
+        self.virtual_loss[edge.as_usize()] -= weight;
+    }
+}
+
+pub struct MultiAgentPuctSelection<const N: usize> {
+    pub c_puct: f32,
+}
+
+impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>>
+    for MultiAgentPuctSelection<N>
+{
+    fn select_child(
+        &self,
+        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>>,
+        node_id: NodeId,
+    ) -> Option<EdgeId> {
+        let active_agent = store.node_agent(node_id).0 as usize;
+        assert!(
+            active_agent < N,
+            "MultiAgentPuctSelection: active agent ID ({active_agent}) must be in range 0..{N}"
+        );
+
+        let first = store.first_child_edge(node_id);
+        let count = store.num_children(node_id);
+        if count == 0 {
+            return None;
+        }
+
+        let parent_visits: u32 = if store.parent_edge(node_id).is_valid() {
+            store.stats.visits[store.parent_edge(node_id).as_usize()]
+        } else {
+            store
+                .child_edges(node_id)
+                .map(|e| store.stats.visits[e.as_usize()])
+                .sum()
+        };
+        let parent_visits_sqrt = (parent_visits as f32).sqrt();
+
+        let mut best_edge = EdgeId::INVALID;
+        let mut best_score = f32::NEG_INFINITY;
+
+        for i in 0..count {
+            let edge = EdgeId(first.0 + i);
+            let edge_idx = edge.as_usize();
+
+            let visits = store.stats.visits[edge_idx];
+            let q = store.stats.mean_value[edge_idx][active_agent];
+            let prior = store.stats.priors[edge_idx];
+            let v_loss = store.stats.virtual_loss[edge_idx];
+
+            let effective_visits = visits as f32 + v_loss;
+            let effective_q = if effective_visits > 0.0 {
+                (q * (visits as f32) - v_loss) / effective_visits
+            } else {
+                0.0
+            };
+
+            let u = self.c_puct * prior * parent_visits_sqrt / (1.0 + effective_visits);
+            let score = effective_q + u;
+
+            if score > best_score {
+                best_score = score;
+                best_edge = edge;
+            }
+        }
+
+        if best_edge.is_valid() {
+            Some(best_edge)
+        } else {
+            None
+        }
+    }
+}
+

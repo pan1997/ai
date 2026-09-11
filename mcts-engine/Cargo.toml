@@ -1,0 +1,12 @@
+[package]
+name = "mcts-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance Structure-of-Arrays (SoA) MCTS search engine"
+
+[dependencies]
+mcts-traits = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
