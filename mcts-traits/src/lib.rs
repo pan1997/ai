@@ -34,8 +34,13 @@ pub mod model;
 pub mod world;
 pub mod graph;
 
+#[cfg(test)]
+mod tests;
+
 pub use agent::AgentId;
-pub use dynamics::{AgentDynamics, BatchedAgentDynamics, Transition, default_step_batch};
-pub use model::{Model, BatchedModel, Evaluation, HasValue, HasPolicy};
+pub use dynamics::{
+    default_step_batch, AgentDynamics, BatchedAgentDynamics, StepOutcome, Transition,
+};
+pub use model::{BatchedModel, Evaluation, HasPolicy, HasValue, Model};
 pub use world::World;
 pub use graph::GraphEnv;

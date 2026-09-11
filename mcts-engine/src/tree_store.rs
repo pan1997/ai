@@ -61,10 +61,16 @@ pub trait EdgeStatsStore {
 
     /// Clears all statistics, resetting them to an empty state.
     fn clear(&mut self);
+
+    /// Retains only the statistics corresponding to the edges in `kept_indices`.
+    fn retain_edges(&mut self, kept_indices: &[usize]);
 }
 
 /// Interface for statistics stores that record policy prior probabilities on edges.
 pub trait PriorStore {
+    /// Returns the policy prior probability for `edge`.
+    fn prior(&self, edge: EdgeId) -> f32;
+
     /// Sets the policy prior probability for `edge`.
     fn set_prior(&mut self, edge: EdgeId, prior: f32);
 }
@@ -322,6 +328,122 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
             "set_edge_reward: reward has already been set for this edge"
         );
         self.edges.reward[edge.as_usize()] = Some(reward);
+    }
+
+    /// Promotes the subtree rooted at `new_root` to be the root of the search tree, discarding all unreachable nodes.
+    ///
+    /// Compacts reachable nodes and edges contiguously into memory starting from [`NodeId(0)`](NodeId).
+    /// The node at `new_root` becomes `NodeId(0)` with `parent_edge = EdgeId::INVALID`, retaining all
+    /// visited descendants, statistics, priors, and rewards. All dead branches outside the subtree are pruned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `new_root` is out of bounds or invalid.
+    pub fn promote_subtree(&mut self, new_root: NodeId) {
+        assert!(
+            new_root.is_valid() && new_root.as_usize() < self.num_nodes(),
+            "promote_subtree: new_root is invalid or out of bounds"
+        );
+
+        if new_root == NodeId(0) {
+            self.nodes.parent_edge[0] = EdgeId::INVALID;
+            return;
+        }
+
+        let old_num_nodes = self.num_nodes();
+        let old_num_edges = self.num_edges();
+
+        let mut old_to_new_node = vec![NodeId::INVALID; old_num_nodes];
+        let mut old_to_new_edge = vec![EdgeId::INVALID; old_num_edges];
+
+        let mut node_queue = std::collections::VecDeque::new();
+        let mut reachable_nodes = Vec::new();
+        let mut kept_edges = Vec::new();
+
+        node_queue.push_back(new_root);
+        old_to_new_node[new_root.as_usize()] = NodeId(0);
+        reachable_nodes.push(new_root);
+
+        while let Some(u) = node_queue.pop_front() {
+            if self.nodes.status[u.as_usize()] == NodeStatus::Expanded {
+                let first_e = self.nodes.first_child_edge[u.as_usize()];
+                let count = self.nodes.num_children[u.as_usize()];
+                for i in 0..count {
+                    let e = EdgeId(first_e.0 + i);
+                    let new_edge = EdgeId(kept_edges.len() as u32);
+                    old_to_new_edge[e.as_usize()] = new_edge;
+                    kept_edges.push(e.as_usize());
+
+                    let v = self.edges.child_node[e.as_usize()];
+                    if v.is_valid() && old_to_new_node[v.as_usize()] == NodeId::INVALID {
+                        let new_node = NodeId(reachable_nodes.len() as u32);
+                        old_to_new_node[v.as_usize()] = new_node;
+                        reachable_nodes.push(v);
+                        node_queue.push_back(v);
+                    }
+                }
+            }
+        }
+
+        let new_num_nodes = reachable_nodes.len();
+        let mut new_parent_edge = Vec::with_capacity(new_num_nodes);
+        let mut new_first_child_edge = Vec::with_capacity(new_num_nodes);
+        let mut new_num_children = Vec::with_capacity(new_num_nodes);
+        let mut new_agent = Vec::with_capacity(new_num_nodes);
+        let mut new_status = Vec::with_capacity(new_num_nodes);
+
+        for &old_u in &reachable_nodes {
+            if old_u == new_root {
+                new_parent_edge.push(EdgeId::INVALID);
+            } else {
+                let old_parent_e = self.nodes.parent_edge[old_u.as_usize()];
+                new_parent_edge.push(old_to_new_edge[old_parent_e.as_usize()]);
+            }
+
+            let old_first_e = self.nodes.first_child_edge[old_u.as_usize()];
+            if old_first_e.is_valid() {
+                new_first_child_edge.push(old_to_new_edge[old_first_e.as_usize()]);
+            } else {
+                new_first_child_edge.push(EdgeId::INVALID);
+            }
+
+            new_num_children.push(self.nodes.num_children[old_u.as_usize()]);
+            new_agent.push(self.nodes.agent[old_u.as_usize()]);
+            new_status.push(self.nodes.status[old_u.as_usize()]);
+        }
+
+        let new_num_edges = kept_edges.len();
+        let mut new_action = Vec::with_capacity(new_num_edges);
+        let mut new_child_node = Vec::with_capacity(new_num_edges);
+        let mut new_reward = Vec::with_capacity(new_num_edges);
+
+        for &old_e in &kept_edges {
+            new_action.push(self.edges.action[old_e].clone());
+            let old_v = self.edges.child_node[old_e];
+            let new_v = if old_v.is_valid() {
+                old_to_new_node[old_v.as_usize()]
+            } else {
+                NodeId::INVALID
+            };
+            new_child_node.push(new_v);
+            new_reward.push(self.edges.reward[old_e].clone());
+        }
+
+        self.nodes = NodeArrays {
+            parent_edge: new_parent_edge,
+            first_child_edge: new_first_child_edge,
+            num_children: new_num_children,
+            agent: new_agent,
+            status: new_status,
+        };
+
+        self.edges = EdgeArrays {
+            action: new_action,
+            child_node: new_child_node,
+            reward: new_reward,
+        };
+
+        self.stats.retain_edges(&kept_edges);
     }
 }
 

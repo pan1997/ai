@@ -27,7 +27,8 @@ where
     D: AgentDynamics + Sync,
 {
     fn evaluate(&self, s: &D::State) -> Evaluation {
-        let legal = self.dynamics.actions(s);
+        let mut legal = Vec::new();
+        self.dynamics.actions(s, &mut legal);
         let n = legal.len();
         let priors = if n > 0 {
             vec![1.0 / (n as f32); n]

@@ -51,10 +51,11 @@ impl MultiGameScheduler {
         assert_eq!(root_states.len(), self.batch_size);
 
         // 1. Root Initialization
+        let mut scratch_actions = Vec::new();
         let mut active = vec![true; self.batch_size];
         for b in 0..self.batch_size {
-            let actions = dynamics.actions(root_states[b]);
-            if actions.is_empty() {
+            dynamics.actions(root_states[b], &mut scratch_actions);
+            if scratch_actions.is_empty() {
                 trees[b].mark_terminal(roots[b]);
                 active[b] = false;
             }
@@ -72,8 +73,8 @@ impl MultiGameScheduler {
         if !root_states_to_eval.is_empty() {
             let evals = model.evaluate_batch(&root_states_to_eval);
             for (i, &b) in active_indices.iter().enumerate() {
-                let legal_actions = dynamics.actions(root_states[b]);
-                trees[b].expand_node(roots[b], &legal_actions);
+                dynamics.actions(root_states[b], &mut scratch_actions);
+                trees[b].expand_node(roots[b], &scratch_actions);
                 backup.init_root(&mut trees[b], roots[b], &evals[i]);
             }
         }
@@ -129,21 +130,21 @@ impl MultiGameScheduler {
                     break;
                 }
 
-                let mut transitions = Vec::new();
-                dynamics.step_batch(&active_states, &selected_actions, &mut transitions);
-                assert_eq!(transitions.len(), step_tree_indices.len());
+                let mut outcomes = Vec::new();
+                dynamics.step_batch(&mut active_states, &selected_actions, &mut outcomes);
+                assert_eq!(outcomes.len(), step_tree_indices.len());
 
                 for (i, &b) in step_tree_indices.iter().enumerate() {
-                    let transition = &transitions[i];
+                    let outcome = &outcomes[i];
                     let edge = selected_edges[i];
-                    current_state[b] = transition.next_state.clone();
+                    current_state[b] = active_states[i].clone();
 
                     let child = trees[b].edge_child(edge);
                     if !child.is_valid() {
-                        trees[b].set_edge_reward(edge, transition.reward.clone());
+                        trees[b].set_edge_reward(edge, outcome.reward.clone());
                         let inserted = trees[b].insert_node(edge, mcts_traits::AgentId(0));
                         current_node[b] = inserted;
-                        if transition.terminated {
+                        if outcome.terminated {
                             trees[b].mark_terminal(inserted);
                         }
                         is_traversing[b] = false;
@@ -165,8 +166,8 @@ impl MultiGameScheduler {
                 if trees[b].node_status(leaf_node) == NodeStatus::Terminal {
                     terminal_paths.push((b, paths[b].clone()));
                 } else if trees[b].node_status(leaf_node) == NodeStatus::Unexpanded {
-                    let actions = dynamics.actions(state);
-                    if actions.is_empty() {
+                    dynamics.actions(state, &mut scratch_actions);
+                    if scratch_actions.is_empty() {
                         trees[b].mark_terminal(leaf_node);
                         terminal_paths.push((b, paths[b].clone()));
                     } else if let Some(pos) = unique_states.iter().position(|s| s == state) {
@@ -191,10 +192,10 @@ impl MultiGameScheduler {
             // Expand unique leaves and backup
             for (u, eval) in evals.iter().enumerate() {
                 let state = &unique_states[u];
-                let actions = dynamics.actions(state);
+                dynamics.actions(state, &mut scratch_actions);
 
                 for &(tree_idx, leaf_node) in &consumers_list[u] {
-                    trees[tree_idx].expand_node(leaf_node, &actions);
+                    trees[tree_idx].expand_node(leaf_node, &scratch_actions);
                     let path = &paths[tree_idx];
                     backup.backup(&mut trees[tree_idx], path, Some(eval));
                 }

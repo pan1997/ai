@@ -153,12 +153,53 @@ pub trait AgentDynamics {
     type Reward;
     
     fn initial(&self) -> Self::State;
-    fn actions(&self, s: &Self::State) -> Vec<Self::Action>;
-    fn step(&self, s: Self::State, action: &Self::Action) -> Transition<Self::State, Self::Reward>;
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>);
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward>;
 }
 ```
 
-- If a sequential scheduler only needs `D::State: Clone`, it specifies that requirement in its own `where` clause.
-- If an algorithm never clones states (e.g. MuZero recurrent latent dynamics), it is not penalized by artificial constraints.
+- If a sequential scheduler only needs `D::State: Clone` for root initialization, it specifies that requirement in its own `where` clause.
+- Because `step` mutates `s: &mut State` in-place, zero cloning occurs down the selection trajectory.
+- Algorithms that never clone states (e.g. MuZero recurrent latent dynamics) are not penalized by artificial constraints.
 - Enables no-std compatibility and custom allocators where desired.
+
+---
+
+## 5. Zero-Allocation Traversals & Subtree Promotion
+
+### 5.1 In-Place Search Descent
+During MCTS selection, a path of depth $D$ is traversed from the root to a leaf:
+1. `let mut state = root_state.clone();` clones the state once per iteration pass.
+2. At each selected edge, `dynamics.step(&mut state, action)` mutates `state` in-place.
+3. Node expansion reuses a pre-allocated scratch buffer via `dynamics.actions(&state, &mut scratch_actions)`.
+4. As a result, the entire traversal and expansion sequence performs **zero heap allocations** on hot paths.
+
+### 5.2 Subtree Promotion (`promote_subtree`)
+In iterative game play (self-play or tournament matches), discarding the entire search tree after choosing an action wastes computational effort. `TreeStore::promote_subtree(new_root)` promotes any child node to become the new root:
+- Runs a breadth-first search (BFS) over reachable nodes in the subtree.
+- Re-indexes reachable nodes and edges contiguously into memory starting at `NodeId(0)`.
+- Automatically prunes all unreachable sibling branches, compacting memory vectors.
+- Retains visit counts, running means, policy priors, and transition rewards.
+
+---
+
+## 6. Future Roadmap: Directed Acyclic Graphs (DAG) vs Trees
+
+A natural extension to standard MCTS trees is the incorporation of **Transposition Tables** (Zobrist hashing), transforming the tree into a Directed Acyclic Graph (DAG) where identical board states reached via transposed move orders share a single node.
+
+### Theoretical Benefits
+- **Sample Efficiency**: Search passes exploring different permutations of the same moves (e.g. `e4 e5 Nf3 Nc6` vs `Nf3 Nc6 e4 e5`) accumulate visit counts and value estimates in a shared node.
+- **Deeper Search Horizon**: Transposition detection avoids redundant expansions of previously evaluated game states.
+
+### Architectural Trade-offs & Complexities
+1. **Multi-Path Backpropagation & Dual-Counting**:
+   In a strict tree, each leaf has a unique predecessor path back to the root. In a DAG, propagating values backwards can cause visit counts $N(s)$ and value returns $Q(s)$ to be multi-counted if not carefully tracked via path-aware weighting or DAG-MCTS algorithms.
+2. **Virtual Loss Intersections**:
+   In parallel or batched search (`BatchedScheduler`), virtual losses prevent threads from following identical paths. In a DAG, two distinct paths may reconverge at an internal transposition, requiring global edge-level synchronization.
+3. **Graph Cycles in Reversible Games**:
+   Games with reversible moves (e.g. Chess piece maneuvering) can produce directed cycles in the search graph, requiring three-fold repetition detection or path-dependent state hashing.
+4. **Memory Compaction & Subtree Promotion**:
+   In an SoA tree, `promote_subtree` is a linear BFS. In a DAG, nodes can have multiple parents, requiring topological sorting or reference counting for garbage collection.
+
+`TreeStore` maintains a pure tree representation for predictable, zero-allocation cache performance, while preserving clear extension hooks for future transposition-table layers.
 

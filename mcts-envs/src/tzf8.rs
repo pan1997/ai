@@ -1,4 +1,4 @@
-use mcts_traits::{AgentDynamics, Transition};
+use mcts_traits::{AgentDynamics, StepOutcome};
 
 /// Shift direction for sliding tiles in 2048.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -202,28 +202,28 @@ impl AgentDynamics for Tzf8Dynamics {
         Tzf8State::new(12345)
     }
 
-    fn actions(&self, s: &Self::State) -> Vec<Self::Action> {
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        out.clear();
         let directions = [
             Direction::Left,
             Direction::Right,
             Direction::Up,
             Direction::Down,
         ];
-        directions
-            .into_iter()
-            .filter(|&dir| {
-                let mut test_state = s.clone();
-                let (changed, _) = test_state.move_board(dir);
-                changed
-            })
-            .collect()
+        for dir in directions {
+            let mut test_state = s.clone();
+            let (changed, _) = test_state.move_board(dir);
+            if changed {
+                out.push(dir);
+            }
+        }
     }
 
-    fn step(&self, mut s: Self::State, action: &Self::Action) -> Transition<Self::State, Self::Reward> {
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
         let (changed, score_gain) = s.move_board(*action);
         if !changed {
             s.ongoing = false;
-            return Transition::new(s, [0.0], true);
+            return StepOutcome::new([0.0], true);
         }
 
         s.score += score_gain;
@@ -234,6 +234,6 @@ impl AgentDynamics for Tzf8Dynamics {
             s.ongoing = false;
         }
 
-        Transition::new(s, [score_gain as f32], terminated)
+        StepOutcome::new([score_gain as f32], terminated)
     }
 }

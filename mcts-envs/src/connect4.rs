@@ -1,4 +1,4 @@
-use mcts_traits::{AgentDynamics, BatchedAgentDynamics, Transition, World};
+use mcts_traits::{AgentDynamics, BatchedAgentDynamics, StepOutcome, World};
 
 /// Players in Connect 4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,38 +159,43 @@ impl<const R: usize, const C: usize> AgentDynamics for Connect4Dynamics<R, C> {
         Connect4State::new()
     }
 
-    fn actions(&self, s: &Self::State) -> Vec<Self::Action> {
-        (0..C).filter(|&col| !s.is_column_full(col)).collect()
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        out.clear();
+        for col in 0..C {
+            if !s.is_column_full(col) {
+                out.push(col);
+            }
+        }
     }
 
-    fn step(&self, s: Self::State, action: &Self::Action) -> Transition<Self::State, Self::Reward> {
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
         let col = *action;
         assert!(col < C, "Connect4: action column out of bounds");
         assert!(!s.is_column_full(col), "Connect4: column is full");
 
-        let mut next_state = s.clone();
         let mut placed_row = 0;
+        let current_player = s.current_player;
 
         for row in (0..R).rev() {
-            if next_state.board[row][col].is_none() {
-                next_state.board[row][col] = Some(s.current_player);
+            if s.board[row][col].is_none() {
+                s.board[row][col] = Some(current_player);
                 placed_row = row;
                 break;
             }
         }
 
-        let is_win = next_state.check_win_at(placed_row, col, s.current_player);
+        let is_win = s.check_win_at(placed_row, col, current_player);
         if is_win {
-            let reward = match s.current_player {
+            let reward = match current_player {
                 Player::Red => [1.0, -1.0],
                 Player::Yellow => [-1.0, 1.0],
             };
-            Transition::new(next_state, reward, true)
-        } else if next_state.is_board_full() {
-            Transition::new(next_state, [0.0, 0.0], true)
+            StepOutcome::new(reward, true)
+        } else if s.is_board_full() {
+            StepOutcome::new([0.0, 0.0], true)
         } else {
-            next_state.current_player = s.current_player.other();
-            Transition::new(next_state, [0.0, 0.0], false)
+            s.current_player = current_player.other();
+            StepOutcome::new([0.0, 0.0], false)
         }
     }
 }
@@ -198,11 +203,11 @@ impl<const R: usize, const C: usize> AgentDynamics for Connect4Dynamics<R, C> {
 impl<const R: usize, const C: usize> BatchedAgentDynamics for Connect4Dynamics<R, C> {
     fn step_batch(
         &self,
-        states: &[Self::State],
+        states: &mut [Self::State],
         actions: &[Self::Action],
-        out_transitions: &mut Vec<Transition<Self::State, Self::Reward>>,
+        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
     ) {
-        mcts_traits::default_step_batch(self, states, actions, out_transitions);
+        mcts_traits::default_step_batch(self, states, actions, out_outcomes);
     }
 }
 
@@ -224,34 +229,29 @@ impl<const R: usize, const C: usize> World for Connect4Dynamics<R, C> {
         ws.clone()
     }
 
-    fn actions(&self, ws: &Self::WorldState, player: usize) -> Vec<Self::Action> {
+    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
+        out.clear();
         let active_player = match ws.current_player {
             Player::Red => 0,
             Player::Yellow => 1,
         };
         if player == active_player {
-            AgentDynamics::actions(self, ws)
-        } else {
-            Vec::new() // Inactive player has no moves
+            AgentDynamics::actions(self, ws, out);
         }
     }
 
     fn step(
         &self,
-        ws: Self::WorldState,
+        ws: &mut Self::WorldState,
         joint: &[Self::Action],
-    ) -> (Self::WorldState, Vec<f32>, bool) {
+    ) -> (Vec<f32>, bool) {
         let active_player = match ws.current_player {
             Player::Red => 0,
             Player::Yellow => 1,
         };
         let action = &joint[active_player];
-        let transition = AgentDynamics::step(self, ws, action);
-        (
-            transition.next_state,
-            transition.reward.to_vec(),
-            transition.terminated,
-        )
+        let outcome = AgentDynamics::step(self, ws, action);
+        (outcome.reward.to_vec(), outcome.terminated)
     }
 
     fn terminal(&self, ws: &Self::WorldState) -> bool {

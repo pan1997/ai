@@ -1,8 +1,28 @@
 use std::fmt::Debug;
 
-/// Result of stepping an environment state with an action.
+/// Outcome of stepping an environment state in-place with an action.
 ///
-/// Encapsulates the subsequent state, immediate reward signal, and termination flag.
+/// Encapsulates the immediate reward signal received and the episode termination flag.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StepOutcome<R> {
+    /// Immediate transition reward received (e.g., scalar return or per-agent reward vector).
+    pub reward: R,
+    /// Indicates whether the subsequent state is a terminal game/episode state.
+    pub terminated: bool,
+}
+
+impl<R> StepOutcome<R> {
+    /// Constructs a new `StepOutcome`.
+    #[inline]
+    pub fn new(reward: R, terminated: bool) -> Self {
+        Self { reward, terminated }
+    }
+}
+
+/// Result of stepping an environment state with an action, holding ownership of the next state.
+///
+/// Primarily used for transition logging, experience replay buffers, or non-destructive simulation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Transition<S, R> {
@@ -42,29 +62,34 @@ pub trait AgentDynamics {
     /// Returns the initial or root state for planning.
     fn initial(&self) -> Self::State;
 
-    /// Generates the list of legal actions available in state `s`.
-    fn actions(&self, s: &Self::State) -> Vec<Self::Action>;
+    /// Generates legal actions available in state `s` into `out`.
+    ///
+    /// Clears or appends to `out` to guarantee zero heap allocations during search tree expansion.
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>);
 
-    /// Transitions state `s` forward given `action`.
-    fn step(&self, s: Self::State, action: &Self::Action) -> Transition<Self::State, Self::Reward>;
+    /// Transitions state `s` forward in-place given `action`.
+    ///
+    /// Modifies `s` directly without heap allocation or intermediate cloning, returning the
+    /// immediate reward and termination status.
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward>;
 }
 
 /// High-throughput batched dynamics for vectorized environments or MuZero neural dynamics.
 ///
 /// Allows amortizing simulation overhead across multiple states and actions simultaneously.
 pub trait BatchedAgentDynamics: AgentDynamics {
-    /// Steps a batch of states and corresponding actions forward in lockstep.
+    /// Steps a batch of states and corresponding actions forward in lockstep in-place.
     ///
-    /// Writes resulting transitions into `out_transitions`.
+    /// Modifies each state in `states` in-place and writes resulting outcomes into `out_outcomes`.
     ///
     /// # Panics
     ///
     /// Implementations may panic if `states.len() != actions.len()`.
     fn step_batch(
         &self,
-        states: &[Self::State],
+        states: &mut [Self::State],
         actions: &[Self::Action],
-        out_transitions: &mut Vec<Transition<Self::State, Self::Reward>>,
+        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
     );
 }
 
@@ -77,21 +102,20 @@ pub trait BatchedAgentDynamics: AgentDynamics {
 /// Panics if `states.len() != actions.len()`.
 pub fn default_step_batch<D>(
     dynamics: &D,
-    states: &[D::State],
+    states: &mut [D::State],
     actions: &[D::Action],
-    out_transitions: &mut Vec<Transition<D::State, D::Reward>>,
+    out_outcomes: &mut Vec<StepOutcome<D::Reward>>,
 ) where
     D: AgentDynamics + ?Sized,
-    D::State: Clone,
 {
     assert_eq!(
         states.len(),
         actions.len(),
         "default_step_batch: states and actions slice lengths must match"
     );
-    out_transitions.clear();
-    out_transitions.reserve(states.len());
-    for (s, a) in states.iter().zip(actions.iter()) {
-        out_transitions.push(dynamics.step(s.clone(), a));
+    out_outcomes.clear();
+    out_outcomes.reserve(states.len());
+    for (s, a) in states.iter_mut().zip(actions.iter()) {
+        out_outcomes.push(dynamics.step(s, a));
     }
 }

@@ -29,19 +29,20 @@ pub trait World {
     /// Generates a player-specific observation from `ws` (full-state snapshot or delta).
     fn observe(&self, ws: &Self::WorldState, player: usize) -> Self::Observation;
 
-    /// Returns legal actions available for `player` in the current world state.
+    /// Populates `out` with legal actions available for `player` in the current world state.
     ///
+    /// Clears or appends to `out` to guarantee zero heap allocations during arbitration loops.
     /// Inactive players in turn-based games return an empty list or a single Noop action.
-    fn actions(&self, ws: &Self::WorldState, player: usize) -> Vec<Self::Action>;
+    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>);
 
-    /// Executes joint actions from all players simultaneously.
+    /// Executes joint actions from all players simultaneously in-place on `ws`.
     ///
-    /// Returns `(next_world_state, per_player_rewards, is_terminal)`.
+    /// Modifies `ws` directly and returns `(per_player_rewards, is_terminal)`.
     fn step(
         &self,
-        ws: Self::WorldState,
+        ws: &mut Self::WorldState,
         joint: &[Self::Action],
-    ) -> (Self::WorldState, Vec<f32>, bool);
+    ) -> (Vec<f32>, bool);
 
     /// Checks if the world state is in a terminal condition.
     fn terminal(&self, ws: &Self::WorldState) -> bool;

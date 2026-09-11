@@ -1,5 +1,5 @@
 use crate::agent::AgentId;
-use crate::dynamics::{AgentDynamics, BatchedAgentDynamics, Transition};
+use crate::dynamics::{AgentDynamics, BatchedAgentDynamics, StepOutcome, Transition};
 use std::collections::{HashMap, HashSet};
 
 /// Configurable, deterministic state-machine graph for exact mathematical unit tests.
@@ -84,26 +84,32 @@ impl<const N: usize> AgentDynamics for GraphEnv<N> {
         self.initial_state
     }
 
-    fn actions(&self, s: &Self::State) -> Vec<Self::Action> {
-        self.legal_actions.get(s).cloned().unwrap_or_default()
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        out.clear();
+        if let Some(actions) = self.legal_actions.get(s) {
+            out.extend_from_slice(actions);
+        }
     }
 
-    fn step(&self, s: Self::State, action: &Self::Action) -> Transition<Self::State, Self::Reward> {
-        self.transitions
-            .get(&(s, *action))
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+        let t = self
+            .transitions
+            .get(&(*s, *action))
             .copied()
-            .unwrap_or_else(|| panic!("GraphEnv: invalid transition queried for state {s}, action {action}"))
+            .unwrap_or_else(|| panic!("GraphEnv: invalid transition queried for state {s}, action {action}"));
+        *s = t.next_state;
+        StepOutcome::new(t.reward, t.terminated)
     }
 }
 
 impl<const N: usize> BatchedAgentDynamics for GraphEnv<N> {
     fn step_batch(
         &self,
-        states: &[Self::State],
+        states: &mut [Self::State],
         actions: &[Self::Action],
-        out_transitions: &mut Vec<Transition<Self::State, Self::Reward>>,
+        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
     ) {
-        crate::dynamics::default_step_batch(self, states, actions, out_transitions);
+        crate::dynamics::default_step_batch(self, states, actions, out_outcomes);
     }
 }
 

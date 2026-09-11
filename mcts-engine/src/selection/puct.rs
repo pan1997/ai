@@ -51,9 +51,20 @@ impl<const N: usize> EdgeStatsStore for MultiAgentPuctStats<N> {
         self.mean_value.clear();
         self.virtual_loss.clear();
     }
+
+    fn retain_edges(&mut self, kept_indices: &[usize]) {
+        self.visits = kept_indices.iter().map(|&i| self.visits[i]).collect();
+        self.priors = kept_indices.iter().map(|&i| self.priors[i]).collect();
+        self.mean_value = kept_indices.iter().map(|&i| self.mean_value[i]).collect();
+        self.virtual_loss = kept_indices.iter().map(|&i| self.virtual_loss[i]).collect();
+    }
 }
 
 impl<const N: usize> PriorStore for MultiAgentPuctStats<N> {
+    fn prior(&self, edge: EdgeId) -> f32 {
+        self.priors[edge.as_usize()]
+    }
+
     fn set_prior(&mut self, edge: EdgeId, prior: f32) {
         self.priors[edge.as_usize()] = prior;
     }

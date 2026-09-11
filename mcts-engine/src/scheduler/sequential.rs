@@ -43,22 +43,25 @@ impl SequentialScheduler {
         B: BackupPolicy<Action, Reward, Stats, Evaluation>,
     {
         // 1. Root Initialization
-        let root_actions = dynamics.actions(root_state);
-        if root_actions.is_empty() {
+        let mut scratch_actions = Vec::new();
+        dynamics.actions(root_state, &mut scratch_actions);
+        if scratch_actions.is_empty() {
             tree.mark_terminal(root);
             return;
         }
 
         if tree.node_status(root) == NodeStatus::Unexpanded {
             let eval = model.evaluate(root_state);
-            tree.expand_node(root, &root_actions);
+            tree.expand_node(root, &scratch_actions);
             backup.init_root(tree, root, &eval);
         }
+
+        let mut path = Vec::new();
 
         // 2. Iteration Loop
         for _ in 0..num_iterations {
             let mut state = root_state.clone();
-            let mut path = Vec::new();
+            path.clear();
             let mut current_node = root;
 
             // Selection traversal
@@ -78,16 +81,15 @@ impl SequentialScheduler {
                     });
 
                     let action = tree.edge_action(edge);
-                    let transition = dynamics.step(state.clone(), action);
-                    state = transition.next_state;
+                    let outcome = dynamics.step(&mut state, action);
 
                     let child = tree.edge_child(edge);
                     if !child.is_valid() {
                         // Newly discovered node
-                        tree.set_edge_reward(edge, transition.reward);
+                        tree.set_edge_reward(edge, outcome.reward);
                         let inserted = tree.insert_node(edge, mcts_traits::AgentId(0));
                         current_node = inserted;
-                        if transition.terminated {
+                        if outcome.terminated {
                             tree.mark_terminal(current_node);
                         }
                         break;
@@ -105,13 +107,13 @@ impl SequentialScheduler {
                     backup.backup(tree, &path, None);
                 }
                 NodeStatus::Unexpanded => {
-                    let actions = dynamics.actions(&state);
-                    if actions.is_empty() {
+                    dynamics.actions(&state, &mut scratch_actions);
+                    if scratch_actions.is_empty() {
                         tree.mark_terminal(current_node);
                         backup.backup(tree, &path, None);
                     } else {
                         let eval = model.evaluate(&state);
-                        tree.expand_node(current_node, &actions);
+                        tree.expand_node(current_node, &scratch_actions);
                         backup.backup(tree, &path, Some(&eval));
                     }
                 }

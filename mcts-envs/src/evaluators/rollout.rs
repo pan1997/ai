@@ -33,7 +33,8 @@ where
     D::Reward: AsRef<[f32]>,
 {
     fn evaluate(&self, s: &D::State) -> Evaluation {
-        let legal_actions = self.dynamics.actions(s);
+        let mut legal_actions = Vec::new();
+        self.dynamics.actions(s, &mut legal_actions);
         let num_actions = legal_actions.len();
         let priors = if num_actions > 0 {
             vec![1.0 / (num_actions as f32); num_actions]
@@ -50,13 +51,14 @@ where
 
         let mut total_return = 0.0;
         let mut rng = 123456789u64;
+        let mut actions = Vec::new();
 
         for _ in 0..self.num_rollouts {
             let mut current = s.clone();
             let mut depth = 0;
 
             while depth < self.max_depth {
-                let actions = self.dynamics.actions(&current);
+                self.dynamics.actions(&current, &mut actions);
                 if actions.is_empty() {
                     break;
                 }
@@ -64,11 +66,10 @@ where
                 rng ^= rng >> 7;
                 rng ^= rng << 17;
                 let pick = (rng as usize) % actions.len();
-                let transition = self.dynamics.step(current, &actions[pick]);
-                current = transition.next_state;
+                let outcome = self.dynamics.step(&mut current, &actions[pick]);
 
-                if transition.terminated {
-                    let rewards = transition.reward.as_ref();
+                if outcome.terminated {
+                    let rewards = outcome.reward.as_ref();
                     if let Some(&first) = rewards.first() {
                         total_return += first;
                     }

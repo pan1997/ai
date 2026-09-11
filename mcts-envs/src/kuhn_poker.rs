@@ -1,4 +1,4 @@
-use mcts_traits::{AgentDynamics, Transition, World};
+use mcts_traits::{AgentDynamics, StepOutcome, World};
 
 /// Actions available in Kuhn Poker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,30 +77,34 @@ impl World for KuhnWorld {
         }
     }
 
-    fn actions(&self, ws: &Self::WorldState, player: usize) -> Vec<Self::Action> {
+    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
+        out.clear();
         if ws.terminated || player != ws.current_player {
-            return Vec::new();
+            return;
         }
         match ws.history.as_slice() {
-            [] => vec![KuhnAction::Check, KuhnAction::Bet],
-            [KuhnAction::Check] => vec![KuhnAction::Check, KuhnAction::Bet],
-            [KuhnAction::Bet] => vec![KuhnAction::Fold, KuhnAction::Call],
-            [KuhnAction::Check, KuhnAction::Bet] => vec![KuhnAction::Fold, KuhnAction::Call],
-            _ => Vec::new(),
+            [] => out.extend([KuhnAction::Check, KuhnAction::Bet]),
+            [KuhnAction::Check] => out.extend([KuhnAction::Check, KuhnAction::Bet]),
+            [KuhnAction::Bet] => out.extend([KuhnAction::Fold, KuhnAction::Call]),
+            [KuhnAction::Check, KuhnAction::Bet] => out.extend([KuhnAction::Fold, KuhnAction::Call]),
+            _ => {}
         }
     }
 
     fn step(
         &self,
-        mut ws: Self::WorldState,
+        ws: &mut Self::WorldState,
         joint: &[Self::Action],
-    ) -> (Self::WorldState, Vec<f32>, bool) {
+    ) -> (Vec<f32>, bool) {
         let action = joint[ws.current_player];
         ws.history.push(action);
 
         let mut rewards = vec![0.0, 0.0];
 
         match ws.history.as_slice() {
+            [KuhnAction::Check] => {
+                ws.current_player = 1;
+            }
             [KuhnAction::Check, KuhnAction::Check] => {
                 ws.terminated = true;
                 if ws.cards[0] > ws.cards[1] {
@@ -147,7 +151,7 @@ impl World for KuhnWorld {
         }
 
         let done = ws.terminated;
-        (ws, rewards, done)
+        (rewards, done)
     }
 
     fn terminal(&self, ws: &Self::WorldState) -> bool {
@@ -178,18 +182,19 @@ impl AgentDynamics for KuhnAgentDynamics {
         }
     }
 
-    fn actions(&self, s: &Self::State) -> Vec<Self::Action> {
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        out.clear();
         if s.terminal {
-            return Vec::new();
+            return;
         }
         match s.history.as_slice() {
-            [] => vec![KuhnAction::Check, KuhnAction::Bet],
-            [KuhnAction::Check, KuhnAction::Bet] => vec![KuhnAction::Fold, KuhnAction::Call],
-            _ => Vec::new(),
+            [] => out.extend([KuhnAction::Check, KuhnAction::Bet]),
+            [KuhnAction::Check, KuhnAction::Bet] => out.extend([KuhnAction::Fold, KuhnAction::Call]),
+            _ => {}
         }
     }
 
-    fn step(&self, mut s: Self::State, action: &Self::Action) -> Transition<Self::State, Self::Reward> {
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
         s.history.push(*action);
 
         let reward;
@@ -226,6 +231,6 @@ impl AgentDynamics for KuhnAgentDynamics {
         }
 
         s.terminal = terminated;
-        Transition::new(s, [reward], terminated)
+        StepOutcome::new([reward], terminated)
     }
 }

@@ -22,6 +22,7 @@ pub mod tree_store;
 pub mod selection;
 pub mod backup;
 pub mod scheduler;
+pub mod dirichlet;
 
 #[cfg(test)]
 mod tests;
@@ -37,3 +38,4 @@ pub use backup::{
     BackupPolicy, MultiAgentReward, PathElement, SingleAgentBackup, VectorBackup,
 };
 pub use scheduler::{BatchedScheduler, MultiGameScheduler, SequentialScheduler};
+pub use dirichlet::{add_dirichlet_noise, add_root_dirichlet_noise};
