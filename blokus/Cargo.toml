@@ -1,0 +1,21 @@
+[package]
+name = "blokus"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance Blokus game engine, multi-agent MCTS agents, and interactive CLI players"
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+rand = { workspace = true }
+
+[[bin]]
+name = "blokus-play"
+path = "src/bin/play.rs"
+
+[[bin]]
+name = "blokus-tournament"
+path = "src/bin/tournament.rs"
+
