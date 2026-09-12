@@ -1,105 +1,15 @@
 //! Planning dynamics implementations for Connect 4.
 //!
-//! Provides [`Connect4Dynamics`], a lightweight planning adapter around [`Connect4World`],
-//! as well as alternative dynamics such as [`MacroConnect4Dynamics`] (round-based lookahead
-//! absorbing an opponent policy).
+//! Standard alternating planning dynamics are provided universally by
+//! [`TurnBasedDynamics<Connect4World<R, C>>`](mcts_traits::TurnBasedDynamics).
+//!
+//! This module provides alternative planning dynamics such as [`MacroConnect4Dynamics`]
+//! (round-based lookahead absorbing an opponent policy).
 
 use crate::game::{Connect4State, Player};
 use crate::world::Connect4World;
 use mcts_traits::{AgentDynamics, AgentId, BatchedAgentDynamics, StepOutcome, World};
 use rand::seq::SliceRandom;
-
-/// Standard alternating-turn Connect 4 planning dynamics.
-///
-/// Wraps the ground-truth [`Connect4World`] referee, exposing an [`AgentDynamics`] interface
-/// where each step advances 1 ply and toggles the active player.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Connect4Dynamics<const R: usize = 6, const C: usize = 7>;
-
-impl<const R: usize, const C: usize> Connect4Dynamics<R, C> {
-    /// Creates a new `Connect4Dynamics` instance.
-    pub const fn new() -> Self {
-        Self
-    }
-
-    /// Returns the underlying [`Connect4World`] referee.
-    pub const fn world(&self) -> Connect4World<R, C> {
-        Connect4World
-    }
-}
-
-impl<const R: usize, const C: usize> AgentDynamics for Connect4Dynamics<R, C> {
-    type State = Connect4State<R, C>;
-    type Action = usize;
-    type Reward = [f32; 2];
-
-    #[inline]
-    fn initial(&self) -> Self::State {
-        Connect4World::<R, C>.initial()
-    }
-
-    #[inline]
-    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
-        Connect4World::<R, C>.legal_actions(s, out);
-    }
-
-    #[inline]
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
-        Connect4World::<R, C>.step_action(s, *action)
-    }
-
-    #[inline]
-    fn current_agent(&self, s: &Self::State) -> AgentId {
-        AgentId(s.current_player.index() as u32)
-    }
-}
-
-impl<const R: usize, const C: usize> BatchedAgentDynamics for Connect4Dynamics<R, C> {
-    fn step_batch(
-        &self,
-        states: &mut [Self::State],
-        actions: &[Self::Action],
-        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
-    ) {
-        mcts_traits::default_step_batch(self, states, actions, out_outcomes);
-    }
-}
-
-impl<const R: usize, const C: usize> World for Connect4Dynamics<R, C> {
-    type WorldState = Connect4State<R, C>;
-    type Action = usize;
-    type Observation = Connect4State<R, C>;
-
-    #[inline]
-    fn n_players(&self) -> usize {
-        Connect4World::<R, C>.n_players()
-    }
-
-    #[inline]
-    fn initial(&self) -> Self::WorldState {
-        Connect4World::<R, C>.initial()
-    }
-
-    #[inline]
-    fn observe(&self, ws: &Self::WorldState, player: usize) -> Self::Observation {
-        Connect4World::<R, C>.observe(ws, player)
-    }
-
-    #[inline]
-    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
-        Connect4World::<R, C>.actions(ws, player, out);
-    }
-
-    #[inline]
-    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
-        Connect4World::<R, C>.step(ws, joint)
-    }
-
-    #[inline]
-    fn terminal(&self, ws: &Self::WorldState) -> bool {
-        Connect4World::<R, C>.terminal(ws)
-    }
-}
 
 /// Pluggable policy governing opponent responses in macro-action dynamics.
 pub trait OpponentPolicy<const R: usize, const C: usize>: Send + Sync {

@@ -24,7 +24,7 @@ mod tests;
 
 pub use agent::{Agent, HumanAgent, MctsAgent, RandomAgent};
 pub use dynamics::{
-    Connect4Dynamics, MacroConnect4Dynamics, OpponentPolicy, RandomOpponent, TacticalOpponent,
+    MacroConnect4Dynamics, OpponentPolicy, RandomOpponent, TacticalOpponent,
 };
 pub use evaluator::{RolloutEvaluator, UniformEvaluator};
 pub use game::{Connect4State, Player};

@@ -40,7 +40,8 @@ mod tests;
 pub use agent::AgentId;
 pub use dynamics::{
     default_step_batch, AgentDynamics, BatchedAgentDynamics, StepOutcome, Transition,
+    TurnBasedDynamics,
 };
 pub use model::{BatchedModel, Evaluation, HasPolicy, HasValue, Model};
-pub use world::World;
+pub use world::{TurnBasedWorld, World};
 pub use graph::GraphEnv;

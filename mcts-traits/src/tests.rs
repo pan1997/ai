@@ -1,7 +1,8 @@
 use crate::agent::AgentId;
-use crate::dynamics::{default_step_batch, AgentDynamics, StepOutcome, Transition};
+use crate::dynamics::{default_step_batch, AgentDynamics, StepOutcome, Transition, TurnBasedDynamics};
 use crate::graph::GraphEnv;
 use crate::model::{Evaluation, HasPolicy, HasValue};
+use crate::world::{TurnBasedWorld, World};
 
 #[test]
 fn test_agent_id_conversions_and_display() {
@@ -172,5 +173,76 @@ fn test_graph_env_invalid_transition_panic() {
     let env = GraphEnv::<1>::new(0);
     let mut s = 99;
     env.step(&mut s, &99);
+}
+
+struct MockTurnBasedWorld;
+
+impl World for MockTurnBasedWorld {
+    type WorldState = (usize, usize);
+    type Action = usize;
+    type Observation = (usize, usize);
+
+    fn n_players(&self) -> usize {
+        2
+    }
+    fn initial(&self) -> Self::WorldState {
+        (0, 0)
+    }
+    fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
+        *ws
+    }
+    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
+        out.clear();
+        if player == ws.0 % 2 {
+            out.extend([1, 2]);
+        }
+    }
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
+        let player = ws.0 % 2;
+        let outcome = self.step_action(ws, &joint[player]);
+        (outcome.reward.to_vec(), outcome.terminated)
+    }
+    fn terminal(&self, ws: &Self::WorldState) -> bool {
+        ws.0 >= 4
+    }
+}
+
+impl TurnBasedWorld for MockTurnBasedWorld {
+    type StepReward = [f32; 2];
+
+    fn current_player(&self, ws: &Self::WorldState) -> usize {
+        ws.0 % 2
+    }
+
+    fn step_action(&self, ws: &mut Self::WorldState, action: &Self::Action) -> StepOutcome<[f32; 2]> {
+        ws.1 += *action;
+        ws.0 += 1;
+        let term = ws.0 >= 4;
+        StepOutcome::new(if term { [1.0, -1.0] } else { [0.0, 0.0] }, term)
+    }
+}
+
+#[test]
+fn test_turn_based_dynamics_adapter() {
+    let world = MockTurnBasedWorld;
+    let dyns = TurnBasedDynamics::new(world);
+
+    let mut state = dyns.initial();
+    assert_eq!(state, (0, 0));
+    assert_eq!(dyns.current_agent(&state), AgentId(0));
+
+    let mut acts = Vec::new();
+    dyns.actions(&state, &mut acts);
+    assert_eq!(acts, vec![1, 2]);
+
+    let outcome1 = dyns.step(&mut state, &1);
+    assert!(!outcome1.terminated);
+    assert_eq!(state, (1, 1));
+    assert_eq!(dyns.current_agent(&state), AgentId(1));
+
+    let outcome2 = dyns.step(&mut state, &2);
+    assert!(!outcome2.terminated);
+    assert_eq!(state, (2, 3));
+    assert_eq!(dyns.current_agent(&state), AgentId(0));
 }
 

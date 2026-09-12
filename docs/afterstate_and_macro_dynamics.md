@@ -214,7 +214,7 @@ By parameterizing the opponent policy $\pi_{\text{opp}}$, the agent can adopt di
 ## 7. Recommendation & Future Roadmap
 
 1. **Phase 1 (Immediate / Prototype)**:
-   Implement `MacroConnect4Dynamics<P>` (Route B) with `HeuristicOpponent` and `ForcedMoveOpponent` to benchmark depth gains and tournament win-rates against standard `Connect4Dynamics`.
+   Implement `MacroConnect4Dynamics<P>` (Route B) with `HeuristicOpponent` and `TacticalOpponent` to benchmark depth gains and tournament win-rates against standard `TurnBasedDynamics<Connect4World>`.
 2. **Phase 2 (Engine Extension)**:
    Introduce `TwoPhaseScheduler` in `mcts-engine` with formal support for Afterstate nodes and Expectation backup at `node_agent != root_agent`.
 3. **Phase 3 (Unified Stochastic Engine)**:

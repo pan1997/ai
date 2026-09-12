@@ -1,9 +1,9 @@
 //! Baseline and heuristic evaluation models for Blokus MCTS planning.
 
-use crate::dynamics::BlokusDynamics;
 use crate::game::{BlokusAction, BlokusState};
 use crate::pieces::piece_size;
-use mcts_traits::{AgentDynamics, Evaluation, Model};
+use crate::world::BlokusWorld;
+use mcts_traits::{AgentDynamics, Evaluation, Model, TurnBasedDynamics};
 
 /// Baseline evaluation model assigning uniform prior probability across legal actions.
 #[derive(Debug, Clone, Copy, Default)]
@@ -115,7 +115,7 @@ impl<const B: usize, const P: usize> Default for RolloutEvaluator<B, P> {
 
 impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for RolloutEvaluator<B, P> {
     fn evaluate(&self, s: &BlokusState<B, P>) -> Evaluation {
-        let env = BlokusDynamics::<B, P>;
+        let env = TurnBasedDynamics::new(BlokusWorld::<B, P>::new());
         let mut legal_actions = Vec::new();
         s.legal_actions(&mut legal_actions);
         let num_actions = legal_actions.len();
@@ -281,7 +281,7 @@ impl<const B: usize, const P: usize> Default for HeuristicRolloutEvaluator<B, P>
 
 impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for HeuristicRolloutEvaluator<B, P> {
     fn evaluate(&self, s: &BlokusState<B, P>) -> Evaluation {
-        let env = BlokusDynamics::<B, P>;
+        let env = TurnBasedDynamics::new(BlokusWorld::<B, P>::new());
         let mut legal_actions = Vec::new();
         s.legal_actions(&mut legal_actions);
         let num_actions = legal_actions.len();

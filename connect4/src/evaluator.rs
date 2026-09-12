@@ -1,8 +1,8 @@
 //! Baseline evaluation models for Connect 4 MCTS planning.
 
-use crate::dynamics::Connect4Dynamics;
 use crate::game::Connect4State;
-use mcts_traits::{AgentDynamics, Evaluation, Model};
+use crate::world::Connect4World;
+use mcts_traits::{AgentDynamics, Evaluation, Model, TurnBasedDynamics};
 
 /// Baseline evaluation model assigning uniform prior probability across non-full columns.
 #[derive(Debug, Clone, Copy, Default)]
@@ -48,7 +48,7 @@ impl<const R: usize, const C: usize> Default for RolloutEvaluator<R, C> {
 
 impl<const R: usize, const C: usize> Model<Connect4State<R, C>> for RolloutEvaluator<R, C> {
     fn evaluate(&self, s: &Connect4State<R, C>) -> Evaluation {
-        let env = Connect4Dynamics::<R, C>;
+        let env = TurnBasedDynamics::new(Connect4World::<R, C>::new());
         let mut legal_actions = Vec::new();
         s.legal_actions(&mut legal_actions);
         let num_actions = legal_actions.len();

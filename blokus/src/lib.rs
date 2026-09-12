@@ -23,7 +23,7 @@ pub use pieces::{
     TOTAL_SQUARES_PER_PLAYER,
 };
 pub use game::{BlokusAction, BlokusState, Player, EMPTY};
-pub use dynamics::{compute_rank_rewards, BlokusDynamics};
+pub use dynamics::compute_rank_rewards;
 pub use world::{BlokusClassicWorld, BlokusDuoWorld, BlokusWorld};
 pub use evaluator::{
     AreaHeuristicEvaluator, HeuristicRolloutEvaluator, HeuristicUtilityEvaluator, RolloutEvaluator,
@@ -39,9 +39,3 @@ pub type BlokusClassicState = BlokusState<20, 4>;
 
 /// Standard 2-player Blokus Duo state on a $14 \times 14$ board.
 pub type BlokusDuoState = BlokusState<14, 2>;
-
-/// Standard 4-player Blokus Classic dynamics.
-pub type BlokusClassicDynamics = BlokusDynamics<20, 4>;
-
-/// Standard 2-player Blokus Duo dynamics.
-pub type BlokusDuoDynamics = BlokusDynamics<14, 2>;

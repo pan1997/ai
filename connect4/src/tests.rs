@@ -1,12 +1,12 @@
 //! Comprehensive unit and integration tests for Connect 4 game engine, dynamics, and MCTS agents.
 
 use crate::agent::{Agent, MctsAgent, RandomAgent};
-use crate::dynamics::{Connect4Dynamics, MacroConnect4Dynamics, TacticalOpponent};
+use crate::dynamics::{MacroConnect4Dynamics, TacticalOpponent};
 use crate::evaluator::{RolloutEvaluator, UniformEvaluator};
 use crate::game::{Connect4State, Player};
 use crate::render::{render_board, render_board_styled};
 use crate::world::Connect4World;
-use mcts_traits::{AgentDynamics, Model, World};
+use mcts_traits::{AgentDynamics, Model, TurnBasedDynamics, World};
 
 #[test]
 fn test_initial_state_empty() {
@@ -147,7 +147,7 @@ fn test_diagonal_up_right_win() {
 
 #[test]
 fn test_dynamics_step_and_turn_alternation() {
-    let env = Connect4Dynamics::<6, 7>::new();
+    let env = TurnBasedDynamics::new(Connect4World::<6, 7>::new());
     let mut state = AgentDynamics::initial(&env);
 
     assert_eq!(state.current_player, Player::Red);

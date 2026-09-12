@@ -48,3 +48,50 @@ pub trait World {
     fn terminal(&self, ws: &Self::WorldState) -> bool;
 }
 
+/// Extension trait for sequential turn-based environments with zero-allocation stack transitions.
+///
+/// Many classical board games (e.g. Connect 4, Hex, Blokus, Chess, Go) are sequential, perfect-information,
+/// turn-based games where players take turns choosing single moves.
+///
+/// While [`World`] requires a simultaneous joint-action vector `joint: &[Self::Action]` (returning a heap-allocated `Vec<f32>`),
+/// high-performance MCTS search requires stepping single moves in-place with **zero heap allocations**.
+///
+/// Implementors declare whose turn it is ([`TurnBasedWorld::current_player`]) and provide
+/// a stack-allocated single-action transition ([`TurnBasedWorld::step_action`]).
+///
+/// Implementing this trait automatically enables universal conversion into an
+/// [`AgentDynamics`](crate::AgentDynamics) via [`TurnBasedDynamics`](crate::dynamics::TurnBasedDynamics).
+///
+/// ### Example
+/// ```rust,ignore
+/// use mcts_traits::{TurnBasedWorld, TurnBasedDynamics};
+///
+/// let world = Connect4World::new();
+/// let dynamics = TurnBasedDynamics::new(world);
+/// ```
+pub trait TurnBasedWorld: World {
+    /// Return representation for zero-allocation step outcomes (typically a fixed-size array `[f32; N]`).
+    type StepReward;
+
+    /// Returns the index of the player whose turn it is to act in `ws` ($0 \le \text{player} < \text{n\_players}$).
+    fn current_player(&self, ws: &Self::WorldState) -> usize;
+
+    /// Transitions `ws` forward by `action` for the active player in-place without heap allocation.
+    ///
+    /// # Arguments
+    /// * `ws` - Mutable reference to the current world state to advance.
+    /// * `action` - The action chosen by `self.current_player(ws)`.
+    ///
+    /// # Returns
+    /// Returns a [`StepOutcome`](crate::dynamics::StepOutcome) containing the immediate reward vector
+    /// $\mathbf{r} \in \mathbb{R}^N$ and whether the episode has reached a terminal state.
+    ///
+    /// # Panics
+    /// Panics if `action` is not legal in `ws` for the active player.
+    fn step_action(
+        &self,
+        ws: &mut Self::WorldState,
+        action: &Self::Action,
+    ) -> crate::dynamics::StepOutcome<Self::StepReward>;
+}
+

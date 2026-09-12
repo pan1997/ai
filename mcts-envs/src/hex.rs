@@ -1,4 +1,4 @@
-use mcts_traits::{AgentDynamics, StepOutcome, World};
+use mcts_traits::{StepOutcome, TurnBasedWorld, World};
 
 /// Players in the game of Hex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,88 +297,21 @@ impl<const N: usize> World for HexWorld<N> {
     }
 }
 
-/// Parametric Hex game dynamics on an $N \times N$ board.
-///
-/// Wraps the ground-truth [`HexWorld`] referee, exposing an [`AgentDynamics`] interface
-/// for MCTS planning.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct HexDynamics<const N: usize = 11>;
-
-impl<const N: usize> HexDynamics<N> {
-    /// Creates a new `HexDynamics` instance.
-    pub const fn new() -> Self {
-        Self
-    }
-
-    /// Returns the underlying [`HexWorld`] referee.
-    pub const fn world(&self) -> HexWorld<N> {
-        HexWorld
-    }
-}
-
-impl<const N: usize> AgentDynamics for HexDynamics<N> {
-    type State = HexState<N>;
-    type Action = usize;
-    type Reward = [f32; 2];
+impl<const N: usize> TurnBasedWorld for HexWorld<N> {
+    type StepReward = [f32; 2];
 
     #[inline]
-    fn initial(&self) -> Self::State {
-        HexWorld::<N>.initial()
+    fn current_player(&self, ws: &Self::WorldState) -> usize {
+        ws.current_player.index()
     }
 
     #[inline]
-    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
-        HexWorld::<N>.legal_actions(s, out);
-    }
-
-    #[inline]
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
-        HexWorld::<N>.step_action(s, *action)
-    }
-
-    #[inline]
-    fn current_agent(&self, s: &Self::State) -> mcts_traits::AgentId {
-        mcts_traits::AgentId(s.current_player.index() as u32)
-    }
-}
-
-impl<const N: usize> World for HexDynamics<N> {
-    type WorldState = HexState<N>;
-    type Action = usize;
-    type Observation = HexState<N>;
-
-    #[inline]
-    fn n_players(&self) -> usize {
-        HexWorld::<N>.n_players()
-    }
-
-    #[inline]
-    fn initial(&self) -> Self::WorldState {
-        HexWorld::<N>.initial()
-    }
-
-    #[inline]
-    fn observe(&self, ws: &Self::WorldState, player: usize) -> Self::Observation {
-        HexWorld::<N>.observe(ws, player)
-    }
-
-    #[inline]
-    fn actions(&self, ws: &Self::WorldState, player: usize, out: &mut Vec<Self::Action>) {
-        HexWorld::<N>.actions(ws, player, out);
-    }
-
-    #[inline]
-    fn step(
+    fn step_action(
         &self,
         ws: &mut Self::WorldState,
-        joint: &[Self::Action],
-    ) -> (Vec<f32>, bool) {
-        HexWorld::<N>.step(ws, joint)
-    }
-
-    #[inline]
-    fn terminal(&self, ws: &Self::WorldState) -> bool {
-        HexWorld::<N>.terminal(ws)
+        action: &Self::Action,
+    ) -> StepOutcome<Self::StepReward> {
+        self.step_action(ws, *action)
     }
 }
 

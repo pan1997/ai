@@ -1,6 +1,5 @@
 //! Blokus Agent abstractions, Human CLI interaction, Random, Heuristic, and MCTS player implementations.
 
-use crate::dynamics::BlokusDynamics;
 use crate::evaluator::{
     AreaHeuristicEvaluator, HeuristicRolloutEvaluator, HeuristicUtilityEvaluator, RolloutEvaluator,
     UniformEvaluator,
@@ -8,11 +7,12 @@ use crate::evaluator::{
 use crate::game::{BlokusAction, BlokusState, Player};
 use crate::pieces::piece_size;
 use crate::render::{format_move_candidates, MoveCandidate};
+use crate::world::BlokusWorld;
 use mcts_engine::backup::VectorBackup;
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
-use mcts_traits::{AgentId, Model};
+use mcts_traits::{AgentId, Model, TurnBasedDynamics};
 use rand::seq::SliceRandom;
 use std::io::{self, BufRead, Write};
 
@@ -293,7 +293,7 @@ where
             return legal[0];
         }
 
-        let dynamics = BlokusDynamics::<B, P>;
+        let dynamics = TurnBasedDynamics::new(BlokusWorld::<B, P>::new());
         let selection = MultiAgentPuctSelection::<P> {
             c_puct: self.c_puct,
         };

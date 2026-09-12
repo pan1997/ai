@@ -6,16 +6,15 @@ This document details the architectural principles, memory layouts, and design c
 
 ## 1. Tripartite Crate Hierarchy
 
-The workspace is organized into three distinct, decoupled crates:
+The workspace is organized into five decoupled crates:
 
 ```
 +-------------------------------------------------------------+
-|                         mcts-envs                           |
-|  - Connect 4 (Parametric 2-player zero-sum)                 |
-|  - Hex (Parametric graph connectivity via BFS)              |
-|  - 2048 / Tzf8 (Stochastic single-agent puzzle)             |
-|  - Kuhn Poker (Imperfect-information game theory)           |
-|  - RolloutEvaluator & UniformRandomModel                    |
+|              Dedicated Game & Benchmark Crates              |
+|  - connect4: Connect 4 game engine, MCTS & CLI agents       |
+|  - blokus:   Blokus Classic (4P) & Duo (2P), polyomino reg. |
+|  - mcts-envs: Hex (DSU win tracking), 2048, Kuhn Poker,     |
+|              RolloutEvaluator & UniformRandomModel          |
 +------------------------------+------------------------------+
                                |
                                v
@@ -32,14 +31,14 @@ The workspace is organized into three distinct, decoupled crates:
 |                        mcts-traits                          |
 |  - AgentDynamics, BatchedAgentDynamics, Transition          |
 |  - Model, BatchedModel, Evaluation, HasValue, HasPolicy     |
-|  - World, AgentId, GraphEnv                                 |
+|  - World, TurnBasedWorld, TurnBasedDynamics, AgentId        |
 +-------------------------------------------------------------+
 ```
 
 ### Decoupling Rationale
 - **Zero Heavy Dependencies in Traits**: `mcts-traits` compiles in milliseconds and has zero mandatory runtime dependencies. This allows external libraries, neural network backends (e.g. PyTorch / ONNX / Candle / Burn), or game simulators to integrate without pulling in search engine implementation details.
 - **Engine Agnostic to Game Details**: `mcts-engine` knows nothing about grids, cards, or board games. It operates strictly on generic types `Action`, `Reward`, and `Stats`.
-- **Interchangeable Environments**: `mcts-envs` provides clean, reference implementations of various game types (deterministic, stochastic, zero-sum, imperfect-information) to benchmark search algorithms.
+- **Decoupled Game Environments**: Reference environments and benchmark games (`mcts-envs`, `connect4`, `blokus`) depend on traits and engine interfaces, without introducing cyclic coupling.
 
 ---
 
@@ -129,6 +128,13 @@ A central architectural innovation in `mcts-traits` is the clean conceptual sepa
 - For perfect-information games (Connect 4, Hex, 2048), `AgentDynamics::State` is identical to `World::WorldState`.
 - For imperfect-information games (Poker, Kriegspiel, Hanabi), `AgentDynamics::State` represents a determinized hypothetical state or belief distribution over hidden cards.
 - Allows Information Set MCTS (ISMCTS) and MuZero latent dynamics to plug in seamlessly.
+
+### `TurnBasedWorld` & `TurnBasedDynamics<W>` Adapter
+For sequential, turn-based perfect-information games (Connect 4, Blokus, Hex):
+- Writing custom `AgentDynamics` wrappers introduces repetitive boilerplate.
+- The [`TurnBasedWorld`](mcts_traits::TurnBasedWorld) trait declares `current_player(&self, ws) -> usize` and `step_action(&self, ws: &mut State, action: &Action) -> StepOutcome<[f32; N]>`.
+- The generic [`TurnBasedDynamics<W>`](mcts_traits::TurnBasedDynamics) adapter automatically provides both [`AgentDynamics`](mcts_traits::AgentDynamics) and [`BatchedAgentDynamics`](mcts_traits::BatchedAgentDynamics) for any `W: TurnBasedWorld`.
+- This ensures zero heap allocations on hot paths while preserving the strict conceptual boundary between the referee (`World`) and the planning agent (`AgentDynamics`).
 
 ---
 

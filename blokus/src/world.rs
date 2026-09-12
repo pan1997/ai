@@ -2,7 +2,7 @@
 
 use crate::dynamics::compute_rank_rewards;
 use crate::game::{BlokusAction, BlokusState};
-use mcts_traits::{StepOutcome, World};
+use mcts_traits::{StepOutcome, TurnBasedWorld, World};
 
 /// Impartial referee and ground-truth environment for Blokus.
 ///
@@ -104,6 +104,24 @@ impl<const B: usize, const P: usize> World for BlokusWorld<B, P> {
     #[inline]
     fn terminal(&self, ws: &Self::WorldState) -> bool {
         self.is_terminal(ws)
+    }
+}
+
+impl<const B: usize, const P: usize> TurnBasedWorld for BlokusWorld<B, P> {
+    type StepReward = [f32; P];
+
+    #[inline]
+    fn current_player(&self, ws: &Self::WorldState) -> usize {
+        ws.current_player as usize
+    }
+
+    #[inline]
+    fn step_action(
+        &self,
+        ws: &mut Self::WorldState,
+        action: &Self::Action,
+    ) -> StepOutcome<Self::StepReward> {
+        self.step_action(ws, action)
     }
 }
 

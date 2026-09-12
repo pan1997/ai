@@ -1,14 +1,14 @@
 //! Connect 4 Agent abstractions, Human CLI interaction, Random, and MCTS player implementations.
 
-use crate::dynamics::Connect4Dynamics;
 use crate::evaluator::{RolloutEvaluator, UniformEvaluator};
 use crate::game::Connect4State;
 use crate::render::{format_move_candidates, MoveCandidate};
+use crate::world::Connect4World;
 use mcts_engine::backup::VectorBackup;
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
-use mcts_traits::{AgentId, Model};
+use mcts_traits::{AgentId, Model, TurnBasedDynamics};
 use rand::seq::SliceRandom;
 use std::io::{self, BufRead, Write};
 
@@ -202,7 +202,7 @@ where
             return legal[0];
         }
 
-        let dynamics = Connect4Dynamics::<R, C>;
+        let dynamics = TurnBasedDynamics::new(Connect4World::<R, C>::new());
         let selection = MultiAgentPuctSelection::<2> {
             c_puct: self.c_puct,
         };

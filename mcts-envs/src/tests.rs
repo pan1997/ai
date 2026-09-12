@@ -1,18 +1,18 @@
 //! Comprehensive unit and integration tests for `mcts-envs` games and evaluators.
 
 use crate::evaluators::{RolloutEvaluator, UniformRandomModel};
-use crate::hex::{HexDynamics, HexPlayer, HexState, HexWorld};
+use crate::hex::{HexPlayer, HexState, HexWorld};
 use crate::kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnWorld};
 use crate::tzf8::{Direction, Tzf8Dynamics, Tzf8State};
 use mcts_engine::backup::{SingleAgentBackup, VectorBackup};
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
-use mcts_traits::{AgentDynamics, AgentId, Model, World};
+use mcts_traits::{AgentDynamics, AgentId, Model, TurnBasedDynamics, World};
 
 #[test]
 fn test_hex_win_detection() {
-    let env = HexDynamics::<3>;
+    let env = TurnBasedDynamics::new(HexWorld::<3>::new());
     let mut state = HexState::<3>::new();
 
     // Black connects top to bottom (row 0 to row 2) along column 0
@@ -27,7 +27,7 @@ fn test_hex_win_detection() {
 
 #[test]
 fn test_hex_white_win_detection() {
-    let env = HexDynamics::<3>;
+    let env = TurnBasedDynamics::new(HexWorld::<3>::new());
     let mut state = HexState::<3>::new();
 
     // White connects Left to Right along row 0: (0,0), (0,1), (0,2) = cells 0, 1, 2
@@ -62,7 +62,7 @@ fn test_hex_world_interface() {
 
 #[test]
 fn test_hex_mcts_search() {
-    let env = HexDynamics::<3>;
+    let env = TurnBasedDynamics::new(HexWorld::<3>::new());
     let model = UniformRandomModel::new(env, 2);
     let selection = MultiAgentPuctSelection::<2> { c_puct: 1.4 };
     let backup = VectorBackup::<2>::default();
@@ -216,7 +216,7 @@ fn test_kuhn_poker_game_tree_showdowns() {
 
 #[test]
 fn test_evaluators_rollout_and_random_edge_cases() {
-    let env = HexDynamics::<3>;
+    let env = TurnBasedDynamics::new(HexWorld::<3>::new());
 
     // 1. RolloutEvaluator with max_depth = 0
     let rollout = RolloutEvaluator::new(env, 2, 0);

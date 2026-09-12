@@ -127,3 +127,83 @@ pub fn default_step_batch<D>(
         out_outcomes.push(dynamics.step(s, a));
     }
 }
+
+/// Universal zero-cost planning dynamics adapter for any [`TurnBasedWorld`](crate::world::TurnBasedWorld).
+///
+/// Automatically bridges an impartial multi-player referee ([`World`](crate::world::World)) into an
+/// agent-centric planning transition model ([`AgentDynamics`]) with zero heap allocation.
+///
+/// ### Architecture & Invariants:
+/// - **Zero Heap Allocation**: Traversal through `AgentDynamics::step` passes through to
+///   [`crate::world::TurnBasedWorld::step_action`], which updates the state in-place and returns on the stack.
+/// - **Active Agent Tracking**: `AgentDynamics::current_agent` queries [`crate::world::TurnBasedWorld::current_player`],
+///   ensuring that MCTS selection algorithms (e.g. [`MultiAgentPuctSelection`](https://docs.rs/mcts-engine))
+///   maximize the return component corresponding to the active player.
+/// - **Refactoring Simplification**: Replaces redundant handwritten wrapper types (e.g. `Connect4Dynamics`,
+///   `BlokusDynamics`, `HexDynamics`) with a single generic adapter.
+///
+/// ### Example
+/// ```rust,ignore
+/// use mcts_traits::TurnBasedDynamics;
+/// use connect4::Connect4World;
+///
+/// let env = TurnBasedDynamics::new(Connect4World::<6, 7>::new());
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TurnBasedDynamics<W> {
+    /// The underlying ground-truth world referee.
+    pub world: W,
+}
+
+impl<W> TurnBasedDynamics<W> {
+    /// Creates a new `TurnBasedDynamics` adapter wrapping `world`.
+    #[inline]
+    pub const fn new(world: W) -> Self {
+        Self { world }
+    }
+
+    /// Returns a reference to the wrapped world referee.
+    #[inline]
+    pub const fn world(&self) -> &W {
+        &self.world
+    }
+}
+
+impl<W: crate::world::TurnBasedWorld> AgentDynamics for TurnBasedDynamics<W> {
+    type State = W::WorldState;
+    type Action = W::Action;
+    type Reward = W::StepReward;
+
+    #[inline]
+    fn initial(&self) -> Self::State {
+        self.world.initial()
+    }
+
+    #[inline]
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        let player = self.world.current_player(s);
+        self.world.actions(s, player, out);
+    }
+
+    #[inline]
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+        self.world.step_action(s, action)
+    }
+
+    #[inline]
+    fn current_agent(&self, s: &Self::State) -> crate::AgentId {
+        crate::AgentId(self.world.current_player(s) as u32)
+    }
+}
+
+impl<W: crate::world::TurnBasedWorld> BatchedAgentDynamics for TurnBasedDynamics<W> {
+    #[inline]
+    fn step_batch(
+        &self,
+        states: &mut [Self::State],
+        actions: &[Self::Action],
+        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
+    ) {
+        default_step_batch(self, states, actions, out_outcomes);
+    }
+}

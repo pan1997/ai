@@ -104,3 +104,21 @@ impl<const R: usize, const C: usize> World for Connect4World<R, C> {
     }
 }
 
+impl<const R: usize, const C: usize> mcts_traits::TurnBasedWorld for Connect4World<R, C> {
+    type StepReward = [f32; 2];
+
+    #[inline]
+    fn current_player(&self, ws: &Self::WorldState) -> usize {
+        ws.current_player.index()
+    }
+
+    #[inline]
+    fn step_action(
+        &self,
+        ws: &mut Self::WorldState,
+        action: &Self::Action,
+    ) -> StepOutcome<Self::StepReward> {
+        self.step_action(ws, *action)
+    }
+}
+

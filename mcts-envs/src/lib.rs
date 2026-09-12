@@ -5,7 +5,7 @@
 //! ## Reference Environments
 //!
 //! - [`hex`]: Hex board game with parametric dimensions $N \times N$, disjoint-set union-find (DSU)
-//!   connectivity win detection, implementing [`AgentDynamics`](mcts_traits::AgentDynamics) and [`World`](mcts_traits::World).
+//!   connectivity win detection, implementing [`World`](mcts_traits::World) and [`TurnBasedWorld`](mcts_traits::TurnBasedWorld).
 //! - [`tzf8`]: 2048 single-player stochastic puzzle with tile merges and xorshift random tile spawning.
 //! - [`kuhn_poker`]: Kuhn Poker 3-card imperfect-information game demonstrating private card deals, public pot history,
 //!   and the separation between [`World`](mcts_traits::World) and [`AgentDynamics`](mcts_traits::AgentDynamics).
@@ -25,7 +25,7 @@ pub mod evaluators;
 #[cfg(test)]
 mod tests;
 
-pub use hex::{HexDynamics, HexPlayer, HexState, HexWorld};
+pub use hex::{HexPlayer, HexState, HexWorld};
 pub use tzf8::{Tzf8Dynamics, Tzf8State, Direction};
 pub use kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnObservation, KuhnWorld, KuhnWorldState};
 pub use evaluators::{RolloutEvaluator, UniformRandomModel};

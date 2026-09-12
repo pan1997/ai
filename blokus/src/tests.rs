@@ -1,11 +1,11 @@
 //! Unit tests for Blokus pieces, game rules, scoring, and multi-agent MCTS planning.
 
 use crate::agent::{Agent, HeuristicAgent, MctsAgent, RandomAgent};
-use crate::dynamics::{compute_rank_rewards, BlokusDuoDynamics};
+use crate::dynamics::compute_rank_rewards;
 use crate::game::{BlokusAction, BlokusClassicState, BlokusDuoState};
 use crate::pieces::{piece_size, registry, NUM_PIECES, TOTAL_SQUARES_PER_PLAYER};
 use crate::world::BlokusDuoWorld;
-use mcts_traits::{AgentDynamics, World};
+use mcts_traits::{AgentDynamics, TurnBasedDynamics, World};
 
 #[test]
 fn test_piece_registry_and_canonical_orientations() {
@@ -243,7 +243,7 @@ fn test_dynamics_and_world_trait() {
     assert_eq!(rewards.len(), 2);
     assert!(!term);
 
-    let dyn_env = BlokusDuoDynamics::default();
+    let dyn_env = TurnBasedDynamics::new(BlokusDuoWorld::new());
     let mut s = AgentDynamics::initial(&dyn_env);
     let outcome = AgentDynamics::step(&dyn_env, &mut s, &actions[0]);
     assert_eq!(outcome.reward.len(), 2);

@@ -22,17 +22,17 @@ mcts-envs   = { path = "path/to/mcts-envs" }
 Here is a complete, minimal example running sequential MCTS on a Connect 4 board:
 
 ```rust
-use mcts_traits::{AgentDynamics, AgentId};
+use mcts_traits::{AgentDynamics, AgentId, TurnBasedDynamics};
 use mcts_engine::tree_store::TreeStore;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::backup::VectorBackup;
 use mcts_engine::scheduler::SequentialScheduler;
-use mcts_envs::connect4::{Connect4Dynamics, Connect4State};
+use connect4::{Connect4State, Connect4World};
 use mcts_envs::evaluators::UniformRandomModel;
 
 fn main() {
     // 1. Initialize Environment and Evaluator
-    let env = Connect4Dynamics::<6, 7>;
+    let env = TurnBasedDynamics::new(Connect4World::<6, 7>::new());
     let model = UniformRandomModel::new(env, 2);
 
     // 2. Configure Selection and Backup Policies
