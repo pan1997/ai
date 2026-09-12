@@ -3,10 +3,10 @@
 //! Evaluates win rates, piece placements, and average scores with dynamic agent selection
 //! and randomized seating to eliminate turn-order and color bias.
 
-use blokus::agent::{Agent, HeuristicAgent, MctsAgent, RandomAgent};
+use blokus::agent::{Agent, BoxAgent, HeuristicAgent, MctsAgent, RandomAgent};
 use blokus::game::{BlokusState, Player};
+use mcts_engine::arena::{MultiPlayerTournamentStats, disambiguate_names};
 use rand::seq::SliceRandom;
-use std::collections::HashMap;
 use std::env;
 use std::time::Instant;
 
@@ -167,7 +167,7 @@ impl AgentSpec {
     }
 
     /// Instantiates an agent trait object.
-    pub fn instantiate<const B: usize, const P: usize>(&self, name: &str) -> Box<dyn Agent<B, P>> {
+    pub fn instantiate<const B: usize, const P: usize>(&self, name: &str) -> BoxAgent<B, P> {
         match self {
             Self::Mcts { iters } => Box::new(MctsAgent::new_heuristic(name, *iters, false)),
             Self::MctsHeuristicUtility { iters } => {
@@ -205,49 +205,7 @@ impl AgentSpec {
 /// Disambiguates duplicate agent names by appending sequential numeric suffixes.
 fn generate_unique_names(specs: &[AgentSpec]) -> Vec<String> {
     let raw_names: Vec<String> = specs.iter().map(|s| s.display_name()).collect();
-    let mut counts = HashMap::new();
-    for name in &raw_names {
-        *counts.entry(name.clone()).or_insert(0) += 1;
-    }
-
-    let mut current_idx = HashMap::new();
-    let mut final_names = Vec::with_capacity(specs.len());
-
-    for name in &raw_names {
-        if counts[name] > 1 {
-            let idx = current_idx.entry(name.clone()).or_insert(1);
-            final_names.push(format!("{name}-{idx}"));
-            *idx += 1;
-        } else {
-            final_names.push(name.clone());
-        }
-    }
-
-    final_names
-}
-
-/// Statistics tracked across all tournament matches for a single agent.
-#[derive(Debug, Clone)]
-struct AgentStats {
-    total_wins: usize,
-    solo_wins: usize,
-    tied_wins: usize,
-    total_score: i32,
-    total_squares_placed: usize,
-    seat_counts: Vec<usize>,
-}
-
-impl AgentStats {
-    fn new(num_seats: usize) -> Self {
-        Self {
-            total_wins: 0,
-            solo_wins: 0,
-            tied_wins: 0,
-            total_score: 0,
-            total_squares_placed: 0,
-            seat_counts: vec![0; num_seats],
-        }
-    }
+    disambiguate_names(&raw_names)
 }
 
 fn print_help() {
@@ -304,7 +262,8 @@ fn run_tournament<const B: usize, const P: usize>(
         names.join(" vs ")
     );
 
-    let mut stats: Vec<AgentStats> = (0..P).map(|_| AgentStats::new(P)).collect();
+    let mut stats: Vec<MultiPlayerTournamentStats> =
+        (0..P).map(|_| MultiPlayerTournamentStats::new(P)).collect();
     let mut rng = rand::thread_rng();
     let start_time = Instant::now();
 
@@ -315,13 +274,8 @@ fn run_tournament<const B: usize, const P: usize>(
         let mut seat_to_agent: Vec<usize> = (0..P).collect();
         seat_to_agent.shuffle(&mut rng);
 
-        // Record seat participation
-        for (seat, &agent_idx) in seat_to_agent.iter().enumerate() {
-            stats[agent_idx].seat_counts[seat] += 1;
-        }
-
         // Instantiate fresh agent instances for each seat
-        let mut active_players: Vec<Box<dyn Agent<B, P>>> = seat_to_agent
+        let mut active_players: Vec<BoxAgent<B, P>> = seat_to_agent
             .iter()
             .map(|&agent_idx| specs[agent_idx].instantiate(&names[agent_idx]))
             .collect();
@@ -335,28 +289,12 @@ fn run_tournament<const B: usize, const P: usize>(
             }
         }
 
-        // Compute scores and identify winners
+        // Compute scores and record match statistics
         let scores: Vec<i32> = (0..P).map(|s| state.score(s)).collect();
-        let max_score = *scores.iter().max().unwrap();
-        let winning_seats: Vec<usize> = (0..P).filter(|&s| scores[s] == max_score).collect();
-        let is_solo = winning_seats.len() == 1;
-
-        for &seat in &winning_seats {
-            let agent_idx = seat_to_agent[seat];
-            stats[agent_idx].total_wins += 1;
-            if is_solo {
-                stats[agent_idx].solo_wins += 1;
-            } else {
-                stats[agent_idx].tied_wins += 1;
-            }
-        }
-
-        for seat in 0..P {
-            let agent_idx = seat_to_agent[seat];
-            stats[agent_idx].total_score += scores[seat];
-            let placed = 89 - (state.unplaced_squares(seat) as usize);
-            stats[agent_idx].total_squares_placed += placed;
-        }
+        let placed: Vec<f64> = (0..P)
+            .map(|s| (89 - (state.unplaced_squares(s) as usize)) as f64)
+            .collect();
+        MultiPlayerTournamentStats::record_game(&mut stats, &seat_to_agent, &scores, Some(&placed));
 
         // Format per-game breakdown
         let mut seat_details = Vec::new();
@@ -369,9 +307,10 @@ fn run_tournament<const B: usize, const P: usize>(
             ));
         }
 
-        let winner_names: Vec<&str> = winning_seats
-            .iter()
-            .map(|&s| names[seat_to_agent[s]].as_str())
+        let max_score = *scores.iter().max().unwrap();
+        let winner_names: Vec<&str> = (0..P)
+            .filter(|&s| scores[s] == max_score)
+            .map(|s| names[seat_to_agent[s]].as_str())
             .collect();
 
         println!(
@@ -383,67 +322,15 @@ fn run_tournament<const B: usize, const P: usize>(
     }
 
     let elapsed = start_time.elapsed();
-    let n = num_games as f32;
-
-    // Sort leaderboard by total wins descending, then by average score descending
-    let mut rank_indices: Vec<usize> = (0..P).collect();
-    rank_indices.sort_by(|&a, &b| {
-        stats[b]
-            .total_wins
-            .cmp(&stats[a].total_wins)
-            .then_with(|| stats[b].total_score.cmp(&stats[a].total_score))
-    });
-
-    println!(
-        "\n======================================== TOURNAMENT RESULTS ========================================"
+    let seat_names: Vec<&str> = (0..P).map(|s| Player::from_index(s).name()).collect();
+    let rank_indices = MultiPlayerTournamentStats::print_leaderboard(
+        &stats,
+        names,
+        num_games,
+        elapsed,
+        Some("Placed / 89"),
     );
-    println!(
-        "Total Duration: {:.2?} | Games: {num_games} | Seating: Uniformly Shuffled Per Match",
-        elapsed
-    );
-    println!(
-        "----------------------------------------------------------------------------------------------------"
-    );
-    println!(
-        "Agent                        | Total Wins | Solo Wins | Tied Wins | Win Rate | Avg Score | Placed / 89"
-    );
-    println!(
-        "----------------------------------------------------------------------------------------------------"
-    );
-
-    for &idx in &rank_indices {
-        let st = &stats[idx];
-        println!(
-            "{:<28} | {:>10} | {:>9} | {:>9} | {:>7.1}% | {:>9.2} | {:>11.1}",
-            names[idx],
-            st.total_wins,
-            st.solo_wins,
-            st.tied_wins,
-            (st.total_wins as f32 / n) * 100.0,
-            (st.total_score as f32) / n,
-            (st.total_squares_placed as f32) / n,
-        );
-    }
-
-    println!(
-        "----------------------------------------------------------------------------------------------------"
-    );
-    println!("Seating Distribution (Seat Fairness Check):");
-    for &idx in &rank_indices {
-        let st = &stats[idx];
-        let seat_strs: Vec<String> = st
-            .seat_counts
-            .iter()
-            .enumerate()
-            .map(|(s, &count)| {
-                format!("Seat {} ({}): {:2}", s, Player::from_index(s).name(), count)
-            })
-            .collect();
-        println!("  {:<28} -> {}", names[idx], seat_strs.join(" | "));
-    }
-    println!(
-        "====================================================================================================\n"
-    );
+    MultiPlayerTournamentStats::print_seating_fairness(&stats, names, &rank_indices, &seat_names);
 }
 
 fn main() {
@@ -516,10 +403,7 @@ fn main() {
 
     // If no players explicitly passed, select defaults based on mode
     if player_specs.is_empty() {
-        let is_duo = match mode_arg.as_deref() {
-            Some("duo") => true,
-            _ => false,
-        };
+        let is_duo = matches!(mode_arg.as_deref(), Some("duo"));
         if is_duo {
             player_specs.push(AgentSpec::Mcts {
                 iters: default_iters,
@@ -539,24 +423,22 @@ fn main() {
 
     match player_specs.len() {
         2 => {
-            if let Some(ref m) = mode_arg {
-                if m == "classic" {
-                    eprintln!(
-                        "Error: 2 players were specified, but mode 'classic' requires 4 players."
-                    );
-                    std::process::exit(1);
-                }
+            if let Some(ref m) = mode_arg
+                && m == "classic"
+            {
+                eprintln!(
+                    "Error: 2 players were specified, but mode 'classic' requires 4 players."
+                );
+                std::process::exit(1);
             }
             run_tournament::<14, 2>(&player_specs, &names, games, "DUO (14x14)");
         }
         4 => {
-            if let Some(ref m) = mode_arg {
-                if m == "duo" {
-                    eprintln!(
-                        "Error: 4 players were specified, but mode 'duo' requires 2 players."
-                    );
-                    std::process::exit(1);
-                }
+            if let Some(ref m) = mode_arg
+                && m == "duo"
+            {
+                eprintln!("Error: 4 players were specified, but mode 'duo' requires 2 players.");
+                std::process::exit(1);
             }
             run_tournament::<20, 4>(&player_specs, &names, games, "CLASSIC (20x20)");
         }

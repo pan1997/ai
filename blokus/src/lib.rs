@@ -21,8 +21,8 @@ mod tests;
 pub use agent::{Agent, HeuristicAgent, HumanAgent, MctsAgent, RandomAgent};
 pub use dynamics::compute_rank_rewards;
 pub use evaluator::{
-    AreaHeuristicEvaluator, HeuristicRolloutEvaluator, HeuristicUtilityEvaluator, RolloutEvaluator,
-    UniformEvaluator,
+    AreaHeuristicEvaluator, BlokusEvaluator, HeuristicRolloutEvaluator, HeuristicUtilityEvaluator,
+    RolloutEvaluator, UniformEvaluator,
 };
 pub use game::{BlokusAction, BlokusState, EMPTY, Player};
 pub use pieces::{

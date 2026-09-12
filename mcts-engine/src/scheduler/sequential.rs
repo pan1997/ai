@@ -1,26 +1,17 @@
-use crate::backup::{BackupPolicy, PathElement};
+use crate::backup::BackupPolicy;
+use crate::search::descend_trajectory;
 use crate::selection::SelectionPolicy;
 use crate::tree_store::{EdgeStatsStore, NodeId, NodeStatus, TreeStore};
 use mcts_traits::{AgentDynamics, Evaluation, Model};
 
-/// Single-threaded sequential MCTS execution scheduler.
+/// Standard sequential Monte Carlo Tree Search (MCTS) scheduler.
 ///
-/// Runs classic 1-by-1 simulation passes. Each iteration carries out:
-/// 1. **Selection**: Descends from the root node to a leaf via [`SelectionPolicy`].
-/// 2. **Expansion**: Adds legal action child edges if the leaf node is unexpanded.
-/// 3. **Evaluation**: Evaluates the leaf state priors and value using [`Model`].
-/// 4. **Backup**: Propagates values backwards along the trajectory via [`BackupPolicy`].
+/// Sweeps 1 simulation trajectory at a time sequentially from the root, expanding
+/// leaves and updating node and edge values before beginning the next iteration.
 pub struct SequentialScheduler;
 
 impl SequentialScheduler {
-    /// Executes `num_iterations` sequential MCTS sweeps starting from `root`.
-    ///
-    /// # Generic Parameters
-    ///
-    /// - `D`: Environment dynamics implementing [`AgentDynamics`].
-    /// - `M`: Evaluation model implementing [`Model`].
-    /// - `S`: Selection policy implementing [`SelectionPolicy`].
-    /// - `B`: Backup strategy implementing [`BackupPolicy`].
+    /// Executes `num_iterations` search passes starting from `root_state`.
     #[allow(clippy::too_many_arguments)]
     pub fn search<D, M, S, B, Action, Reward, Stats, StepDelta>(
         &self,
@@ -61,54 +52,11 @@ impl SequentialScheduler {
 
         // 2. Iteration Loop
         for _ in 0..num_iterations {
-            let mut state = root_state.clone();
             path.clear();
-            let mut current_node = root;
-
-            // Selection traversal
-            while tree.node_status(current_node) == NodeStatus::Expanded {
-                if let Some(edge) = selection.select_child(tree, current_node) {
-                    let first = tree.first_child_edge(current_node);
-                    let count = tree.num_children(current_node);
-                    assert!(
-                        edge.0 >= first.0 && edge.0 < first.0 + count,
-                        "SelectionPolicy: returned edge {} is not a valid child of node {}",
-                        edge.0,
-                        current_node.as_usize()
-                    );
-
-                    let action = tree.edge_action(edge);
-                    let outcome = dynamics.step(&mut state, action);
-
-                    if tree.edge_reward(edge).is_none() {
-                        tree.set_edge_reward(edge, outcome.reward);
-                    }
-
-                    let agent = dynamics.current_agent(&state);
-                    let (child, is_new) = tree.get_or_insert_child(edge, &outcome.delta, agent);
-
-                    path.push(PathElement {
-                        node: current_node,
-                        edge,
-                        next_node: child,
-                    });
-
-                    current_node = child;
-                    if is_new {
-                        if outcome.terminated {
-                            tree.mark_terminal(current_node);
-                        }
-                        break;
-                    } else if outcome.terminated
-                        || tree.node_status(current_node) == NodeStatus::Terminal
-                    {
-                        tree.mark_terminal(current_node);
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
+            let outcome =
+                descend_trajectory(tree, dynamics, selection, root, root_state, &mut path, 0.0);
+            let current_node = outcome.leaf_node;
+            let state = outcome.leaf_state;
 
             // Evaluation & Backup
             match tree.node_status(current_node) {

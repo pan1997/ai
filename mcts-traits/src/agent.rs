@@ -52,3 +52,26 @@ impl std::fmt::Display for AgentId {
         write!(f, "Agent({})", self.0)
     }
 }
+
+/// General agent interface capable of choosing actions in an environment state.
+///
+/// Models an active decision maker in real games, self-play arenas, or tournament drivers.
+pub trait Agent<State, Action> {
+    /// Human-readable name or label of the agent.
+    fn name(&self) -> &str;
+
+    /// Selects an action given the current environment state.
+    fn select_action(&mut self, state: &State) -> Action;
+}
+
+impl<State, Action, A: Agent<State, Action> + ?Sized> Agent<State, Action> for Box<A> {
+    #[inline]
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    #[inline]
+    fn select_action(&mut self, state: &State) -> Action {
+        (**self).select_action(state)
+    }
+}

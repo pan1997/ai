@@ -2,7 +2,7 @@
 //!
 //! Play against MCTS AI or watch multi-agent battles in Blokus Duo (2-player) or Classic (4-player).
 
-use blokus::agent::{Agent, HeuristicAgent, HumanAgent, MctsAgent};
+use blokus::agent::{Agent, BoxAgent, HeuristicAgent, HumanAgent, MctsAgent};
 use blokus::game::{BlokusClassicState, BlokusDuoState, Player};
 use blokus::render::{render_board, render_inventory, render_scoreboard};
 use std::env;
@@ -29,7 +29,7 @@ OPTIONS:
 fn run_duo(mode: &str, iters: usize, verbose: bool, use_color: bool) {
     let mut state = BlokusDuoState::new();
 
-    let mut p0: Box<dyn Agent<14, 2>> = match mode {
+    let mut p0: BoxAgent<14, 2> = match mode {
         "ai-human" => Box::new(MctsAgent::new_heuristic("MCTS AI (Blue)", iters, verbose)),
         "ai-ai" => Box::new(MctsAgent::new_heuristic(
             "MCTS Alpha (Blue)",
@@ -40,7 +40,7 @@ fn run_duo(mode: &str, iters: usize, verbose: bool, use_color: bool) {
         _ => Box::new(HumanAgent::new("Human (Blue)")),
     };
 
-    let mut p1: Box<dyn Agent<14, 2>> = match mode {
+    let mut p1: BoxAgent<14, 2> = match mode {
         "human-ai" => Box::new(MctsAgent::new_heuristic("MCTS AI (Yellow)", iters, verbose)),
         "ai-human" | "human-human" => Box::new(HumanAgent::new("Human (Yellow)")),
         "ai-ai" => Box::new(MctsAgent::new_heuristic(
@@ -106,7 +106,7 @@ fn run_duo(mode: &str, iters: usize, verbose: bool, use_color: bool) {
 fn run_classic(mode: &str, iters: usize, verbose: bool, use_color: bool) {
     let mut state = BlokusClassicState::new();
 
-    let mut players: [Box<dyn Agent<20, 4>>; 4] = match mode {
+    let mut players: [BoxAgent<20, 4>; 4] = match mode {
         "human-3ai" => [
             Box::new(HumanAgent::new("Human (Blue)")),
             Box::new(MctsAgent::new_heuristic("MCTS-1 (Yellow)", iters, verbose)),

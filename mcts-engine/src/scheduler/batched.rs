@@ -1,4 +1,5 @@
 use crate::backup::{BackupPolicy, PathElement};
+use crate::search::descend_trajectory;
 use crate::selection::SelectionPolicy;
 use crate::tree_store::{EdgeStatsStore, NodeId, NodeStatus, TreeStore, VirtualLossStore};
 use mcts_traits::{AgentDynamics, BatchedModel, Evaluation};
@@ -71,60 +72,19 @@ impl BatchedScheduler {
             let mut leaf_states: Vec<D::State> = Vec::with_capacity(self.batch_size);
 
             for _ in 0..self.batch_size {
-                let mut state = root_state.clone();
                 let mut path = Vec::new();
-                let mut current_node = root;
-
-                while tree.node_status(current_node) == NodeStatus::Expanded {
-                    if let Some(edge) = selection.select_child(tree, current_node) {
-                        let first = tree.first_child_edge(current_node);
-                        let count = tree.num_children(current_node);
-                        assert!(
-                            edge.0 >= first.0 && edge.0 < first.0 + count,
-                            "SelectionPolicy: returned edge {} is not a valid child of node {}",
-                            edge.0,
-                            current_node.as_usize()
-                        );
-
-                        // Apply virtual loss
-                        tree.stats.add_virtual_loss(edge, self.virtual_loss_weight);
-
-                        let action = tree.edge_action(edge);
-                        let outcome = dynamics.step(&mut state, action);
-
-                        if tree.edge_reward(edge).is_none() {
-                            tree.set_edge_reward(edge, outcome.reward);
-                        }
-
-                        let agent = dynamics.current_agent(&state);
-                        let (child, is_new) = tree.get_or_insert_child(edge, &outcome.delta, agent);
-
-                        path.push(PathElement {
-                            node: current_node,
-                            edge,
-                            next_node: child,
-                        });
-
-                        current_node = child;
-                        if is_new {
-                            if outcome.terminated {
-                                tree.mark_terminal(current_node);
-                            }
-                            break;
-                        } else if outcome.terminated
-                            || tree.node_status(current_node) == NodeStatus::Terminal
-                        {
-                            tree.mark_terminal(current_node);
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
+                let outcome = descend_trajectory(
+                    tree,
+                    dynamics,
+                    selection,
+                    root,
+                    root_state,
+                    &mut path,
+                    self.virtual_loss_weight,
+                );
                 paths.push(path);
-                leaf_nodes.push(current_node);
-                leaf_states.push(state);
+                leaf_nodes.push(outcome.leaf_node);
+                leaf_states.push(outcome.leaf_state);
             }
 
             // Deduplicate unique leaves for evaluation

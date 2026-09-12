@@ -176,12 +176,12 @@ pub fn render_inventory<const B: usize, const P: usize>(
 
     let mask = state.remaining_pieces[player];
     let mut count = 0;
-    for i in 0..21 {
+    for (i, &name) in PIECE_NAMES.iter().enumerate() {
         if (mask & (1 << i)) != 0 {
             out.push_str(&format!(
                 "  [{:2}] {:<14} ({} sq) ",
                 i,
-                PIECE_NAMES[i],
+                name,
                 piece_size(i as u8)
             ));
             count += 1;

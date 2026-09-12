@@ -37,7 +37,7 @@ pub mod world;
 #[cfg(test)]
 mod tests;
 
-pub use agent::AgentId;
+pub use agent::{Agent, AgentId};
 pub use dynamics::{
     AgentDynamics, BatchedAgentDynamics, OpponentPolicy, RoundBasedDynamics, StepOutcome,
     Transition, TurnBasedDynamics, default_step_batch,

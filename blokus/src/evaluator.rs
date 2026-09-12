@@ -72,11 +72,11 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for AreaHeuristicE
         let mut scores = [0.0f32; P];
         let mut corner_buf = Vec::new();
 
-        for p in 0..P {
+        for (p, score) in scores.iter_mut().enumerate() {
             let placed = 89.0 - (s.unplaced_squares(p) as f32);
             s.find_valid_corners(p, &mut corner_buf);
             let corner_bonus = (corner_buf.len() as f32) * 1.5;
-            scores[p] = placed + corner_bonus;
+            *score = placed + corner_bonus;
         }
 
         let mean_score = scores.iter().sum::<f32>() / (P as f32);
@@ -155,8 +155,8 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for RolloutEvaluat
             if !current.is_terminal() {
                 // If depth limit reached without game over, approximate with relative scores
                 let mut scores = [0i32; P];
-                for p in 0..P {
-                    scores[p] = current.score(p);
+                for (p, score) in scores.iter_mut().enumerate() {
+                    *score = current.score(p);
                 }
                 let intermediate = crate::dynamics::compute_rank_rewards(&scores);
                 for (tot, &rew) in total_rewards.iter_mut().zip(intermediate.iter()) {
@@ -242,11 +242,11 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for HeuristicUtili
 
         // Static leaf values based on placed squares and corners
         let mut player_scores = [0.0f32; P];
-        for p in 0..P {
+        for (p, score) in player_scores.iter_mut().enumerate() {
             let placed = 89.0 - (s.unplaced_squares(p) as f32);
             s.find_valid_corners(p, &mut corner_buf);
             let corner_bonus = (corner_buf.len() as f32) * 1.5;
-            player_scores[p] = placed + corner_bonus;
+            *score = placed + corner_bonus;
         }
 
         let mean_score = player_scores.iter().sum::<f32>() / (P as f32);
@@ -380,8 +380,8 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for HeuristicRollo
 
             if !current.is_terminal() {
                 let mut scores = [0i32; P];
-                for p in 0..P {
-                    scores[p] = current.score(p);
+                for (p, score) in scores.iter_mut().enumerate() {
+                    *score = current.score(p);
                 }
                 let intermediate = crate::dynamics::compute_rank_rewards(&scores);
                 for (tot, &rew) in total_rewards.iter_mut().zip(intermediate.iter()) {
@@ -394,5 +394,63 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for HeuristicRollo
         let values = total_rewards.iter().map(|&r| r / m).collect();
 
         Evaluation { priors, values }
+    }
+}
+
+/// Unified evaluation model dispatching across all built-in Blokus evaluators.
+pub enum BlokusEvaluator<const B: usize = 20, const P: usize = 4> {
+    /// Area heuristic weighting piece size and corner expansion.
+    AreaHeuristic(AreaHeuristicEvaluator),
+    /// Heuristic utility softmax prior evaluator.
+    HeuristicUtility(HeuristicUtilityEvaluator),
+    /// Simulation rollouts guided by 1-ply corner heuristic.
+    HeuristicRollout(HeuristicRolloutEvaluator<B, P>),
+    /// Random simulation rollout evaluator.
+    Rollout(RolloutEvaluator<B, P>),
+    /// Uniform prior and zero-value baseline evaluator.
+    Uniform(UniformEvaluator),
+}
+
+impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for BlokusEvaluator<B, P> {
+    fn evaluate(&self, s: &BlokusState<B, P>) -> Evaluation {
+        match self {
+            Self::AreaHeuristic(m) => m.evaluate(s),
+            Self::HeuristicUtility(m) => m.evaluate(s),
+            Self::HeuristicRollout(m) => m.evaluate(s),
+            Self::Rollout(m) => m.evaluate(s),
+            Self::Uniform(m) => m.evaluate(s),
+        }
+    }
+}
+
+impl<const B: usize, const P: usize> From<AreaHeuristicEvaluator> for BlokusEvaluator<B, P> {
+    fn from(eval: AreaHeuristicEvaluator) -> Self {
+        Self::AreaHeuristic(eval)
+    }
+}
+
+impl<const B: usize, const P: usize> From<HeuristicUtilityEvaluator> for BlokusEvaluator<B, P> {
+    fn from(eval: HeuristicUtilityEvaluator) -> Self {
+        Self::HeuristicUtility(eval)
+    }
+}
+
+impl<const B: usize, const P: usize> From<HeuristicRolloutEvaluator<B, P>>
+    for BlokusEvaluator<B, P>
+{
+    fn from(eval: HeuristicRolloutEvaluator<B, P>) -> Self {
+        Self::HeuristicRollout(eval)
+    }
+}
+
+impl<const B: usize, const P: usize> From<RolloutEvaluator<B, P>> for BlokusEvaluator<B, P> {
+    fn from(eval: RolloutEvaluator<B, P>) -> Self {
+        Self::Rollout(eval)
+    }
+}
+
+impl<const B: usize, const P: usize> From<UniformEvaluator> for BlokusEvaluator<B, P> {
+    fn from(eval: UniformEvaluator) -> Self {
+        Self::Uniform(eval)
     }
 }

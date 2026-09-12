@@ -54,8 +54,21 @@ pub enum NodeStatus {
     Terminal,
 }
 
+/// Interface for statistics stores that support virtual loss tracking for parallel or batched search.
+pub trait VirtualLossStore {
+    /// Temporarily increments the virtual loss on `edge` by `weight`.
+    ///
+    /// The default implementation is a no-op for stores that do not track virtual loss.
+    fn add_virtual_loss(&mut self, _edge: EdgeId, _weight: f32) {}
+
+    /// Reverts previously added virtual loss from `edge` by `weight`.
+    ///
+    /// The default implementation is a no-op for stores that do not track virtual loss.
+    fn remove_virtual_loss(&mut self, _edge: EdgeId, _weight: f32) {}
+}
+
 /// Storage interface for edge-associated statistics (visits, values, etc.).
-pub trait EdgeStatsStore {
+pub trait EdgeStatsStore: VirtualLossStore {
     /// Resizes internal statistics arrays to accommodate `new_len` total edges.
     fn resize(&mut self, new_len: usize);
 
@@ -73,15 +86,6 @@ pub trait PriorStore {
 
     /// Sets the policy prior probability for `edge`.
     fn set_prior(&mut self, edge: EdgeId, prior: f32);
-}
-
-/// Interface for statistics stores that support virtual loss tracking for parallel or batched search.
-pub trait VirtualLossStore {
-    /// Temporarily increments the virtual loss on `edge` by `weight`.
-    fn add_virtual_loss(&mut self, edge: EdgeId, weight: f32);
-
-    /// Reverts previously added virtual loss from `edge` by `weight`.
-    fn remove_virtual_loss(&mut self, edge: EdgeId, weight: f32);
 }
 
 /// Structure-of-Arrays (SoA) memory layout for high cache locality and zero-allocation search traversals.

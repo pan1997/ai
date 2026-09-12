@@ -58,16 +58,6 @@ impl<const N: usize> EdgeStatsStore for MultiAgentPuctStats<N> {
     }
 }
 
-impl<const N: usize> PriorStore for MultiAgentPuctStats<N> {
-    fn prior(&self, edge: EdgeId) -> f32 {
-        self.priors[edge.as_usize()]
-    }
-
-    fn set_prior(&mut self, edge: EdgeId, prior: f32) {
-        self.priors[edge.as_usize()] = prior;
-    }
-}
-
 impl<const N: usize> VirtualLossStore for MultiAgentPuctStats<N> {
     fn add_virtual_loss(&mut self, edge: EdgeId, weight: f32) {
         self.virtual_loss[edge.as_usize()] += weight;
@@ -75,6 +65,16 @@ impl<const N: usize> VirtualLossStore for MultiAgentPuctStats<N> {
 
     fn remove_virtual_loss(&mut self, edge: EdgeId, weight: f32) {
         self.virtual_loss[edge.as_usize()] -= weight;
+    }
+}
+
+impl<const N: usize> PriorStore for MultiAgentPuctStats<N> {
+    fn prior(&self, edge: EdgeId) -> f32 {
+        self.priors[edge.as_usize()]
+    }
+
+    fn set_prior(&mut self, edge: EdgeId, prior: f32) {
+        self.priors[edge.as_usize()] = prior;
     }
 }
 

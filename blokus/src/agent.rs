@@ -16,14 +16,11 @@ use mcts_traits::{AgentId, Model, TurnBasedDynamics};
 use rand::seq::SliceRandom;
 use std::io::{self, BufRead, Write};
 
-/// General agent interface capable of selecting actions in a Blokus match.
-pub trait Agent<const B: usize = 20, const P: usize = 4> {
-    /// Returns the human-readable display name of the agent.
-    fn name(&self) -> &str;
+pub use mcts_traits::Agent;
 
-    /// Selects a legal action given the current game state.
-    fn select_action(&mut self, state: &BlokusState<B, P>) -> BlokusAction;
-}
+/// Dynamic boxed Blokus agent.
+pub type BoxAgent<const B: usize = 20, const P: usize = 4> =
+    Box<dyn Agent<BlokusState<B, P>, BlokusAction>>;
 
 /// Interactive human player selecting moves via CLI prompts.
 pub struct HumanAgent {
@@ -37,7 +34,9 @@ impl HumanAgent {
     }
 }
 
-impl<const B: usize, const P: usize> Agent<B, P> for HumanAgent {
+impl<const B: usize, const P: usize> mcts_traits::Agent<BlokusState<B, P>, BlokusAction>
+    for HumanAgent
+{
     fn name(&self) -> &str {
         &self.name
     }
@@ -124,7 +123,9 @@ impl RandomAgent {
     }
 }
 
-impl<const B: usize, const P: usize> Agent<B, P> for RandomAgent {
+impl<const B: usize, const P: usize> mcts_traits::Agent<BlokusState<B, P>, BlokusAction>
+    for RandomAgent
+{
     fn name(&self) -> &str {
         &self.name
     }
@@ -149,7 +150,9 @@ impl HeuristicAgent {
     }
 }
 
-impl<const B: usize, const P: usize> Agent<B, P> for HeuristicAgent {
+impl<const B: usize, const P: usize> mcts_traits::Agent<BlokusState<B, P>, BlokusAction>
+    for HeuristicAgent
+{
     fn name(&self) -> &str {
         &self.name
     }
@@ -204,6 +207,23 @@ pub struct MctsAgent<M, const B: usize = 20, const P: usize = 4> {
 }
 
 impl<M, const B: usize, const P: usize> MctsAgent<M, B, P> {
+    /// Creates a new `MctsAgent` with custom evaluation model and parameters.
+    pub fn new(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        verbose: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct,
+            model,
+            verbose,
+        }
+    }
+
     /// Returns the player name.
     pub fn name(&self) -> &str {
         &self.name
@@ -291,7 +311,8 @@ impl<const B: usize, const P: usize> MctsAgent<HeuristicRolloutEvaluator<B, P>, 
     }
 }
 
-impl<M, const B: usize, const P: usize> Agent<B, P> for MctsAgent<M, B, P>
+impl<M, const B: usize, const P: usize> mcts_traits::Agent<BlokusState<B, P>, BlokusAction>
+    for MctsAgent<M, B, P>
 where
     M: Model<BlokusState<B, P>>,
 {
@@ -336,30 +357,45 @@ where
         let num_children = tree.num_children(root);
         let first_edge = tree.first_child_edge(root);
 
-        let mut candidates = Vec::with_capacity(num_children as usize);
-        for i in 0..num_children {
-            let edge = mcts_engine::tree_store::EdgeId(first_edge.0 + i);
-            let edge_idx = edge.as_usize();
-            let action = *tree.edge_action(edge);
-            let visits = tree.stats.visits[edge_idx];
-            let prior = tree.stats.priors[edge_idx];
-            let mean_values = tree.stats.mean_value[edge_idx].to_vec();
-
-            candidates.push(MoveCandidate {
-                action,
-                visits,
-                prior,
-                mean_values,
-            });
-        }
-
-        candidates.sort_by_key(|c| std::cmp::Reverse(c.visits));
-
         if self.verbose {
+            let mut candidates = Vec::with_capacity(num_children as usize);
+            for i in 0..num_children {
+                let edge = mcts_engine::tree_store::EdgeId(first_edge.0 + i);
+                let edge_idx = edge.as_usize();
+                let action = *tree.edge_action(edge);
+                let visits = tree.stats.visits[edge_idx];
+                let prior = tree.stats.priors[edge_idx];
+                let mean_values = tree.stats.mean_value[edge_idx].to_vec();
+
+                candidates.push(MoveCandidate {
+                    action,
+                    visits,
+                    prior,
+                    mean_values,
+                });
+            }
+
+            candidates.sort_by_key(|c| std::cmp::Reverse(c.visits));
             println!("\n[MCTS Search Analysis: {}]", self.name);
             print!("{}", format_move_candidates(&candidates, 10));
-        }
 
-        candidates.first().map(|c| c.action).unwrap_or(legal[0])
+            candidates.first().map(|c| c.action).unwrap_or(legal[0])
+        } else {
+            let mut best_edge = first_edge;
+            let mut max_visits = 0;
+            for i in 0..num_children {
+                let edge = mcts_engine::tree_store::EdgeId(first_edge.0 + i);
+                let visits = tree.stats.visits[edge.as_usize()];
+                if visits > max_visits {
+                    max_visits = visits;
+                    best_edge = edge;
+                }
+            }
+            if max_visits > 0 {
+                *tree.edge_action(best_edge)
+            } else {
+                legal[0]
+            }
+        }
     }
 }

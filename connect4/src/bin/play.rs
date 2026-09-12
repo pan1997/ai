@@ -16,7 +16,7 @@
 //!   -h, --help          Print this help message
 //! ```
 
-use connect4::agent::{Agent, HumanAgent, MctsAgent, RandomAgent};
+use connect4::agent::{Agent, BoxAgent, HumanAgent, MctsAgent, RandomAgent};
 use connect4::game::{Connect4State, Player};
 use connect4::render::render_board_styled;
 use std::env;
@@ -51,7 +51,7 @@ fn build_mcts_agent(
     rollouts: usize,
     depth: usize,
     verbose: bool,
-) -> Box<dyn Agent<6, 7>> {
+) -> BoxAgent<6, 7> {
     if rollouts == 0 {
         Box::new(MctsAgent::new_uniform(name, iters, verbose))
     } else {
@@ -121,35 +121,35 @@ fn main() {
     println!("==================================================");
     println!("Mode: {mode} | MCTS Iterations: {iters} | Rollouts: {rollouts}\n");
 
-    let (mut player_red, mut player_yellow): (Box<dyn Agent<6, 7>>, Box<dyn Agent<6, 7>>) =
-        match mode.as_str() {
-            "human-ai" => (
-                Box::new(HumanAgent::new("You (Red)")),
-                build_mcts_agent("MCTS Bot (Yellow)", iters, rollouts, depth, verbose),
-            ),
-            "ai-human" => (
-                build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
-                Box::new(HumanAgent::new("You (Yellow)")),
-            ),
-            "ai-ai" => (
-                build_mcts_agent("Alpha-MCTS (Red)", iters, rollouts, depth, verbose),
-                build_mcts_agent("Beta-MCTS (Yellow)", iters, rollouts, depth, verbose),
-            ),
-            "human-human" => (
-                Box::new(HumanAgent::new("Player 1 (Red)")),
-                Box::new(HumanAgent::new("Player 2 (Yellow)")),
-            ),
-            "ai-random" => (
-                build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
-                Box::new(RandomAgent::new("Random Bot (Yellow)")),
-            ),
-            other => {
-                eprintln!(
-                    "Invalid mode '{other}'. Supported: human-ai, ai-human, ai-ai, human-human, ai-random"
-                );
-                return;
-            }
-        };
+    let (mut player_red, mut player_yellow): (BoxAgent<6, 7>, BoxAgent<6, 7>) = match mode.as_str()
+    {
+        "human-ai" => (
+            Box::new(HumanAgent::new("You (Red)")),
+            build_mcts_agent("MCTS Bot (Yellow)", iters, rollouts, depth, verbose),
+        ),
+        "ai-human" => (
+            build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
+            Box::new(HumanAgent::new("You (Yellow)")),
+        ),
+        "ai-ai" => (
+            build_mcts_agent("Alpha-MCTS (Red)", iters, rollouts, depth, verbose),
+            build_mcts_agent("Beta-MCTS (Yellow)", iters, rollouts, depth, verbose),
+        ),
+        "human-human" => (
+            Box::new(HumanAgent::new("Player 1 (Red)")),
+            Box::new(HumanAgent::new("Player 2 (Yellow)")),
+        ),
+        "ai-random" => (
+            build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
+            Box::new(RandomAgent::new("Random Bot (Yellow)")),
+        ),
+        other => {
+            eprintln!(
+                "Invalid mode '{other}'. Supported: human-ai, ai-human, ai-ai, human-human, ai-random"
+            );
+            return;
+        }
+    };
 
     let mut state = Connect4State::<6, 7>::new();
 

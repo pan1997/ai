@@ -23,7 +23,8 @@ pub mod world;
 mod tests;
 
 pub use agent::{
-    Agent, HumanAgent, MacroMctsAgent, MctsAgent, RandomAgent, RoundMctsAgent, TacticalAgent,
+    Agent, HumanAgent, MacroMctsAgent, MctsAgent, MctsMode, RandomAgent, RoundMctsAgent,
+    TacticalAgent,
 };
 pub use dynamics::{MacroConnect4Dynamics, OpponentPolicy, RandomOpponent, TacticalOpponent};
 pub use evaluator::{RolloutEvaluator, UniformEvaluator};

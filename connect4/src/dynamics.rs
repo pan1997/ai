@@ -8,13 +8,8 @@
 
 use crate::game::{Connect4State, Player};
 use crate::world::Connect4World;
+pub use mcts_traits::OpponentPolicy;
 use mcts_traits::{AgentDynamics, AgentId, BatchedAgentDynamics, StepOutcome, World};
-
-/// Pluggable policy governing opponent responses in macro-action dynamics.
-pub trait OpponentPolicy<const R: usize, const C: usize>: Send + Sync {
-    /// Selects an action for the opponent given state `s` where `s.current_player` is the opponent.
-    fn select_action(&self, s: &Connect4State<R, C>) -> usize;
-}
 
 /// Opponent policy selecting pseudo-randomly among legal columns based on a deterministic hash of the board state.
 ///
@@ -38,7 +33,7 @@ impl RandomOpponent {
     }
 }
 
-impl<const R: usize, const C: usize> OpponentPolicy<R, C> for RandomOpponent {
+impl<const R: usize, const C: usize> OpponentPolicy<Connect4State<R, C>, usize> for RandomOpponent {
     fn select_action(&self, s: &Connect4State<R, C>) -> usize {
         use rand::Rng;
 
@@ -52,19 +47,13 @@ impl<const R: usize, const C: usize> OpponentPolicy<R, C> for RandomOpponent {
     }
 }
 
-impl<const R: usize, const C: usize> mcts_traits::OpponentPolicy<Connect4State<R, C>, usize>
-    for RandomOpponent
-{
-    fn select_action(&self, s: &Connect4State<R, C>) -> usize {
-        OpponentPolicy::select_action(self, s)
-    }
-}
-
 /// Tactical opponent policy: plays immediate winning move, blocks opponent 1-ply win, or center preference.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TacticalOpponent;
 
-impl<const R: usize, const C: usize> OpponentPolicy<R, C> for TacticalOpponent {
+impl<const R: usize, const C: usize> OpponentPolicy<Connect4State<R, C>, usize>
+    for TacticalOpponent
+{
     fn select_action(&self, s: &Connect4State<R, C>) -> usize {
         let mut legal = Vec::with_capacity(C);
         s.legal_actions(&mut legal);
@@ -111,14 +100,6 @@ impl<const R: usize, const C: usize> OpponentPolicy<R, C> for TacticalOpponent {
     }
 }
 
-impl<const R: usize, const C: usize> mcts_traits::OpponentPolicy<Connect4State<R, C>, usize>
-    for TacticalOpponent
-{
-    fn select_action(&self, s: &Connect4State<R, C>) -> usize {
-        OpponentPolicy::select_action(self, s)
-    }
-}
-
 /// Macro dynamics for Connect 4 that plan across complete full rounds.
 ///
 /// In standard Connect 4 MCTS, the agent plans ply-by-ply (Red moves, then Blue moves).
@@ -159,7 +140,7 @@ impl<P, const R: usize, const C: usize> MacroConnect4Dynamics<P, R, C> {
 
 impl<P, const R: usize, const C: usize> AgentDynamics for MacroConnect4Dynamics<P, R, C>
 where
-    P: OpponentPolicy<R, C>,
+    P: OpponentPolicy<Connect4State<R, C>, usize>,
 {
     type State = Connect4State<R, C>;
     type Action = usize;
@@ -201,7 +182,7 @@ where
 
 impl<P, const R: usize, const C: usize> BatchedAgentDynamics for MacroConnect4Dynamics<P, R, C>
 where
-    P: OpponentPolicy<R, C>,
+    P: OpponentPolicy<Connect4State<R, C>, usize>,
 {
     fn step_batch(
         &self,

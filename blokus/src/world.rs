@@ -41,8 +41,8 @@ impl<const B: usize, const P: usize> BlokusWorld<B, P> {
 
         if ws.is_terminal() {
             let mut scores = [0i32; P];
-            for p in 0..P {
-                scores[p] = ws.score(p);
+            for (p, score) in scores.iter_mut().enumerate() {
+                *score = ws.score(p);
             }
             let rewards = compute_rank_rewards(&scores);
             StepOutcome::new(rewards, true)

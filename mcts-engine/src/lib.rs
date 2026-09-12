@@ -18,20 +18,27 @@
 //! - [`backup`]: Value backpropagation policies ([`SingleAgentBackup`], [`VectorBackup`]).
 //! - [`scheduler`]: Execution engines ([`SequentialScheduler`], [`BatchedScheduler`], [`MultiGameScheduler`]).
 
+pub mod arena;
 pub mod backup;
 pub mod dirichlet;
 pub mod opponent;
 pub mod scheduler;
+pub mod search;
 pub mod selection;
 pub mod tree_store;
 
 #[cfg(test)]
 mod tests;
 
+pub use arena::{
+    GameOutcome, H2HMatrix, MultiPlayerTournamentStats, TwoPlayerTournamentStats,
+    disambiguate_names,
+};
 pub use backup::{BackupPolicy, MultiAgentReward, PathElement, SingleAgentBackup, VectorBackup};
 pub use dirichlet::{add_dirichlet_noise, add_root_dirichlet_noise};
 pub use opponent::{AdversarialOpponent, HeuristicOpponent, RandomOpponent, TreeOpponentPolicy};
 pub use scheduler::{BatchedScheduler, MultiGameScheduler, SequentialScheduler};
+pub use search::{TrajectoryOutcome, descend_trajectory};
 pub use selection::{
     GumbelPuctSelection, MultiAgentPuctSelection, MultiAgentPuctStats, SelectionPolicy,
     UctSelection,
