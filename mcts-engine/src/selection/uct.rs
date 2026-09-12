@@ -25,12 +25,12 @@ impl<const N: usize> Default for UctSelection<N> {
     }
 }
 
-impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>>
-    for UctSelection<N>
+impl<Action, Reward, StepDelta, const N: usize>
+    SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>, StepDelta> for UctSelection<N>
 {
     fn select_child(
         &self,
-        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>>,
+        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>, StepDelta>,
         node_id: NodeId,
     ) -> Option<EdgeId> {
         let active_agent = store.node_agent(node_id).0 as usize;
@@ -85,4 +85,3 @@ impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentP
         }
     }
 }
-

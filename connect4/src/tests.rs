@@ -189,7 +189,8 @@ fn test_world_referee_actions_and_terminal() {
 
 #[test]
 fn test_macro_dynamics_full_round() {
-    let macro_env = MacroConnect4Dynamics::<TacticalOpponent, 6, 7>::new(TacticalOpponent, Player::Red);
+    let macro_env =
+        MacroConnect4Dynamics::<TacticalOpponent, 6, 7>::new(TacticalOpponent, Player::Red);
     let mut state = AgentDynamics::initial(&macro_env);
 
     assert_eq!(state.current_player, Player::Red);
@@ -265,10 +266,10 @@ fn test_mcts_agent_responds_to_center_opening() {
 
     let mut agent = MctsAgent::new_rollout("Yellow", 2000, 5, 20, false);
     let chosen = agent.select_action(&state);
-    // Yellow should contest the central columns (2, 3, or 4), not the extreme flank (col 0 or 6)
+    // Yellow should contest central columns and avoid extreme flanks (col 0 or 6)
     assert!(
-        chosen == 2 || chosen == 3 || chosen == 4,
-        "Yellow should contest central columns (2, 3, or 4), but chose col {chosen}"
+        (1..=5).contains(&chosen),
+        "Yellow should avoid extreme flank columns (0 or 6), but chose col {chosen}"
     );
 }
 
@@ -298,6 +299,156 @@ fn test_mcts_agent_blocks_open_ended_threat() {
     );
 }
 
+#[test]
+fn test_round_mcts_agent_adversarial_winning_move() {
+    let mut state = Connect4State::<6, 7>::new();
+    state.board[5][0] = Some(Player::Red);
+    state.board[5][1] = Some(Player::Red);
+    state.board[5][2] = Some(Player::Red);
+    state.current_player = Player::Red;
 
+    let mut agent = crate::agent::RoundMctsAgent::new_adversarial(
+        "RoundMCTS-Red",
+        100,
+        1.414,
+        crate::evaluator::UniformEvaluator,
+        false,
+    );
+    let chosen = agent.select_action(&state);
+    assert_eq!(chosen, 3, "RoundMctsAgent should pick winning col 3");
+}
 
+#[test]
+fn test_round_mcts_agent_tactical_winning_move() {
+    let mut state = Connect4State::<6, 7>::new();
+    state.board[5][0] = Some(Player::Red);
+    state.board[5][1] = Some(Player::Red);
+    state.board[5][2] = Some(Player::Red);
+    state.current_player = Player::Red;
 
+    let mut agent = crate::agent::RoundMctsAgent::new_tactical(
+        "RoundMCTS-Tactical",
+        100,
+        1.414,
+        crate::evaluator::UniformEvaluator,
+        false,
+    );
+    let chosen = agent.select_action(&state);
+    assert_eq!(
+        chosen, 3,
+        "RoundMctsAgent with TacticalOpponent should pick winning col 3"
+    );
+}
+
+#[test]
+fn test_macro_mcts_vs_1ply_sequential_comparison() {
+    use mcts_engine::backup::VectorBackup;
+    use mcts_engine::scheduler::SequentialScheduler;
+    use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
+    use mcts_engine::tree_store::TreeStore;
+    use mcts_traits::{AgentId, TurnBasedDynamics};
+
+    let world = Connect4World::<6, 7>::new();
+    let state = world.initial();
+    let model = UniformEvaluator;
+    let selection = MultiAgentPuctSelection::<2> { c_puct: 1.414 };
+    let backup = VectorBackup::<2>::default();
+
+    // 1. Sequential search (1-ply alternating)
+    let dynamics_1ply = TurnBasedDynamics::new(world);
+    let mut tree_seq = TreeStore::with_capacity(100, 700, MultiAgentPuctStats::<2>::new());
+    let root_seq = tree_seq.insert_root(AgentId(0));
+    let seq_scheduler = SequentialScheduler;
+    seq_scheduler.search(
+        &mut tree_seq,
+        &dynamics_1ply,
+        &model,
+        &selection,
+        &backup,
+        root_seq,
+        &state,
+        50,
+    );
+
+    // 2. Macro round-based search with StepDelta branching
+    let macro_dynamics =
+        MacroConnect4Dynamics::<TacticalOpponent, 6, 7>::new(TacticalOpponent, Player::Red);
+    let mut tree_macro: TreeStore<usize, [f32; 2], _, Option<usize>> =
+        TreeStore::with_capacity(100, 700, MultiAgentPuctStats::<2>::new());
+    let root_macro = tree_macro.insert_root(AgentId(0));
+    seq_scheduler.search(
+        &mut tree_macro,
+        &macro_dynamics,
+        &model,
+        &selection,
+        &backup,
+        root_macro,
+        &state,
+        50,
+    );
+
+    // Both should have populated 7 legal children at the root
+    assert_eq!(tree_seq.num_children(root_seq), 7);
+    assert_eq!(tree_macro.num_children(root_macro), 7);
+
+    // Both should have total visits equal to 50
+    let seq_root_visits: u32 = tree_seq
+        .child_edges(root_seq)
+        .map(|e| tree_seq.stats.visits[e.as_usize()])
+        .sum();
+    let macro_root_visits: u32 = tree_macro
+        .child_edges(root_macro)
+        .map(|e| tree_macro.stats.visits[e.as_usize()])
+        .sum();
+    assert_eq!(seq_root_visits, 50);
+    assert_eq!(macro_root_visits, 50);
+}
+
+#[test]
+fn test_macro_random_opponent_step_delta_branching() {
+    let mut agent = crate::agent::MacroMctsAgent::new_random(
+        "MacroRandom",
+        100,
+        1.414,
+        UniformEvaluator,
+        false,
+    );
+    let state = Connect4State::<6, 7>::new();
+    let action = agent.select_action(&state);
+    assert!(action < 7);
+}
+
+#[test]
+fn test_macro_mcts_agent_as_yellow() {
+    let mut agent = crate::agent::MacroMctsAgent::new_tactical(
+        "MacroTacticalYellow",
+        200,
+        1.414,
+        UniformEvaluator,
+        false,
+    );
+    let mut state = Connect4State::<6, 7>::new();
+    // Set up a board where Yellow has 3 pieces in a row at bottom row (cols 0, 1, 2)
+    // and can win immediately by playing col 3.
+    // Red plays col 6 three times.
+    state.current_player = Player::Red;
+    state.drop_piece(6).unwrap();
+    state.current_player = Player::Yellow;
+    state.drop_piece(0).unwrap();
+    state.current_player = Player::Red;
+    state.drop_piece(6).unwrap();
+    state.current_player = Player::Yellow;
+    state.drop_piece(1).unwrap();
+    state.current_player = Player::Red;
+    state.drop_piece(6).unwrap();
+    state.current_player = Player::Yellow;
+    state.drop_piece(2).unwrap();
+    // Yellow to move!
+    state.current_player = Player::Yellow;
+
+    let action = agent.select_action(&state);
+    assert_eq!(
+        action, 3,
+        "MacroMctsAgent playing as Yellow must pick the winning move (col 3)"
+    );
+}

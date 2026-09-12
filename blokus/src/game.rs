@@ -1,6 +1,6 @@
 //! Blokus board state, actions, legal move generator, and official scoring.
 
-use crate::pieces::{piece_size, registry, NUM_PIECES};
+use crate::pieces::{NUM_PIECES, piece_size, registry};
 use std::fmt::{self, Debug, Display};
 
 /// Sentinel value representing an empty board cell.
@@ -394,11 +394,7 @@ impl<const B: usize, const P: usize> BlokusState<B, P> {
                                 if (visited_anchors[word] & (1 << bit)) == 0 {
                                     visited_anchors[word] |= 1 << bit;
                                     if self.is_valid_placement(
-                                        player,
-                                        piece_id,
-                                        ori as u8,
-                                        anchor_r,
-                                        anchor_c,
+                                        player, piece_id, ori as u8, anchor_r, anchor_c,
                                     ) {
                                         out.push(BlokusAction::Place {
                                             piece_id,
@@ -440,11 +436,7 @@ impl<const B: usize, const P: usize> BlokusState<B, P> {
                                         if (visited_anchors[word] & (1 << bit)) == 0 {
                                             visited_anchors[word] |= 1 << bit;
                                             if self.is_valid_placement(
-                                                player,
-                                                piece_id,
-                                                ori as u8,
-                                                anchor_r,
-                                                anchor_c,
+                                                player, piece_id, ori as u8, anchor_r, anchor_c,
                                             ) {
                                                 out.push(BlokusAction::Place {
                                                     piece_id,
@@ -563,4 +555,3 @@ pub type BlokusClassicState = BlokusState<20, 4>;
 
 /// Standard 2-player Blokus Duo state on a $14 \times 14$ board.
 pub type BlokusDuoState = BlokusState<14, 2>;
-

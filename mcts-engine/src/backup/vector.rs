@@ -33,8 +33,8 @@ impl<const N: usize> VectorBackup<N> {
     }
 
     /// Writes normalized priors to outgoing child edges of a node.
-    fn write_priors<A, R, Eval>(
-        store: &mut TreeStore<A, R, MultiAgentPuctStats<N>>,
+    fn write_priors<A, R, Eval, StepDelta>(
+        store: &mut TreeStore<A, R, MultiAgentPuctStats<N>, StepDelta>,
         node: NodeId,
         evaluation: &Eval,
     ) where
@@ -71,7 +71,8 @@ impl<const N: usize> VectorBackup<N> {
     }
 }
 
-impl<A, R, Eval, const N: usize> BackupPolicy<A, R, MultiAgentPuctStats<N>, Eval> for VectorBackup<N>
+impl<A, R, Eval, StepDelta, const N: usize>
+    BackupPolicy<A, R, MultiAgentPuctStats<N>, Eval, StepDelta> for VectorBackup<N>
 where
     A: Clone,
     R: Copy + MultiAgentReward<N>,
@@ -79,7 +80,7 @@ where
 {
     fn init_root(
         &self,
-        store: &mut TreeStore<A, R, MultiAgentPuctStats<N>>,
+        store: &mut TreeStore<A, R, MultiAgentPuctStats<N>, StepDelta>,
         root: NodeId,
         evaluation: &Eval,
     ) {
@@ -95,7 +96,7 @@ where
 
     fn backup(
         &self,
-        store: &mut TreeStore<A, R, MultiAgentPuctStats<N>>,
+        store: &mut TreeStore<A, R, MultiAgentPuctStats<N>, StepDelta>,
         path: &[PathElement],
         evaluation: Option<&Eval>,
     ) {
@@ -104,7 +105,7 @@ where
         }
 
         let last_element = path.last().unwrap();
-        let leaf_node = store.edge_child(last_element.edge);
+        let leaf_node = last_element.next_node;
 
         let leaf_agent = store.node_agent(leaf_node).0 as usize;
         assert!(
@@ -154,4 +155,3 @@ where
         }
     }
 }
-

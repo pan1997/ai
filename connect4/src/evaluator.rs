@@ -26,6 +26,7 @@ impl<const R: usize, const C: usize> Model<Connect4State<R, C>> for UniformEvalu
 }
 
 /// Rollout evaluator estimating state value via random simulation playouts.
+#[derive(Debug, Clone, Copy)]
 pub struct RolloutEvaluator<const R: usize = 6, const C: usize = 7> {
     pub num_rollouts: usize,
     pub max_depth: usize,

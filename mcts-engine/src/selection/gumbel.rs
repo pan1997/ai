@@ -19,12 +19,12 @@ impl<const N: usize> Default for GumbelPuctSelection<N> {
     }
 }
 
-impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>>
-    for GumbelPuctSelection<N>
+impl<Action, Reward, StepDelta, const N: usize>
+    SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>, StepDelta> for GumbelPuctSelection<N>
 {
     fn select_child(
         &self,
-        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>>,
+        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>, StepDelta>,
         node_id: NodeId,
     ) -> Option<EdgeId> {
         let active_agent = store.node_agent(node_id).0 as usize;
@@ -87,7 +87,9 @@ impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentP
                 let logit = (prior + 1e-7).ln();
 
                 effective_q
-                    + self.c_puct * (parent_visits_sqrt / (1.0 + effective_visits)) * (logit + gumbel)
+                    + self.c_puct
+                        * (parent_visits_sqrt / (1.0 + effective_visits))
+                        * (logit + gumbel)
             } else {
                 // At interior nodes: standard deterministic PUCT (no Gumbel noise)
                 let u = self.c_puct * prior * parent_visits_sqrt / (1.0 + effective_visits);
@@ -107,4 +109,3 @@ impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentP
         }
     }
 }
-

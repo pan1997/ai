@@ -1,5 +1,8 @@
 use crate::agent::AgentId;
-use crate::dynamics::{default_step_batch, AgentDynamics, StepOutcome, Transition, TurnBasedDynamics};
+use crate::dynamics::{
+    AgentDynamics, OpponentPolicy, RoundBasedDynamics, StepOutcome, Transition, TurnBasedDynamics,
+    default_step_batch,
+};
 use crate::graph::GraphEnv;
 use crate::model::{Evaluation, HasPolicy, HasValue};
 use crate::world::{TurnBasedWorld, World};
@@ -83,6 +86,7 @@ impl AgentDynamics for DummyDynamics {
     type State = u32;
     type Action = u32;
     type Reward = f32;
+    type StepDelta = ();
 
     fn initial(&self) -> Self::State {
         0
@@ -93,7 +97,7 @@ impl AgentDynamics for DummyDynamics {
         out.extend([1, 2]);
     }
 
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward, ()> {
         *s += *action;
         StepOutcome::new(*action as f32 * 10.0, false)
     }
@@ -214,7 +218,11 @@ impl TurnBasedWorld for MockTurnBasedWorld {
         ws.0 % 2
     }
 
-    fn step_action(&self, ws: &mut Self::WorldState, action: &Self::Action) -> StepOutcome<[f32; 2]> {
+    fn step_action(
+        &self,
+        ws: &mut Self::WorldState,
+        action: &Self::Action,
+    ) -> StepOutcome<[f32; 2]> {
         ws.1 += *action;
         ws.0 += 1;
         let term = ws.0 >= 4;
@@ -246,3 +254,39 @@ fn test_turn_based_dynamics_adapter() {
     assert_eq!(dyns.current_agent(&state), AgentId(0));
 }
 
+struct FixedOpponent(usize);
+
+impl OpponentPolicy<(usize, usize), usize> for FixedOpponent {
+    fn select_action(&self, _state: &(usize, usize)) -> usize {
+        self.0
+    }
+}
+
+#[test]
+fn test_round_based_dynamics_adapter() {
+    let world = MockTurnBasedWorld;
+    let opponent = FixedOpponent(10);
+    let dyns = RoundBasedDynamics::new(world, opponent, 0);
+
+    let mut state = dyns.initial();
+    assert_eq!(state, (0, 0));
+    assert_eq!(dyns.current_agent(&state), AgentId(0));
+
+    // Step primary action 2:
+    // Primary plays 2 (ws.0 = 1, ws.1 = 2).
+    // Opponent is player 1 != 0, plays fixed 10 (ws.0 = 2, ws.1 = 12).
+    // Now ws.0 = 2 (player 0's turn again!). Round completes!
+    let outcome = dyns.step(&mut state, &2);
+    assert!(!outcome.terminated);
+    assert_eq!(outcome.delta, Some(10));
+    assert_eq!(state, (2, 12));
+    assert_eq!(dyns.current_agent(&state), AgentId(0));
+
+    // Next round: primary plays 3 (ws.0 = 3, ws.1 = 15).
+    // Opponent plays 10 (ws.0 = 4, ws.1 = 25).
+    // Terminal condition ws.0 >= 4 reached!
+    let outcome2 = dyns.step(&mut state, &3);
+    assert!(outcome2.terminated);
+    assert_eq!(outcome2.delta, Some(10));
+    assert_eq!(outcome2.reward, [1.0, -1.0]);
+}

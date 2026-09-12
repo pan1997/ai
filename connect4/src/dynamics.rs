@@ -9,7 +9,6 @@
 use crate::game::{Connect4State, Player};
 use crate::world::Connect4World;
 use mcts_traits::{AgentDynamics, AgentId, BatchedAgentDynamics, StepOutcome, World};
-use rand::seq::SliceRandom;
 
 /// Pluggable policy governing opponent responses in macro-action dynamics.
 pub trait OpponentPolicy<const R: usize, const C: usize>: Send + Sync {
@@ -17,16 +16,47 @@ pub trait OpponentPolicy<const R: usize, const C: usize>: Send + Sync {
     fn select_action(&self, s: &Connect4State<R, C>) -> usize;
 }
 
-/// Opponent policy selecting uniformly at random among legal columns.
+/// Opponent policy selecting pseudo-randomly among legal columns based on a deterministic hash of the board state.
+///
+/// Deterministic evaluation is required for absorbed macro-dynamics ([`MacroConnect4Dynamics`])
+/// to avoid state aliasing during MCTS trajectory traversals.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct RandomOpponent;
+pub struct RandomOpponent {
+    /// Optional salt/seed for the state hash.
+    pub seed: u64,
+}
+
+impl RandomOpponent {
+    /// Creates a new `RandomOpponent` with default seed 0.
+    pub const fn new() -> Self {
+        Self { seed: 0 }
+    }
+
+    /// Creates a `RandomOpponent` with a specific salt/seed.
+    pub const fn with_seed(seed: u64) -> Self {
+        Self { seed }
+    }
+}
 
 impl<const R: usize, const C: usize> OpponentPolicy<R, C> for RandomOpponent {
     fn select_action(&self, s: &Connect4State<R, C>) -> usize {
+        use rand::Rng;
+
         let mut legal = Vec::with_capacity(C);
         s.legal_actions(&mut legal);
-        let mut rng = rand::thread_rng();
-        *legal.choose(&mut rng).expect("opponent has legal move")
+        if legal.is_empty() {
+            panic!("RandomOpponent: no legal actions available in state");
+        }
+        let idx = rand::thread_rng().gen_range(0..legal.len());
+        legal[idx]
+    }
+}
+
+impl<const R: usize, const C: usize> mcts_traits::OpponentPolicy<Connect4State<R, C>, usize>
+    for RandomOpponent
+{
+    fn select_action(&self, s: &Connect4State<R, C>) -> usize {
+        OpponentPolicy::select_action(self, s)
     }
 }
 
@@ -48,10 +78,10 @@ impl<const R: usize, const C: usize> OpponentPolicy<R, C> for TacticalOpponent {
         // 1. Check for immediate winning move
         for &col in &legal {
             let mut clone = s.clone();
-            if let Ok(row) = clone.drop_piece(col) {
-                if clone.check_win_at(row, col, me) {
-                    return col;
-                }
+            if let Ok(row) = clone.drop_piece(col)
+                && clone.check_win_at(row, col, me)
+            {
+                return col;
             }
         }
 
@@ -59,36 +89,50 @@ impl<const R: usize, const C: usize> OpponentPolicy<R, C> for TacticalOpponent {
         for &col in &legal {
             let mut clone = s.clone();
             clone.current_player = opp;
-            if let Ok(row) = clone.drop_piece(col) {
-                if clone.check_win_at(row, col, opp) {
-                    return col;
-                }
+            if let Ok(row) = clone.drop_piece(col)
+                && clone.check_win_at(row, col, opp)
+            {
+                return col;
             }
         }
 
-        // 3. Prefer center column or closest to center
-        let center = C / 2;
+        // 3. Fallback: choose column closest to the center
+        let center = C as f32 / 2.0;
         *legal
             .iter()
-            .min_by_key(|&&col| (col as isize - center as isize).abs())
+            .min_by(|&&a, &&b| {
+                let dist_a = (a as f32 + 0.5 - center).abs();
+                let dist_b = (b as f32 + 0.5 - center).abs();
+                dist_a
+                    .partial_cmp(&dist_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap()
     }
 }
 
-/// Macro-action planning dynamics executing complete game rounds.
+impl<const R: usize, const C: usize> mcts_traits::OpponentPolicy<Connect4State<R, C>, usize>
+    for TacticalOpponent
+{
+    fn select_action(&self, s: &Connect4State<R, C>) -> usize {
+        OpponentPolicy::select_action(self, s)
+    }
+}
+
+/// Macro dynamics for Connect 4 that plan across complete full rounds.
 ///
-/// Each transition step executes:
-/// 1. The primary agent's action.
-/// 2. If non-terminal, the opponent's reaction chosen by `opponent_policy`.
-///
-/// Decision nodes in MCTS using this dynamics are **strictly agent-centric** (always primary agent to move).
-#[derive(Debug, Clone)]
+/// In standard Connect 4 MCTS, the agent plans ply-by-ply (Red moves, then Blue moves).
+/// `MacroConnect4Dynamics` absorbs the opponent's reply via a pluggable [`OpponentPolicy`]:
+/// - When the agent selects an action $A_{\text{ego}}$, the dynamics executes $A_{\text{ego}}$.
+/// - If the game has not ended, the opponent policy replies with $A_{\text{opp}}$.
+/// - The step outcome returns the transition reward and the opponent's reply in `StepDelta`.
+#[derive(Debug, Clone, Copy)]
 pub struct MacroConnect4Dynamics<P, const R: usize = 6, const C: usize = 7> {
     /// Canonical referee managing the game state.
     pub world: Connect4World<R, C>,
     /// Policy governing opponent reactions.
     pub opponent_policy: P,
-    /// Color of the primary planning agent.
+    /// The primary player whose perspective and returns are being maximized.
     pub primary_player: Player,
 }
 
@@ -120,6 +164,7 @@ where
     type State = Connect4State<R, C>;
     type Action = usize;
     type Reward = [f32; 2];
+    type StepDelta = Option<usize>;
 
     #[inline]
     fn initial(&self) -> Self::State {
@@ -131,21 +176,26 @@ where
         self.world.legal_actions(s, out);
     }
 
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+    fn step(
+        &self,
+        s: &mut Self::State,
+        action: &Self::Action,
+    ) -> StepOutcome<Self::Reward, Self::StepDelta> {
         // 1. Apply primary agent's move
         let primary_outcome = self.world.step_action(s, *action);
         if primary_outcome.terminated {
-            return primary_outcome;
+            return StepOutcome::with_delta(primary_outcome.reward, None, true);
         }
 
         // 2. Opponent replies via pluggable policy
         let opp_action = self.opponent_policy.select_action(s);
-        self.world.step_action(s, opp_action)
+        let opp_outcome = self.world.step_action(s, opp_action);
+        StepOutcome::with_delta(opp_outcome.reward, Some(opp_action), opp_outcome.terminated)
     }
 
     #[inline]
     fn current_agent(&self, _s: &Self::State) -> AgentId {
-        AgentId(0) // In macro dynamics, it is always the primary agent's turn to decide
+        AgentId(self.primary_player.index() as u32)
     }
 }
 
@@ -157,7 +207,7 @@ where
         &self,
         states: &mut [Self::State],
         actions: &[Self::Action],
-        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
+        out_outcomes: &mut Vec<StepOutcome<Self::Reward, Self::StepDelta>>,
     ) {
         mcts_traits::default_step_batch(self, states, actions, out_outcomes);
     }

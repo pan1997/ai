@@ -22,12 +22,11 @@ pub mod world;
 #[cfg(test)]
 mod tests;
 
-pub use agent::{Agent, HumanAgent, MctsAgent, RandomAgent};
-pub use dynamics::{
-    MacroConnect4Dynamics, OpponentPolicy, RandomOpponent, TacticalOpponent,
+pub use agent::{
+    Agent, HumanAgent, MacroMctsAgent, MctsAgent, RandomAgent, RoundMctsAgent, TacticalAgent,
 };
+pub use dynamics::{MacroConnect4Dynamics, OpponentPolicy, RandomOpponent, TacticalOpponent};
 pub use evaluator::{RolloutEvaluator, UniformEvaluator};
 pub use game::{Connect4State, Player};
-pub use render::{format_move_candidates, render_board, render_board_styled, MoveCandidate};
+pub use render::{MoveCandidate, format_move_candidates, render_board, render_board_styled};
 pub use world::Connect4World;
-

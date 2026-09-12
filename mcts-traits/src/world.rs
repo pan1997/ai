@@ -38,11 +38,7 @@ pub trait World {
     /// Executes joint actions from all players simultaneously in-place on `ws`.
     ///
     /// Modifies `ws` directly and returns `(per_player_rewards, is_terminal)`.
-    fn step(
-        &self,
-        ws: &mut Self::WorldState,
-        joint: &[Self::Action],
-    ) -> (Vec<f32>, bool);
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool);
 
     /// Checks if the world state is in a terminal condition.
     fn terminal(&self, ws: &Self::WorldState) -> bool;
@@ -94,4 +90,3 @@ pub trait TurnBasedWorld: World {
         action: &Self::Action,
     ) -> crate::dynamics::StepOutcome<Self::StepReward>;
 }
-

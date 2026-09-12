@@ -78,6 +78,23 @@ pub trait Model<S> {
     }
 }
 
+impl<S, M: Model<S> + ?Sized> Model<S> for &M {
+    #[inline]
+    fn evaluate(&self, s: &S) -> Evaluation {
+        (**self).evaluate(s)
+    }
+
+    #[inline]
+    fn prior(&self, s: &S) -> Vec<f32> {
+        (**self).prior(s)
+    }
+
+    #[inline]
+    fn value(&self, s: &S) -> f32 {
+        (**self).value(s)
+    }
+}
+
 /// Batched evaluation interface for amortizing neural network / GPU tensor inference.
 pub trait BatchedModel<S>: Model<S> {
     /// Evaluates a slice of state references in a single batched pass.

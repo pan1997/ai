@@ -73,11 +73,23 @@ fn test_hex_mcts_search() {
     let initial_state = AgentDynamics::initial(&env);
 
     let scheduler = SequentialScheduler;
-    scheduler.search(&mut tree, &env, &model, &selection, &backup, root, &initial_state, 10);
+    scheduler.search(
+        &mut tree,
+        &env,
+        &model,
+        &selection,
+        &backup,
+        root,
+        &initial_state,
+        10,
+    );
 
     // Root should have 9 children (cells 0..9)
     assert_eq!(tree.num_children(root), 9);
-    let total_visits: u32 = tree.child_edges(root).map(|e| tree.stats.visits[e.as_usize()]).sum();
+    let total_visits: u32 = tree
+        .child_edges(root)
+        .map(|e| tree.stats.visits[e.as_usize()])
+        .sum();
     assert_eq!(total_visits, 10);
 }
 
@@ -91,23 +103,23 @@ fn test_hex_dsu_deep_connectivity_and_path_compression() {
 
     // Construct a zigzag path for Black connecting top row (r=0) to bottom row (r=4):
     // (0, 2) -> (1, 2) -> (2, 1) -> (3, 1) -> (4, 1)
-    let moves = [
-        (0, 2),
-        (1, 2),
-        (2, 1),
-        (3, 1),
-        (4, 1),
-    ];
+    let moves = [(0, 2), (1, 2), (2, 1), (3, 1), (4, 1)];
 
     for (i, &(r, c)) in moves.iter().enumerate() {
         let idx = HexState::<5>::idx(r, c);
         state.current_player = HexPlayer::Black;
         let won = state.play_move(idx);
         if i < moves.len() - 1 {
-            assert!(!won, "Move {i} at ({r},{c}) should not complete the path yet");
+            assert!(
+                !won,
+                "Move {i} at ({r},{c}) should not complete the path yet"
+            );
             assert!(!state.is_won(HexPlayer::Black));
         } else {
-            assert!(won, "Final move should complete the top-to-bottom winning chain");
+            assert!(
+                won,
+                "Final move should complete the top-to-bottom winning chain"
+            );
             assert!(state.is_won(HexPlayer::Black));
             assert!(state.check_win(HexPlayer::Black));
         }
@@ -127,10 +139,15 @@ fn test_tzf8_mcts_search() {
     let state = Tzf8State::new(42);
 
     let scheduler = SequentialScheduler;
-    scheduler.search(&mut tree, &env, &model, &selection, &backup, root, &state, 10);
+    scheduler.search(
+        &mut tree, &env, &model, &selection, &backup, root, &state, 10,
+    );
 
     assert!(tree.num_children(root) > 0);
-    let total_visits: u32 = tree.child_edges(root).map(|e| tree.stats.visits[e.as_usize()]).sum();
+    let total_visits: u32 = tree
+        .child_edges(root)
+        .map(|e| tree.stats.visits[e.as_usize()])
+        .sum();
     assert_eq!(total_visits, 10);
 }
 
@@ -152,18 +169,15 @@ fn test_tzf8_sliding_and_merging_mechanics() {
     assert_eq!(state.board[1], [4, 2, 0, 0]);
 
     // Test locked board where no moves are possible
-    state.board = [
-        [2, 4, 2, 4],
-        [4, 2, 4, 2],
-        [2, 4, 2, 4],
-        [4, 2, 4, 2],
-    ];
+    state.board = [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 2]];
     assert!(!state.can_move());
 }
 
 #[test]
 fn test_kuhn_poker_world_and_agent_dynamics() {
-    let world = KuhnWorld { fixed_deal: Some([2, 0]) }; // P0 has King (2), P1 has Jack (0)
+    let world = KuhnWorld {
+        fixed_deal: Some([2, 0]),
+    }; // P0 has King (2), P1 has Jack (0)
     let mut ws = world.initial();
     let p0_obs = world.observe(&ws, 0);
     assert_eq!(p0_obs.my_card, 2);
@@ -194,7 +208,9 @@ fn test_kuhn_poker_world_and_agent_dynamics() {
 
 #[test]
 fn test_kuhn_poker_game_tree_showdowns() {
-    let world_check_check = KuhnWorld { fixed_deal: Some([2, 1]) }; // P0 King, P1 Queen
+    let world_check_check = KuhnWorld {
+        fixed_deal: Some([2, 1]),
+    }; // P0 King, P1 Queen
     let mut ws = world_check_check.initial();
     // Step 1: P0 Checks
     let (_, done_p0) = world_check_check.step(&mut ws, &[KuhnAction::Check, KuhnAction::Check]);
@@ -204,7 +220,9 @@ fn test_kuhn_poker_game_tree_showdowns() {
     assert!(done);
     assert_eq!(rewards, vec![1.0, -1.0]); // King beats Queen, wins 1 ante
 
-    let world_bet_call = KuhnWorld { fixed_deal: Some([0, 2]) }; // P0 Jack, P1 King
+    let world_bet_call = KuhnWorld {
+        fixed_deal: Some([0, 2]),
+    }; // P0 Jack, P1 King
     let mut ws2 = world_bet_call.initial();
     // P0 Bet, P1 passes
     let (_, _) = world_bet_call.step(&mut ws2, &[KuhnAction::Bet, KuhnAction::Check]);

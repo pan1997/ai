@@ -86,13 +86,14 @@ pub trait VirtualLossStore {
 
 /// Structure-of-Arrays (SoA) memory layout for high cache locality and zero-allocation search traversals.
 ///
-/// Stores tree nodes and outgoing edges in flat, contiguous vectors, indexed by 32-bit [`NodeId`]
-/// and [`EdgeId`]. This design guarantees sequential memory access patterns when iterating over
-/// sibling child edges, minimizing CPU cache misses and eliminating heap allocation overhead
-/// along the critical search path.
-pub struct TreeStore<Action, Reward, Stats: EdgeStatsStore> {
+/// Stores tree nodes, outgoing action edges, and transition delta branches in flat, contiguous vectors,
+/// indexed by 32-bit [`NodeId`] and [`EdgeId`]. This design guarantees sequential memory access patterns
+/// when iterating over sibling child edges, minimizing CPU cache misses and eliminating heap allocation
+/// overhead along the critical search path.
+pub struct TreeStore<Action, Reward, Stats: EdgeStatsStore, StepDelta = ()> {
     nodes: NodeArrays,
     edges: EdgeArrays<Action, Reward>,
+    branches: DeltaBranchArrays<StepDelta>,
     /// Attached statistics storage (e.g. visit counts, running value means, priors, virtual loss).
     pub stats: Stats,
 }
@@ -108,10 +109,17 @@ struct NodeArrays {
 struct EdgeArrays<Action, Reward> {
     action: Vec<Action>,
     child_node: Vec<NodeId>,
+    first_branch: Vec<u32>,
     reward: Vec<Option<Reward>>,
 }
 
-impl<Action, Reward, Stats: EdgeStatsStore> TreeStore<Action, Reward, Stats> {
+struct DeltaBranchArrays<StepDelta> {
+    delta: Vec<StepDelta>,
+    child_node: Vec<NodeId>,
+    next_branch: Vec<u32>,
+}
+
+impl<Action, Reward, Stats: EdgeStatsStore, StepDelta> TreeStore<Action, Reward, Stats, StepDelta> {
     /// Returns the total number of nodes currently allocated in the tree.
     #[inline]
     pub fn num_nodes(&self) -> usize {
@@ -160,7 +168,7 @@ impl<Action, Reward, Stats: EdgeStatsStore> TreeStore<Action, Reward, Stats> {
         self.nodes.agent[node.as_usize()]
     }
 
-    /// Returns the child node handle pointed to by `edge` (or [`NodeId::INVALID`] if unexpanded).
+    /// Returns the primary child node handle pointed to by `edge` (or [`NodeId::INVALID`] if unexpanded).
     #[inline]
     pub fn edge_child(&self, edge: EdgeId) -> NodeId {
         self.edges.child_node[edge.as_usize()]
@@ -185,9 +193,97 @@ impl<Action, Reward, Stats: EdgeStatsStore> TreeStore<Action, Reward, Stats> {
         let count = self.num_children(node);
         (0..count).map(move |i| EdgeId(first.0 + i))
     }
+
+    /// Returns the child node handle associated with `(edge, delta)`, or `None` if not yet discovered.
+    pub fn get_child(&self, edge: EdgeId, delta: &StepDelta) -> Option<NodeId>
+    where
+        StepDelta: PartialEq,
+    {
+        assert!(
+            edge.as_usize() < self.edges.action.len(),
+            "get_child: edge ID out of bounds"
+        );
+        let mut branch_idx = self.edges.first_branch[edge.as_usize()];
+        while branch_idx != u32::MAX {
+            let idx = branch_idx as usize;
+            if &self.branches.delta[idx] == delta {
+                return Some(self.branches.child_node[idx]);
+            }
+            branch_idx = self.branches.next_branch[idx];
+        }
+        None
+    }
+
+    /// Returns the child node matching `(edge, delta)`, or allocates and links a new unexpanded node.
+    ///
+    /// Returns `(node_id, was_newly_inserted)`.
+    pub fn get_or_insert_child(
+        &mut self,
+        edge: EdgeId,
+        delta: &StepDelta,
+        agent: AgentId,
+    ) -> (NodeId, bool)
+    where
+        StepDelta: PartialEq + Clone,
+    {
+        assert!(
+            edge.as_usize() < self.edges.action.len(),
+            "get_or_insert_child: edge ID out of bounds"
+        );
+        let mut branch_idx = self.edges.first_branch[edge.as_usize()];
+        while branch_idx != u32::MAX {
+            let idx = branch_idx as usize;
+            if &self.branches.delta[idx] == delta {
+                return (self.branches.child_node[idx], false);
+            }
+            branch_idx = self.branches.next_branch[idx];
+        }
+
+        // Allocate new unexpanded node
+        let node_id = NodeId(self.nodes.parent_edge.len() as u32);
+        self.nodes.parent_edge.push(edge);
+        self.nodes.first_child_edge.push(EdgeId::INVALID);
+        self.nodes.num_children.push(0);
+        self.nodes.agent.push(agent);
+        self.nodes.status.push(NodeStatus::Unexpanded);
+
+        // Allocate new delta branch entry
+        let new_branch_idx = self.branches.delta.len() as u32;
+        let old_first = self.edges.first_branch[edge.as_usize()];
+        self.branches.delta.push(delta.clone());
+        self.branches.child_node.push(node_id);
+        self.branches.next_branch.push(old_first);
+        self.edges.first_branch[edge.as_usize()] = new_branch_idx;
+
+        if self.edges.child_node[edge.as_usize()] == NodeId::INVALID {
+            self.edges.child_node[edge.as_usize()] = node_id;
+        }
+
+        (node_id, true)
+    }
+
+    /// Returns an iterator yielding all `(&StepDelta, NodeId)` branches emanating from `edge`.
+    pub fn delta_children(&self, edge: EdgeId) -> impl Iterator<Item = (&StepDelta, NodeId)> {
+        assert!(
+            edge.as_usize() < self.edges.action.len(),
+            "delta_children: edge ID out of bounds"
+        );
+        let mut curr = self.edges.first_branch[edge.as_usize()];
+        std::iter::from_fn(move || {
+            if curr != u32::MAX {
+                let idx = curr as usize;
+                curr = self.branches.next_branch[idx];
+                Some((&self.branches.delta[idx], self.branches.child_node[idx]))
+            } else {
+                None
+            }
+        })
+    }
 }
 
-impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Reward, Stats> {
+impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore, StepDelta: Clone>
+    TreeStore<Action, Reward, Stats, StepDelta>
+{
     /// Pre-allocates a `TreeStore` with specified capacities for nodes and edges.
     ///
     /// Sizing capacities appropriately prevents dynamic vector reallocations during tree expansion.
@@ -203,13 +299,19 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
             edges: EdgeArrays {
                 action: Vec::with_capacity(edges_cap),
                 child_node: Vec::with_capacity(edges_cap),
+                first_branch: Vec::with_capacity(edges_cap),
                 reward: Vec::with_capacity(edges_cap),
+            },
+            branches: DeltaBranchArrays {
+                delta: Vec::with_capacity(edges_cap),
+                child_node: Vec::with_capacity(edges_cap),
+                next_branch: Vec::with_capacity(edges_cap),
             },
             stats,
         }
     }
 
-    /// Resets the tree store, clearing all nodes, edges, and statistics.
+    /// Resets the tree store, clearing all nodes, edges, delta branches, and statistics.
     pub fn clear(&mut self) {
         self.nodes.parent_edge.clear();
         self.nodes.first_child_edge.clear();
@@ -219,7 +321,12 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
 
         self.edges.action.clear();
         self.edges.child_node.clear();
+        self.edges.first_branch.clear();
         self.edges.reward.clear();
+
+        self.branches.delta.clear();
+        self.branches.child_node.clear();
+        self.branches.next_branch.clear();
 
         self.stats.clear();
     }
@@ -237,12 +344,15 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
         node_id
     }
 
-    /// Allocates a new unexpanded child node attached to `parent_edge`.
+    /// Allocates a new unexpanded child node attached to `parent_edge` with default transition delta.
     ///
     /// # Panics
     ///
     /// Panics if `parent_edge` is out of bounds or already has a linked child node.
-    pub fn insert_node(&mut self, parent_edge: EdgeId, agent: AgentId) -> NodeId {
+    pub fn insert_node(&mut self, parent_edge: EdgeId, agent: AgentId) -> NodeId
+    where
+        StepDelta: Default + PartialEq,
+    {
         assert!(
             parent_edge.as_usize() < self.edges.action.len(),
             "insert_node: parent_edge out of bounds"
@@ -252,15 +362,8 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
             NodeId::INVALID,
             "insert_node: parent_edge already has a linked child node"
         );
-
-        let node_id = NodeId(self.nodes.parent_edge.len() as u32);
-        self.nodes.parent_edge.push(parent_edge);
-        self.nodes.first_child_edge.push(EdgeId::INVALID);
-        self.nodes.num_children.push(0);
-        self.nodes.agent.push(agent);
-        self.nodes.status.push(NodeStatus::Unexpanded);
-
-        self.edges.child_node[parent_edge.as_usize()] = node_id;
+        let (node_id, _is_new) =
+            self.get_or_insert_child(parent_edge, &StepDelta::default(), agent);
         node_id
     }
 
@@ -285,6 +388,9 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
         self.edges
             .child_node
             .resize(self.edges.child_node.len() + num_actions, NodeId::INVALID);
+        self.edges
+            .first_branch
+            .resize(self.edges.first_branch.len() + num_actions, u32::MAX);
         self.edges
             .reward
             .resize(self.edges.reward.len() + num_actions, None);
@@ -332,7 +438,7 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
 
     /// Promotes the subtree rooted at `new_root` to be the root of the search tree, discarding all unreachable nodes.
     ///
-    /// Compacts reachable nodes and edges contiguously into memory starting from [`NodeId(0)`](NodeId).
+    /// Compacts reachable nodes, edges, and delta branches contiguously into memory starting from [`NodeId(0)`](NodeId).
     /// The node at `new_root` becomes `NodeId(0)` with `parent_edge = EdgeId::INVALID`, retaining all
     /// visited descendants, statistics, priors, and rewards. All dead branches outside the subtree are pruned.
     ///
@@ -374,12 +480,27 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
                     old_to_new_edge[e.as_usize()] = new_edge;
                     kept_edges.push(e.as_usize());
 
-                    let v = self.edges.child_node[e.as_usize()];
-                    if v.is_valid() && old_to_new_node[v.as_usize()] == NodeId::INVALID {
+                    let primary_v = self.edges.child_node[e.as_usize()];
+                    if primary_v.is_valid()
+                        && old_to_new_node[primary_v.as_usize()] == NodeId::INVALID
+                    {
                         let new_node = NodeId(reachable_nodes.len() as u32);
-                        old_to_new_node[v.as_usize()] = new_node;
-                        reachable_nodes.push(v);
-                        node_queue.push_back(v);
+                        old_to_new_node[primary_v.as_usize()] = new_node;
+                        reachable_nodes.push(primary_v);
+                        node_queue.push_back(primary_v);
+                    }
+
+                    let mut b_idx = self.edges.first_branch[e.as_usize()];
+                    while b_idx != u32::MAX {
+                        let idx = b_idx as usize;
+                        let v = self.branches.child_node[idx];
+                        if v.is_valid() && old_to_new_node[v.as_usize()] == NodeId::INVALID {
+                            let new_node = NodeId(reachable_nodes.len() as u32);
+                            old_to_new_node[v.as_usize()] = new_node;
+                            reachable_nodes.push(v);
+                            node_queue.push_back(v);
+                        }
+                        b_idx = self.branches.next_branch[idx];
                     }
                 }
             }
@@ -415,18 +536,39 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
         let new_num_edges = kept_edges.len();
         let mut new_action = Vec::with_capacity(new_num_edges);
         let mut new_child_node = Vec::with_capacity(new_num_edges);
+        let mut new_first_branch = Vec::with_capacity(new_num_edges);
         let mut new_reward = Vec::with_capacity(new_num_edges);
+
+        let mut new_branches_delta = Vec::new();
+        let mut new_branches_child = Vec::new();
+        let mut new_branches_next = Vec::new();
 
         for &old_e in &kept_edges {
             new_action.push(self.edges.action[old_e].clone());
             let old_v = self.edges.child_node[old_e];
-            let new_v = if old_v.is_valid() {
+            let new_v = if old_v.is_valid() && old_to_new_node[old_v.as_usize()].is_valid() {
                 old_to_new_node[old_v.as_usize()]
             } else {
                 NodeId::INVALID
             };
             new_child_node.push(new_v);
             new_reward.push(self.edges.reward[old_e].clone());
+
+            let mut old_b_idx = self.edges.first_branch[old_e];
+            let mut new_head = u32::MAX;
+            while old_b_idx != u32::MAX {
+                let idx = old_b_idx as usize;
+                let old_v = self.branches.child_node[idx];
+                if old_v.is_valid() && old_to_new_node[old_v.as_usize()].is_valid() {
+                    let branch_pos = new_branches_delta.len() as u32;
+                    new_branches_delta.push(self.branches.delta[idx].clone());
+                    new_branches_child.push(old_to_new_node[old_v.as_usize()]);
+                    new_branches_next.push(new_head);
+                    new_head = branch_pos;
+                }
+                old_b_idx = self.branches.next_branch[idx];
+            }
+            new_first_branch.push(new_head);
         }
 
         self.nodes = NodeArrays {
@@ -440,10 +582,16 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore> TreeStore<Action, Rewa
         self.edges = EdgeArrays {
             action: new_action,
             child_node: new_child_node,
+            first_branch: new_first_branch,
             reward: new_reward,
+        };
+
+        self.branches = DeltaBranchArrays {
+            delta: new_branches_delta,
+            child_node: new_branches_child,
+            next_branch: new_branches_next,
         };
 
         self.stats.retain_edges(&kept_edges);
     }
 }
-

@@ -5,9 +5,8 @@
 //! - [`RolloutEvaluator`]: Monte Carlo random playouts to terminal states or max depth.
 //! - [`UniformRandomModel`]: Unbiased uniform prior distribution with zero value estimates.
 
-pub mod rollout;
 pub mod random;
+pub mod rollout;
 
-pub use rollout::RolloutEvaluator;
 pub use random::UniformRandomModel;
-
+pub use rollout::RolloutEvaluator;

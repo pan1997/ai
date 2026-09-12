@@ -30,18 +30,18 @@
 
 pub mod agent;
 pub mod dynamics;
+pub mod graph;
 pub mod model;
 pub mod world;
-pub mod graph;
 
 #[cfg(test)]
 mod tests;
 
 pub use agent::AgentId;
 pub use dynamics::{
-    default_step_batch, AgentDynamics, BatchedAgentDynamics, StepOutcome, Transition,
-    TurnBasedDynamics,
+    AgentDynamics, BatchedAgentDynamics, OpponentPolicy, RoundBasedDynamics, StepOutcome,
+    Transition, TurnBasedDynamics, default_step_batch,
 };
+pub use graph::GraphEnv;
 pub use model::{BatchedModel, Evaluation, HasPolicy, HasValue, Model};
 pub use world::{TurnBasedWorld, World};
-pub use graph::GraphEnv;

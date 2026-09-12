@@ -1,10 +1,12 @@
 //! Connect 4 Agent abstractions, Human CLI interaction, Random, and MCTS player implementations.
 
+use crate::dynamics::TacticalOpponent;
 use crate::evaluator::{RolloutEvaluator, UniformEvaluator};
 use crate::game::Connect4State;
-use crate::render::{format_move_candidates, MoveCandidate};
+use crate::render::{MoveCandidate, format_move_candidates};
 use crate::world::Connect4World;
 use mcts_engine::backup::VectorBackup;
+use mcts_engine::opponent::{AdversarialOpponent, HeuristicOpponent};
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
@@ -116,6 +118,38 @@ impl<const R: usize, const C: usize> Agent<R, C> for RandomAgent {
         *legal
             .choose(&mut rng)
             .expect("RandomAgent: no legal actions available in state")
+    }
+}
+
+/// Tactical heuristic agent: plays immediate winning move, blocks opponent 1-ply win, or center preference.
+pub struct TacticalAgent {
+    name: String,
+    opponent: TacticalOpponent,
+}
+
+impl TacticalAgent {
+    /// Creates a new tactical agent with the specified name.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            opponent: TacticalOpponent,
+        }
+    }
+}
+
+impl Default for TacticalAgent {
+    fn default() -> Self {
+        Self::new("Tactical Agent")
+    }
+}
+
+impl<const R: usize, const C: usize> Agent<R, C> for TacticalAgent {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn select_action(&mut self, state: &Connect4State<R, C>) -> usize {
+        crate::dynamics::OpponentPolicy::select_action(&self.opponent, state)
     }
 }
 
@@ -263,6 +297,359 @@ where
         }
 
         // Select action with maximum visit count
+        candidates
+            .iter()
+            .max_by_key(|c| c.visits)
+            .map(|c| c.action)
+            .unwrap_or(legal[0])
+    }
+}
+
+/// Round-based MCTS agent coordinating full-round lookahead via [`SequentialScheduler`].
+///
+/// Evaluates only from the primary agent's perspective, avoiding evaluator dilution.
+/// Supports both adversarial tree search ([`AdversarialOpponent`]) and heuristic opponents ([`HeuristicOpponent`]).
+pub struct RoundMctsAgent<M, O, const R: usize = 6, const C: usize = 7> {
+    name: String,
+    /// Number of full-round MCTS simulation sweeps.
+    pub num_iterations: usize,
+    /// PUCT exploration constant.
+    pub c_puct: f32,
+    /// Perspective-aligned evaluation model.
+    pub model: M,
+    /// Opponent policy governing afterstate node actions.
+    pub opponent_policy: O,
+    /// Whether to print candidate move statistics to standard output.
+    pub verbose: bool,
+}
+
+impl<M, O, const R: usize, const C: usize> RoundMctsAgent<M, O, R, C> {
+    /// Creates a new `RoundMctsAgent` with custom model, opponent policy, and parameters.
+    pub fn new_with_opponent(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        opponent_policy: O,
+        verbose: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct,
+            model,
+            opponent_policy,
+            verbose,
+        }
+    }
+
+    /// Returns the agent display name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl<M, const R: usize, const C: usize>
+    RoundMctsAgent<M, AdversarialOpponent<MultiAgentPuctSelection<2>>, R, C>
+{
+    /// Creates a round-based MCTS agent playing against an adversarial MCTS opponent in the same tree.
+    pub fn new_adversarial(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        verbose: bool,
+    ) -> Self {
+        let opponent_policy = AdversarialOpponent::new(MultiAgentPuctSelection::<2> { c_puct });
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct,
+            model,
+            opponent_policy,
+            verbose,
+        }
+    }
+}
+
+impl<M, const R: usize, const C: usize>
+    RoundMctsAgent<M, HeuristicOpponent<TacticalOpponent>, R, C>
+{
+    /// Creates a round-based MCTS agent assuming the opponent follows a tactical heuristic.
+    pub fn new_tactical(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        verbose: bool,
+    ) -> Self {
+        let opponent_policy = HeuristicOpponent::new(TacticalOpponent);
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct,
+            model,
+            opponent_policy,
+            verbose,
+        }
+    }
+}
+
+impl<M, const R: usize, const C: usize>
+    RoundMctsAgent<M, mcts_engine::opponent::RandomOpponent, R, C>
+{
+    /// Creates a round-based MCTS agent assuming the opponent moves uniformly at random.
+    pub fn new_random(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        verbose: bool,
+    ) -> Self {
+        let opponent_policy = mcts_engine::opponent::RandomOpponent::new();
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct,
+            model,
+            opponent_policy,
+            verbose,
+        }
+    }
+}
+
+impl<M, const R: usize, const C: usize> Agent<R, C>
+    for RoundMctsAgent<M, AdversarialOpponent<MultiAgentPuctSelection<2>>, R, C>
+where
+    M: Model<Connect4State<R, C>>,
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn select_action(&mut self, state: &Connect4State<R, C>) -> usize {
+        let mut agent = MctsAgent::new_with_model(
+            &self.name,
+            self.num_iterations,
+            self.c_puct,
+            &self.model,
+            self.verbose,
+        );
+        agent.select_action(state)
+    }
+}
+
+impl<M, const R: usize, const C: usize> Agent<R, C>
+    for RoundMctsAgent<M, HeuristicOpponent<TacticalOpponent>, R, C>
+where
+    M: Model<Connect4State<R, C>>,
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn select_action(&mut self, state: &Connect4State<R, C>) -> usize {
+        let mut agent = MacroMctsAgent::new_tactical(
+            &self.name,
+            self.num_iterations,
+            self.c_puct,
+            &self.model,
+            self.verbose,
+        );
+        agent.select_action(state)
+    }
+}
+
+impl<M, const R: usize, const C: usize> Agent<R, C>
+    for RoundMctsAgent<M, mcts_engine::opponent::RandomOpponent, R, C>
+where
+    M: Model<Connect4State<R, C>>,
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn select_action(&mut self, state: &Connect4State<R, C>) -> usize {
+        let mut agent = MacroMctsAgent::new_random(
+            &self.name,
+            self.num_iterations,
+            self.c_puct,
+            &self.model,
+            self.verbose,
+        );
+        agent.select_action(state)
+    }
+}
+
+/// Macro-action MCTS agent planning over full game rounds with an absorbed opponent policy (Route B).
+///
+/// Opponent moves are absorbed inside [`MacroConnect4Dynamics`](crate::dynamics::MacroConnect4Dynamics),
+/// allowing standard 1-ply schedulers ([`SequentialScheduler`]) to plan over full rounds without
+/// allocating afterstate nodes in the tree.
+pub struct MacroMctsAgent<P, M, const R: usize = 6, const C: usize = 7> {
+    name: String,
+    /// Number of macro MCTS simulation sweeps.
+    pub num_iterations: usize,
+    /// PUCT exploration constant.
+    pub c_puct: f32,
+    /// Perspective-aligned evaluation model.
+    pub model: M,
+    /// Policy governing absorbed opponent replies.
+    pub opponent_policy: P,
+    /// Whether to print candidate move statistics to standard output.
+    pub verbose: bool,
+}
+
+impl<P: Clone, M, const R: usize, const C: usize> MacroMctsAgent<P, M, R, C> {
+    /// Creates a new `MacroMctsAgent` with custom model, absorbed opponent policy, and parameters.
+    pub fn new(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        opponent_policy: P,
+        verbose: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct,
+            model,
+            opponent_policy,
+            verbose,
+        }
+    }
+
+    /// Returns the agent display name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl<M, const R: usize, const C: usize> MacroMctsAgent<TacticalOpponent, M, R, C> {
+    /// Creates a macro MCTS agent assuming the opponent follows a tactical heuristic.
+    pub fn new_tactical(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        verbose: bool,
+    ) -> Self {
+        Self::new(
+            name,
+            num_iterations,
+            c_puct,
+            model,
+            TacticalOpponent,
+            verbose,
+        )
+    }
+}
+
+impl<M, const R: usize, const C: usize> MacroMctsAgent<crate::dynamics::RandomOpponent, M, R, C> {
+    /// Creates a macro MCTS agent assuming the opponent chooses random actions.
+    pub fn new_random(
+        name: impl Into<String>,
+        num_iterations: usize,
+        c_puct: f32,
+        model: M,
+        verbose: bool,
+    ) -> Self {
+        Self::new(
+            name,
+            num_iterations,
+            c_puct,
+            model,
+            crate::dynamics::RandomOpponent::new(),
+            verbose,
+        )
+    }
+}
+
+impl<P, M, const R: usize, const C: usize> Agent<R, C> for MacroMctsAgent<P, M, R, C>
+where
+    P: crate::dynamics::OpponentPolicy<R, C> + Clone,
+    M: Model<Connect4State<R, C>>,
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn select_action(&mut self, state: &Connect4State<R, C>) -> usize {
+        let mut legal = Vec::new();
+        state.legal_actions(&mut legal);
+        if legal.is_empty() {
+            panic!("MacroMctsAgent: no legal actions available in state");
+        }
+        if legal.len() == 1 {
+            return legal[0];
+        }
+
+        let primary_player = state.current_player;
+        let primary_agent = AgentId(primary_player.index() as u32);
+        let dynamics = crate::dynamics::MacroConnect4Dynamics::new(
+            self.opponent_policy.clone(),
+            primary_player,
+        );
+        let selection = MultiAgentPuctSelection::<2> {
+            c_puct: self.c_puct,
+        };
+        let backup = VectorBackup::<2>::default();
+        let stats = MultiAgentPuctStats::<2>::new();
+
+        let node_cap = self.num_iterations + 16;
+        let edge_cap = node_cap * C;
+        let mut tree: TreeStore<usize, [f32; 2], _, Option<usize>> =
+            TreeStore::with_capacity(node_cap, edge_cap, stats);
+        let root = tree.insert_root(primary_agent);
+
+        let scheduler = SequentialScheduler;
+        scheduler.search(
+            &mut tree,
+            &dynamics,
+            &self.model,
+            &selection,
+            &backup,
+            root,
+            state,
+            self.num_iterations,
+        );
+
+        let num_children = tree.num_children(root);
+        let first_edge = tree.first_child_edge(root);
+        let total_root_visits: u32 = tree
+            .child_edges(root)
+            .map(|e| tree.stats.visits[e.as_usize()])
+            .sum();
+
+        let mut candidates = Vec::with_capacity(num_children as usize);
+        for i in 0..num_children {
+            let edge = mcts_engine::tree_store::EdgeId(first_edge.0 + i);
+            let edge_idx = edge.as_usize();
+            let action = *tree.edge_action(edge);
+            let visits = tree.stats.visits[edge_idx];
+            let visit_fraction = if total_root_visits > 0 {
+                visits as f32 / total_root_visits as f32
+            } else {
+                0.0
+            };
+            let prior = tree.stats.priors[edge_idx];
+            let mean_value = tree.stats.mean_value[edge_idx];
+
+            candidates.push(MoveCandidate {
+                action,
+                visits,
+                visit_fraction,
+                prior,
+                mean_value,
+            });
+        }
+
+        if self.verbose {
+            println!("\n[Macro MCTS Search Analysis: {}]", self.name);
+            print!("{}", format_move_candidates(&candidates));
+        }
+
         candidates
             .iter()
             .max_by_key(|c| c.visits)

@@ -22,9 +22,9 @@ impl SequentialScheduler {
     /// - `S`: Selection policy implementing [`SelectionPolicy`].
     /// - `B`: Backup strategy implementing [`BackupPolicy`].
     #[allow(clippy::too_many_arguments)]
-    pub fn search<D, M, S, B, Action, Reward, Stats>(
+    pub fn search<D, M, S, B, Action, Reward, Stats, StepDelta>(
         &self,
-        tree: &mut TreeStore<Action, Reward, Stats>,
+        tree: &mut TreeStore<Action, Reward, Stats, StepDelta>,
         dynamics: &D,
         model: &M,
         selection: &S,
@@ -36,11 +36,12 @@ impl SequentialScheduler {
         Action: Clone,
         Reward: Clone,
         Stats: EdgeStatsStore,
-        D: AgentDynamics<Action = Action, Reward = Reward>,
+        StepDelta: PartialEq + Clone,
+        D: AgentDynamics<Action = Action, Reward = Reward, StepDelta = StepDelta>,
         D::State: Clone,
         M: Model<D::State>,
-        S: SelectionPolicy<Action, Reward, Stats>,
-        B: BackupPolicy<Action, Reward, Stats, Evaluation>,
+        S: SelectionPolicy<Action, Reward, Stats, StepDelta>,
+        B: BackupPolicy<Action, Reward, Stats, Evaluation, StepDelta>,
     {
         // 1. Root Initialization
         let mut scratch_actions = Vec::new();
@@ -75,27 +76,34 @@ impl SequentialScheduler {
                         edge.0,
                         current_node.as_usize()
                     );
-                    path.push(PathElement {
-                        node: current_node,
-                        edge,
-                    });
 
                     let action = tree.edge_action(edge);
                     let outcome = dynamics.step(&mut state, action);
 
-                    let child = tree.edge_child(edge);
-                    if !child.is_valid() {
-                        // Newly discovered node
+                    if tree.edge_reward(edge).is_none() {
                         tree.set_edge_reward(edge, outcome.reward);
-                        let agent = dynamics.current_agent(&state);
-                        let inserted = tree.insert_node(edge, agent);
-                        current_node = inserted;
+                    }
+
+                    let agent = dynamics.current_agent(&state);
+                    let (child, is_new) = tree.get_or_insert_child(edge, &outcome.delta, agent);
+
+                    path.push(PathElement {
+                        node: current_node,
+                        edge,
+                        next_node: child,
+                    });
+
+                    current_node = child;
+                    if is_new {
                         if outcome.terminated {
                             tree.mark_terminal(current_node);
                         }
                         break;
-                    } else {
-                        current_node = child;
+                    } else if outcome.terminated
+                        || tree.node_status(current_node) == NodeStatus::Terminal
+                    {
+                        tree.mark_terminal(current_node);
+                        break;
                     }
                 } else {
                     break;
@@ -123,4 +131,3 @@ impl SequentialScheduler {
         }
     }
 }
-

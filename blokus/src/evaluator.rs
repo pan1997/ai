@@ -224,8 +224,15 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for HeuristicUtili
 
         // Softmax with temperature
         let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        let temp = if self.temperature > 0.0 { self.temperature } else { 4.0 };
-        let exps: Vec<f32> = scores.iter().map(|&sc| ((sc - max_score) / temp).exp()).collect();
+        let temp = if self.temperature > 0.0 {
+            self.temperature
+        } else {
+            4.0
+        };
+        let exps: Vec<f32> = scores
+            .iter()
+            .map(|&sc| ((sc - max_score) / temp).exp())
+            .collect();
         let sum_exp: f32 = exps.iter().sum();
         let priors = if sum_exp > 0.0 {
             exps.into_iter().map(|e| e / sum_exp).collect()
@@ -389,4 +396,3 @@ impl<const B: usize, const P: usize> Model<BlokusState<B, P>> for HeuristicRollo
         Evaluation { priors, values }
     }
 }
-

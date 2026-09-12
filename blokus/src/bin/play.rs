@@ -31,7 +31,11 @@ fn run_duo(mode: &str, iters: usize, verbose: bool, use_color: bool) {
 
     let mut p0: Box<dyn Agent<14, 2>> = match mode {
         "ai-human" => Box::new(MctsAgent::new_heuristic("MCTS AI (Blue)", iters, verbose)),
-        "ai-ai" => Box::new(MctsAgent::new_heuristic("MCTS Alpha (Blue)", iters, verbose)),
+        "ai-ai" => Box::new(MctsAgent::new_heuristic(
+            "MCTS Alpha (Blue)",
+            iters,
+            verbose,
+        )),
         "human-ai" | "human-human" => Box::new(HumanAgent::new("Human (Blue)")),
         _ => Box::new(HumanAgent::new("Human (Blue)")),
     };
@@ -39,7 +43,11 @@ fn run_duo(mode: &str, iters: usize, verbose: bool, use_color: bool) {
     let mut p1: Box<dyn Agent<14, 2>> = match mode {
         "human-ai" => Box::new(MctsAgent::new_heuristic("MCTS AI (Yellow)", iters, verbose)),
         "ai-human" | "human-human" => Box::new(HumanAgent::new("Human (Yellow)")),
-        "ai-ai" => Box::new(MctsAgent::new_heuristic("MCTS Beta (Yellow)", iters, verbose)),
+        "ai-ai" => Box::new(MctsAgent::new_heuristic(
+            "MCTS Beta (Yellow)",
+            iters,
+            verbose,
+        )),
         "ai-heuristic" => Box::new(HeuristicAgent::new("Heuristic Bot (Yellow)")),
         _ => Box::new(MctsAgent::new_heuristic("MCTS AI (Yellow)", iters, verbose)),
     };
@@ -156,9 +164,16 @@ fn run_classic(mode: &str, iters: usize, verbose: bool, use_color: bool) {
     let winners: Vec<usize> = (0..4).filter(|&p| scores[p] == max_score).collect();
     if winners.len() == 1 {
         let w = winners[0];
-        println!("🏆 Winner: Player {} ({}) with score {max_score}!", w, Player::from_index(w).name());
+        println!(
+            "🏆 Winner: Player {} ({}) with score {max_score}!",
+            w,
+            Player::from_index(w).name()
+        );
     } else {
-        println!("🤝 Multi-way tie for 1st place with score {max_score}: {:?}", winners);
+        println!(
+            "🤝 Multi-way tie for 1st place with score {max_score}: {:?}",
+            winners
+        );
     }
 }
 

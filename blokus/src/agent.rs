@@ -6,7 +6,7 @@ use crate::evaluator::{
 };
 use crate::game::{BlokusAction, BlokusState, Player};
 use crate::pieces::piece_size;
-use crate::render::{format_move_candidates, MoveCandidate};
+use crate::render::{MoveCandidate, format_move_candidates};
 use crate::world::BlokusWorld;
 use mcts_engine::backup::VectorBackup;
 use mcts_engine::scheduler::SequentialScheduler;
@@ -53,17 +53,30 @@ impl<const B: usize, const P: usize> Agent<B, P> for HumanAgent {
             return BlokusAction::Pass;
         }
 
-        println!("\n=== {}'s Turn ({}) ===", self.name, Player::from_index(state.current_player as usize));
-        println!("Available legal moves ({} total). First 15 shown:", legal.len());
+        println!(
+            "\n=== {}'s Turn ({}) ===",
+            self.name,
+            Player::from_index(state.current_player as usize)
+        );
+        println!(
+            "Available legal moves ({} total). First 15 shown:",
+            legal.len()
+        );
         for (i, action) in legal.iter().take(15).enumerate() {
             println!("  [{:2}] {}", i, action);
         }
         if legal.len() > 15 {
-            println!("  ... and {} more options. (Enter 'list' to see all)", legal.len() - 15);
+            println!(
+                "  ... and {} more options. (Enter 'list' to see all)",
+                legal.len() - 15
+            );
         }
 
         loop {
-            print!("Choose move index [0..{}] or 'list' or 'pass': ", legal.len() - 1);
+            print!(
+                "Choose move index [0..{}] or 'list' or 'pass': ",
+                legal.len() - 1
+            );
             let _ = stdout.flush();
 
             let mut input = String::new();
@@ -89,7 +102,10 @@ impl<const B: usize, const P: usize> Agent<B, P> for HumanAgent {
                     return legal[idx];
                 }
                 _ => {
-                    println!("Invalid input '{trimmed}'. Please enter a valid index 0..{}", legal.len() - 1);
+                    println!(
+                        "Invalid input '{trimmed}'. Please enter a valid index 0..{}",
+                        legal.len() - 1
+                    );
                 }
             }
         }
@@ -344,9 +360,6 @@ where
             print!("{}", format_move_candidates(&candidates, 10));
         }
 
-        candidates
-            .first()
-            .map(|c| c.action)
-            .unwrap_or(legal[0])
+        candidates.first().map(|c| c.action).unwrap_or(legal[0])
     }
 }

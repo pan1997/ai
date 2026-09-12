@@ -5,7 +5,7 @@ use crate::selection::{
     UctSelection,
 };
 use crate::tree_store::{EdgeId, NodeId, NodeStatus, PriorStore, TreeStore, VirtualLossStore};
-use mcts_traits::{AgentId, BatchedModel, Evaluation, GraphEnv, Model};
+use mcts_traits::{AgentId, BatchedModel, Evaluation, GraphEnv, Model, TurnBasedWorld, World};
 use std::collections::HashMap;
 
 #[derive(Clone, Default)]
@@ -154,10 +154,14 @@ fn test_single_agent_backup_additive_returns() {
 
     let edge = tree.first_child_edge(root);
     tree.set_edge_reward(edge, [2.0]);
-    let _child = tree.insert_node(edge, AgentId(0));
+    let child = tree.insert_node(edge, AgentId(0));
 
     let backup = SingleAgentBackup::new(0.9); // gamma = 0.9
-    let path = [crate::backup::PathElement { node: root, edge }];
+    let path = [crate::backup::PathElement {
+        node: root,
+        edge,
+        next_node: child,
+    }];
     let eval = Evaluation::scalar(vec![], 10.0);
 
     backup.backup(&mut tree, &path, Some(&eval));
@@ -361,10 +365,12 @@ fn test_vector_backup_multi_step_discounting() {
         PathElement {
             node: root,
             edge: edge0,
+            next_node: node1,
         },
         PathElement {
             node: node1,
             edge: edge1,
+            next_node: leaf_node,
         },
     ];
     let eval = Evaluation::vector(vec![], vec![4.0, -4.0]);
@@ -398,6 +404,7 @@ fn test_vector_backup_terminal_leaf_without_eval() {
     let path = [PathElement {
         node: root,
         edge: edge0,
+        next_node: leaf,
     }];
 
     // Terminal leaf evaluated with None
@@ -663,7 +670,10 @@ fn test_dirichlet_noise_utilities() {
     let mut priors = [0.4f32, 0.4, 0.2];
     add_dirichlet_noise(&mut priors, 0.3, 0.25, &mut rng);
     let sum: f32 = priors.iter().sum();
-    assert!((sum - 1.0).abs() < 1e-4, "Dirichlet noise should preserve normalization: sum={sum}");
+    assert!(
+        (sum - 1.0).abs() < 1e-4,
+        "Dirichlet noise should preserve normalization: sum={sum}"
+    );
 
     // Root Dirichlet noise on TreeStore
     let stats = MultiAgentPuctStats::<1>::new();
@@ -680,7 +690,232 @@ fn test_dirichlet_noise_utilities() {
     let p1 = tree.stats.prior(EdgeId(1));
     let p2 = tree.stats.prior(EdgeId(2));
     let tree_sum = p0 + p1 + p2;
-    assert!((tree_sum - 1.0).abs() < 1e-4, "Tree priors should sum to 1.0: sum={tree_sum}");
+    assert!(
+        (tree_sum - 1.0).abs() < 1e-4,
+        "Tree priors should sum to 1.0: sum={tree_sum}"
+    );
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct MockTwoPlayerState {
+    player: usize,
+    round: usize,
+    history: Vec<u32>,
+    terminal: bool,
+}
 
+struct MockTwoPlayerWorld;
+
+impl mcts_traits::World for MockTwoPlayerWorld {
+    type WorldState = MockTwoPlayerState;
+    type Action = u32;
+    type Observation = MockTwoPlayerState;
+
+    fn n_players(&self) -> usize {
+        2
+    }
+
+    fn initial(&self) -> Self::WorldState {
+        MockTwoPlayerState {
+            player: 0,
+            round: 0,
+            history: Vec::new(),
+            terminal: false,
+        }
+    }
+
+    fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
+        ws.clone()
+    }
+
+    fn actions(
+        &self,
+        state: &Self::WorldState,
+        player: usize,
+        out_actions: &mut Vec<Self::Action>,
+    ) {
+        out_actions.clear();
+        if state.terminal {
+            return;
+        }
+        if player == 0 {
+            out_actions.extend_from_slice(&[1, 2]);
+        } else {
+            out_actions.extend_from_slice(&[10, 20]);
+        }
+    }
+
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
+        let action = &joint[ws.player];
+        let outcome = self.step_action(ws, action);
+        (outcome.reward.to_vec(), outcome.terminated)
+    }
+
+    fn terminal(&self, state: &Self::WorldState) -> bool {
+        state.terminal
+    }
+}
+
+impl mcts_traits::TurnBasedWorld for MockTwoPlayerWorld {
+    type StepReward = [f32; 2];
+
+    fn current_player(&self, state: &Self::WorldState) -> usize {
+        state.player
+    }
+
+    fn step_action(
+        &self,
+        state: &mut Self::WorldState,
+        action: &Self::Action,
+    ) -> mcts_traits::StepOutcome<Self::StepReward> {
+        state.history.push(*action);
+        if state.player == 0 {
+            state.player = 1;
+            // Immediate win condition for action 2 to test primary agent immediate win
+            if *action == 2 {
+                state.terminal = true;
+                return mcts_traits::StepOutcome::new([1.0, -1.0], true);
+            }
+            mcts_traits::StepOutcome::new([0.0, 0.0], false)
+        } else {
+            state.player = 0;
+            state.round += 1;
+            if state.round >= 2 || *action == 20 {
+                state.terminal = true;
+                let reward = if *action == 20 {
+                    [-1.0, 1.0] // Opponent win
+                } else {
+                    [1.0, -1.0]
+                };
+                mcts_traits::StepOutcome::new(reward, true)
+            } else {
+                mcts_traits::StepOutcome::new([0.0, 0.0], false)
+            }
+        }
+    }
+}
+
+/// Model that enforces the Single-Perspective Evaluator Invariant:
+/// Panics if evaluate() is ever called on an opponent state!
+struct StrictPerspectiveModel;
+
+impl Model<MockTwoPlayerState> for StrictPerspectiveModel {
+    fn evaluate(&self, s: &MockTwoPlayerState) -> Evaluation {
+        assert_eq!(
+            s.player, 0,
+            "Evaluator dilution invariant violated: evaluate() called on player {}",
+            s.player
+        );
+        Evaluation::vector(vec![0.5, 0.5], vec![0.2, -0.2])
+    }
+}
+
+struct DeterministicOpponentPolicy;
+
+impl mcts_traits::OpponentPolicy<MockTwoPlayerState, u32> for DeterministicOpponentPolicy {
+    fn select_action(&self, _state: &MockTwoPlayerState) -> u32 {
+        10 // Always choose action 10
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RandomMockOpponent;
+
+impl mcts_traits::OpponentPolicy<MockTwoPlayerState, u32> for RandomMockOpponent {
+    fn select_action(&self, state: &MockTwoPlayerState) -> u32 {
+        use rand::Rng;
+        let mut actions = Vec::new();
+        MockTwoPlayerWorld.actions(state, 1, &mut actions);
+        actions[rand::thread_rng().gen_range(0..actions.len())]
+    }
+}
+
+#[test]
+fn test_sequential_scheduler_heuristic_opponent_and_evaluator_invariant() {
+    use mcts_traits::RoundBasedDynamics;
+
+    let world = MockTwoPlayerWorld;
+    let root_state = world.initial();
+    let model = StrictPerspectiveModel;
+    let selection = MultiAgentPuctSelection::<2> { c_puct: 1.0 };
+    let dynamics = RoundBasedDynamics::new(world, DeterministicOpponentPolicy, 0);
+    let backup = VectorBackup::<2>::default();
+
+    let stats = MultiAgentPuctStats::<2>::new();
+    let mut tree: TreeStore<u32, [f32; 2], _, Option<u32>> =
+        TreeStore::with_capacity(50, 50, stats);
+    let root = tree.insert_root(AgentId(0));
+
+    let scheduler = SequentialScheduler;
+    scheduler.search(
+        &mut tree,
+        &dynamics,
+        &model,
+        &selection,
+        &backup,
+        root,
+        &root_state,
+        20,
+    );
+
+    // 1. Invariant verified: StrictPerspectiveModel did not panic, meaning
+    // evaluate() was ONLY called on primary agent states (player == 0).
+
+    // 2. Search tree structure verification:
+    // Root must be agent 0
+    assert_eq!(tree.node_agent(root), AgentId(0));
+    assert_eq!(tree.num_children(root), 2);
+
+    let edge1 = tree.first_child_edge(root);
+    // Delta branch for action 10
+    let child10 = tree.get_child(edge1, &Some(10));
+    assert!(child10.is_some());
+
+    // Root edge 1 (action 2) leads to immediate win
+    let edge2 = EdgeId(edge1.0 + 1);
+    let child_win = tree.get_child(edge2, &None);
+    if let Some(win_node) = child_win {
+        assert_eq!(tree.node_status(win_node), NodeStatus::Terminal);
+    }
+}
+
+#[test]
+fn test_sequential_scheduler_random_opponent_with_step_delta_branching() {
+    use mcts_traits::RoundBasedDynamics;
+
+    let world = MockTwoPlayerWorld;
+    let root_state = world.initial();
+    let model = StrictPerspectiveModel;
+    let selection = MultiAgentPuctSelection::<2> { c_puct: 1.0 };
+    let dynamics = RoundBasedDynamics::new(world, RandomMockOpponent, 0);
+    let backup = VectorBackup::<2>::default();
+
+    let stats = MultiAgentPuctStats::<2>::new();
+    let mut tree: TreeStore<u32, [f32; 2], _, Option<u32>> =
+        TreeStore::with_capacity(50, 50, stats);
+    let root = tree.insert_root(AgentId(0));
+
+    let scheduler = SequentialScheduler;
+    scheduler.search(
+        &mut tree,
+        &dynamics,
+        &model,
+        &selection,
+        &backup,
+        root,
+        &root_state,
+        50,
+    );
+
+    assert!(tree.num_nodes() > 2);
+    let edge0 = tree.first_child_edge(root);
+    let edge1 = EdgeId(edge0.0 + 1);
+    assert_eq!(
+        tree.stats.visits[edge0.as_usize()] + tree.stats.visits[edge1.as_usize()],
+        50
+    );
+
+    // Verify delta children can be iterated
+    let delta_branches: Vec<_> = tree.delta_children(edge0).collect();
+    assert!(!delta_branches.is_empty());
+}

@@ -31,7 +31,11 @@ impl<const B: usize, const P: usize> BlokusWorld<B, P> {
     ///
     /// Panics if `action` is illegal according to the rules of Blokus.
     #[inline]
-    pub fn step_action(&self, ws: &mut BlokusState<B, P>, action: &BlokusAction) -> StepOutcome<[f32; P]> {
+    pub fn step_action(
+        &self,
+        ws: &mut BlokusState<B, P>,
+        action: &BlokusAction,
+    ) -> StepOutcome<[f32; P]> {
         ws.apply_action(action)
             .unwrap_or_else(|err| panic!("BlokusWorld: illegal action {action:?}: {err}"));
 
@@ -90,11 +94,7 @@ impl<const B: usize, const P: usize> World for BlokusWorld<B, P> {
     }
 
     #[inline]
-    fn step(
-        &self,
-        ws: &mut Self::WorldState,
-        joint: &[Self::Action],
-    ) -> (Vec<f32>, bool) {
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
         let active_player = ws.current_player as usize;
         let action = &joint[active_player];
         let outcome = self.step_action(ws, action);
@@ -130,4 +130,3 @@ pub type BlokusClassicWorld = BlokusWorld<20, 4>;
 
 /// Standard 2-player Blokus Duo referee.
 pub type BlokusDuoWorld = BlokusWorld<14, 2>;
-

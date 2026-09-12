@@ -61,14 +61,7 @@ impl<const N: usize> HexState<N> {
     /// Returns an iterator yielding valid neighboring cell coordinates on the hexagonal lattice.
     #[inline]
     pub fn neighbors(r: usize, c: usize) -> impl Iterator<Item = (usize, usize)> {
-        let offsets = [
-            (-1, 0),
-            (-1, 1),
-            (0, -1),
-            (0, 1),
-            (1, -1),
-            (1, 0),
-        ];
+        let offsets = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)];
         offsets.into_iter().filter_map(move |(dr, dc)| {
             let nr = r as isize + dr;
             let nc = c as isize + dc;
@@ -207,7 +200,10 @@ impl<const N: usize> HexWorld<N> {
     #[inline]
     pub fn step_action(&self, ws: &mut HexState<N>, action: usize) -> StepOutcome<[f32; 2]> {
         let idx = action;
-        assert!(idx < N * N && ws.board[idx].is_none(), "Hex: invalid action");
+        assert!(
+            idx < N * N && ws.board[idx].is_none(),
+            "Hex: invalid action"
+        );
         let player = ws.current_player;
         let won = ws.play_move(idx);
 
@@ -278,11 +274,7 @@ impl<const N: usize> World for HexWorld<N> {
     }
 
     #[inline]
-    fn step(
-        &self,
-        ws: &mut Self::WorldState,
-        joint: &[Self::Action],
-    ) -> (Vec<f32>, bool) {
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
         let active = match ws.current_player {
             HexPlayer::Black => 0,
             HexPlayer::White => 1,
@@ -314,4 +306,3 @@ impl<const N: usize> TurnBasedWorld for HexWorld<N> {
         self.step_action(ws, *action)
     }
 }
-

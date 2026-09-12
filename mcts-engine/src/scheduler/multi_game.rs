@@ -26,9 +26,9 @@ impl MultiGameScheduler {
     ///
     /// Panics if `trees.len()`, `roots.len()`, or `root_states.len()` do not match `self.batch_size`.
     #[allow(clippy::too_many_arguments)]
-    pub fn search<D, M, S, B, Action, Reward, Stats>(
+    pub fn search<D, M, S, B, Action, Reward, Stats, StepDelta>(
         &self,
-        trees: &mut [TreeStore<Action, Reward, Stats>],
+        trees: &mut [TreeStore<Action, Reward, Stats, StepDelta>],
         roots: &[NodeId],
         root_states: &[&D::State],
         dynamics: &D,
@@ -40,11 +40,12 @@ impl MultiGameScheduler {
         Action: Clone,
         Reward: Clone,
         Stats: EdgeStatsStore,
-        D: BatchedAgentDynamics<Action = Action, Reward = Reward>,
+        StepDelta: PartialEq + Clone,
+        D: BatchedAgentDynamics<Action = Action, Reward = Reward, StepDelta = StepDelta>,
         D::State: Clone + PartialEq,
         M: BatchedModel<D::State>,
-        S: SelectionPolicy<Action, Reward, Stats>,
-        B: BackupPolicy<Action, Reward, Stats, Evaluation>,
+        S: SelectionPolicy<Action, Reward, Stats, StepDelta>,
+        B: BackupPolicy<Action, Reward, Stats, Evaluation, StepDelta>,
     {
         assert_eq!(trees.len(), self.batch_size);
         assert_eq!(roots.len(), self.batch_size);
@@ -88,8 +89,7 @@ impl MultiGameScheduler {
         for _ in 0..num_iterations {
             let mut paths: Vec<Vec<PathElement>> = vec![Vec::new(); self.batch_size];
             let mut current_node = roots.to_vec();
-            let mut current_state: Vec<D::State> =
-                root_states.iter().map(|&s| s.clone()).collect();
+            let mut current_state: Vec<D::State> = root_states.iter().map(|&s| s.clone()).collect();
             let mut is_traversing = vec![false; self.batch_size];
             for &b in &iteration_trees {
                 is_traversing[b] = true;
@@ -112,7 +112,6 @@ impl MultiGameScheduler {
                                     edge.0 >= first.0 && edge.0 < first.0 + count,
                                     "SelectionPolicy: returned edge out of bounds"
                                 );
-                                paths[b].push(PathElement { node, edge });
                                 step_tree_indices.push(b);
                                 active_states.push(current_state[b].clone());
                                 selected_actions.push(trees[b].edge_action(edge).clone());
@@ -139,18 +138,29 @@ impl MultiGameScheduler {
                     let edge = selected_edges[i];
                     current_state[b] = active_states[i].clone();
 
-                    let child = trees[b].edge_child(edge);
-                    if !child.is_valid() {
+                    if trees[b].edge_reward(edge).is_none() {
                         trees[b].set_edge_reward(edge, outcome.reward.clone());
-                        let agent = dynamics.current_agent(&current_state[b]);
-                        let inserted = trees[b].insert_node(edge, agent);
-                        current_node[b] = inserted;
+                    }
+                    let agent = dynamics.current_agent(&current_state[b]);
+                    let (child, is_new) = trees[b].get_or_insert_child(edge, &outcome.delta, agent);
+
+                    paths[b].push(PathElement {
+                        node: current_node[b],
+                        edge,
+                        next_node: child,
+                    });
+
+                    current_node[b] = child;
+                    if is_new {
                         if outcome.terminated {
-                            trees[b].mark_terminal(inserted);
+                            trees[b].mark_terminal(child);
                         }
                         is_traversing[b] = false;
-                    } else {
-                        current_node[b] = child;
+                    } else if outcome.terminated
+                        || trees[b].node_status(child) == NodeStatus::Terminal
+                    {
+                        trees[b].mark_terminal(child);
+                        is_traversing[b] = false;
                     }
                 }
             }
@@ -208,4 +218,3 @@ impl MultiGameScheduler {
         }
     }
 }
-

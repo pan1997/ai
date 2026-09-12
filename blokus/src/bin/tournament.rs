@@ -290,10 +290,19 @@ fn run_tournament<const B: usize, const P: usize>(
     num_games: usize,
     variant_name: &str,
 ) {
-    println!("==========================================================================================");
-    println!("            ⚔️  BLOKUS {variant_name} TOURNAMENT (RANDOMIZED SEATING)  ⚔️             ");
-    println!("==========================================================================================");
-    println!("Games: {num_games} | Players ({P}): {}\n", names.join(" vs "));
+    println!(
+        "=========================================================================================="
+    );
+    println!(
+        "            ⚔️  BLOKUS {variant_name} TOURNAMENT (RANDOMIZED SEATING)  ⚔️             "
+    );
+    println!(
+        "=========================================================================================="
+    );
+    println!(
+        "Games: {num_games} | Players ({P}): {}\n",
+        names.join(" vs ")
+    );
 
     let mut stats: Vec<AgentStats> = (0..P).map(|_| AgentStats::new(P)).collect();
     let mut rng = rand::thread_rng();
@@ -354,7 +363,10 @@ fn run_tournament<const B: usize, const P: usize>(
         for seat in 0..P {
             let agent_idx = seat_to_agent[seat];
             let color_name = Player::from_index(seat).name();
-            seat_details.push(format!("{}: {} ({})", color_name, names[agent_idx], scores[seat]));
+            seat_details.push(format!(
+                "{}: {} ({})",
+                color_name, names[agent_idx], scores[seat]
+            ));
         }
 
         let winner_names: Vec<&str> = winning_seats
@@ -382,14 +394,22 @@ fn run_tournament<const B: usize, const P: usize>(
             .then_with(|| stats[b].total_score.cmp(&stats[a].total_score))
     });
 
-    println!("\n======================================== TOURNAMENT RESULTS ========================================");
+    println!(
+        "\n======================================== TOURNAMENT RESULTS ========================================"
+    );
     println!(
         "Total Duration: {:.2?} | Games: {num_games} | Seating: Uniformly Shuffled Per Match",
         elapsed
     );
-    println!("----------------------------------------------------------------------------------------------------");
-    println!("Agent                        | Total Wins | Solo Wins | Tied Wins | Win Rate | Avg Score | Placed / 89");
-    println!("----------------------------------------------------------------------------------------------------");
+    println!(
+        "----------------------------------------------------------------------------------------------------"
+    );
+    println!(
+        "Agent                        | Total Wins | Solo Wins | Tied Wins | Win Rate | Avg Score | Placed / 89"
+    );
+    println!(
+        "----------------------------------------------------------------------------------------------------"
+    );
 
     for &idx in &rank_indices {
         let st = &stats[idx];
@@ -405,7 +425,9 @@ fn run_tournament<const B: usize, const P: usize>(
         );
     }
 
-    println!("----------------------------------------------------------------------------------------------------");
+    println!(
+        "----------------------------------------------------------------------------------------------------"
+    );
     println!("Seating Distribution (Seat Fairness Check):");
     for &idx in &rank_indices {
         let st = &stats[idx];
@@ -413,11 +435,15 @@ fn run_tournament<const B: usize, const P: usize>(
             .seat_counts
             .iter()
             .enumerate()
-            .map(|(s, &count)| format!("Seat {} ({}): {:2}", s, Player::from_index(s).name(), count))
+            .map(|(s, &count)| {
+                format!("Seat {} ({}): {:2}", s, Player::from_index(s).name(), count)
+            })
             .collect();
         println!("  {:<28} -> {}", names[idx], seat_strs.join(" | "));
     }
-    println!("====================================================================================================\n");
+    println!(
+        "====================================================================================================\n"
+    );
 }
 
 fn main() {
@@ -495,10 +521,14 @@ fn main() {
             _ => false,
         };
         if is_duo {
-            player_specs.push(AgentSpec::Mcts { iters: default_iters });
+            player_specs.push(AgentSpec::Mcts {
+                iters: default_iters,
+            });
             player_specs.push(AgentSpec::Heuristic);
         } else {
-            player_specs.push(AgentSpec::Mcts { iters: default_iters });
+            player_specs.push(AgentSpec::Mcts {
+                iters: default_iters,
+            });
             player_specs.push(AgentSpec::Heuristic);
             player_specs.push(AgentSpec::Random);
             player_specs.push(AgentSpec::Random);
@@ -511,7 +541,9 @@ fn main() {
         2 => {
             if let Some(ref m) = mode_arg {
                 if m == "classic" {
-                    eprintln!("Error: 2 players were specified, but mode 'classic' requires 4 players.");
+                    eprintln!(
+                        "Error: 2 players were specified, but mode 'classic' requires 4 players."
+                    );
                     std::process::exit(1);
                 }
             }
@@ -520,7 +552,9 @@ fn main() {
         4 => {
             if let Some(ref m) = mode_arg {
                 if m == "duo" {
-                    eprintln!("Error: 4 players were specified, but mode 'duo' requires 2 players.");
+                    eprintln!(
+                        "Error: 4 players were specified, but mode 'duo' requires 2 players."
+                    );
                     std::process::exit(1);
                 }
             }

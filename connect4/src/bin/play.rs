@@ -55,7 +55,9 @@ fn build_mcts_agent(
     if rollouts == 0 {
         Box::new(MctsAgent::new_uniform(name, iters, verbose))
     } else {
-        Box::new(MctsAgent::new_rollout(name, iters, rollouts, depth, verbose))
+        Box::new(MctsAgent::new_rollout(
+            name, iters, rollouts, depth, verbose,
+        ))
     }
 }
 
@@ -142,7 +144,9 @@ fn main() {
                 Box::new(RandomAgent::new("Random Bot (Yellow)")),
             ),
             other => {
-                eprintln!("Invalid mode '{other}'. Supported: human-ai, ai-human, ai-ai, human-human, ai-random");
+                eprintln!(
+                    "Invalid mode '{other}'. Supported: human-ai, ai-human, ai-ai, human-human, ai-random"
+                );
                 return;
             }
         };
@@ -170,7 +174,10 @@ fn main() {
 
         if state.check_win_at(placed_row, chosen_col, current_player) {
             println!("{}", render_board_styled(&state, use_color));
-            println!("🎉🎉 Game Over! {active_name} [{:?}] wins! 🎉🎉\n", current_player);
+            println!(
+                "🎉🎉 Game Over! {active_name} [{:?}] wins! 🎉🎉\n",
+                current_player
+            );
             break;
         }
 
@@ -183,4 +190,3 @@ fn main() {
         state.current_player = current_player.other();
     }
 }
-

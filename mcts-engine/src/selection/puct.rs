@@ -1,7 +1,5 @@
 use super::SelectionPolicy;
-use crate::tree_store::{
-    EdgeId, EdgeStatsStore, NodeId, PriorStore, TreeStore, VirtualLossStore,
-};
+use crate::tree_store::{EdgeId, EdgeStatsStore, NodeId, PriorStore, TreeStore, VirtualLossStore};
 
 /// Statistics storage for multi-agent AlphaZero-style PUCT selection.
 ///
@@ -95,12 +93,13 @@ pub struct MultiAgentPuctSelection<const N: usize> {
     pub c_puct: f32,
 }
 
-impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>>
+impl<Action, Reward, StepDelta, const N: usize>
+    SelectionPolicy<Action, Reward, MultiAgentPuctStats<N>, StepDelta>
     for MultiAgentPuctSelection<N>
 {
     fn select_child(
         &self,
-        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>>,
+        store: &TreeStore<Action, Reward, MultiAgentPuctStats<N>, StepDelta>,
         node_id: NodeId,
     ) -> Option<EdgeId> {
         let active_agent = store.node_agent(node_id).0 as usize;
@@ -160,4 +159,3 @@ impl<Action, Reward, const N: usize> SelectionPolicy<Action, Reward, MultiAgentP
         }
     }
 }
-

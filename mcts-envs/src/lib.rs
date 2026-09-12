@@ -17,15 +17,15 @@
 //! - [`evaluators::RolloutEvaluator`]: Classical Monte Carlo uniform random rollouts to terminal states or depth limit.
 //! - [`evaluators::UniformRandomModel`]: Fast baseline providing uniform priors and zero values for testing search flow.
 
-pub mod hex;
-pub mod tzf8;
-pub mod kuhn_poker;
 pub mod evaluators;
+pub mod hex;
+pub mod kuhn_poker;
+pub mod tzf8;
 
 #[cfg(test)]
 mod tests;
 
-pub use hex::{HexPlayer, HexState, HexWorld};
-pub use tzf8::{Tzf8Dynamics, Tzf8State, Direction};
-pub use kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnObservation, KuhnWorld, KuhnWorldState};
 pub use evaluators::{RolloutEvaluator, UniformRandomModel};
+pub use hex::{HexPlayer, HexState, HexWorld};
+pub use kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnObservation, KuhnWorld, KuhnWorldState};
+pub use tzf8::{Direction, Tzf8Dynamics, Tzf8State};

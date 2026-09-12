@@ -1,8 +1,6 @@
 use crate::backup::{BackupPolicy, PathElement};
 use crate::selection::SelectionPolicy;
-use crate::tree_store::{
-    EdgeStatsStore, NodeId, NodeStatus, TreeStore, VirtualLossStore,
-};
+use crate::tree_store::{EdgeStatsStore, NodeId, NodeStatus, TreeStore, VirtualLossStore};
 use mcts_traits::{AgentDynamics, BatchedModel, Evaluation};
 
 /// Batched MCTS scheduler for accelerating neural network evaluation within a single tree.
@@ -31,9 +29,9 @@ impl BatchedScheduler {
 
     /// Executes `num_iterations` batched search passes (total simulations = `num_iterations * batch_size`).
     #[allow(clippy::too_many_arguments)]
-    pub fn search<D, M, S, B, Action, Reward, Stats>(
+    pub fn search<D, M, S, B, Action, Reward, Stats, StepDelta>(
         &self,
-        tree: &mut TreeStore<Action, Reward, Stats>,
+        tree: &mut TreeStore<Action, Reward, Stats, StepDelta>,
         dynamics: &D,
         model: &M,
         selection: &S,
@@ -45,11 +43,12 @@ impl BatchedScheduler {
         Action: Clone,
         Reward: Clone,
         Stats: EdgeStatsStore + VirtualLossStore,
-        D: AgentDynamics<Action = Action, Reward = Reward>,
+        StepDelta: PartialEq + Clone,
+        D: AgentDynamics<Action = Action, Reward = Reward, StepDelta = StepDelta>,
         D::State: Clone + PartialEq,
         M: BatchedModel<D::State>,
-        S: SelectionPolicy<Action, Reward, Stats>,
-        B: BackupPolicy<Action, Reward, Stats, Evaluation>,
+        S: SelectionPolicy<Action, Reward, Stats, StepDelta>,
+        B: BackupPolicy<Action, Reward, Stats, Evaluation, StepDelta>,
     {
         // 1. Root Initialization
         let mut scratch_actions = Vec::new();
@@ -86,30 +85,37 @@ impl BatchedScheduler {
                             edge.0,
                             current_node.as_usize()
                         );
-                        path.push(PathElement {
-                            node: current_node,
-                            edge,
-                        });
 
                         // Apply virtual loss
-                        tree.stats
-                            .add_virtual_loss(edge, self.virtual_loss_weight);
+                        tree.stats.add_virtual_loss(edge, self.virtual_loss_weight);
 
                         let action = tree.edge_action(edge);
                         let outcome = dynamics.step(&mut state, action);
 
-                        let child = tree.edge_child(edge);
-                        if !child.is_valid() {
+                        if tree.edge_reward(edge).is_none() {
                             tree.set_edge_reward(edge, outcome.reward);
-                            let agent = dynamics.current_agent(&state);
-                            let inserted = tree.insert_node(edge, agent);
-                            current_node = inserted;
+                        }
+
+                        let agent = dynamics.current_agent(&state);
+                        let (child, is_new) = tree.get_or_insert_child(edge, &outcome.delta, agent);
+
+                        path.push(PathElement {
+                            node: current_node,
+                            edge,
+                            next_node: child,
+                        });
+
+                        current_node = child;
+                        if is_new {
                             if outcome.terminated {
                                 tree.mark_terminal(current_node);
                             }
                             break;
-                        } else {
-                            current_node = child;
+                        } else if outcome.terminated
+                            || tree.node_status(current_node) == NodeStatus::Terminal
+                        {
+                            tree.mark_terminal(current_node);
+                            break;
                         }
                     } else {
                         break;
@@ -137,7 +143,9 @@ impl BatchedScheduler {
                     if scratch_actions.is_empty() {
                         tree.mark_terminal(leaf_node);
                         path_leaf_map[b] = None;
-                    } else if let Some(pos) = unique_node_ids.iter().position(|&nid| nid == leaf_node) {
+                    } else if let Some(pos) =
+                        unique_node_ids.iter().position(|&nid| nid == leaf_node)
+                    {
                         path_leaf_map[b] = Some(pos);
                     } else {
                         let pos = states_to_evaluate.len();
@@ -180,4 +188,3 @@ impl BatchedScheduler {
         }
     }
 }
-

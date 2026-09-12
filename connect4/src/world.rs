@@ -27,7 +27,11 @@ impl<const R: usize, const C: usize> Connect4World<R, C> {
     ///
     /// Panics if `action >= C` or if the selected column is full.
     #[inline]
-    pub fn step_action(&self, ws: &mut Connect4State<R, C>, action: usize) -> StepOutcome<[f32; 2]> {
+    pub fn step_action(
+        &self,
+        ws: &mut Connect4State<R, C>,
+        action: usize,
+    ) -> StepOutcome<[f32; 2]> {
         let col = action;
         let current_player = ws.current_player;
         let placed_row = ws
@@ -88,11 +92,7 @@ impl<const R: usize, const C: usize> World for Connect4World<R, C> {
         }
     }
 
-    fn step(
-        &self,
-        ws: &mut Self::WorldState,
-        joint: &[Self::Action],
-    ) -> (Vec<f32>, bool) {
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
         let active_player = ws.current_player.index();
         let action = joint[active_player];
         let outcome = self.step_action(ws, action);
@@ -121,4 +121,3 @@ impl<const R: usize, const C: usize> mcts_traits::TurnBasedWorld for Connect4Wor
         self.step_action(ws, *action)
     }
 }
-

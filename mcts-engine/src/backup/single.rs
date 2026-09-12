@@ -32,7 +32,8 @@ impl SingleAgentBackup {
     }
 }
 
-impl<A, R, Eval> BackupPolicy<A, R, MultiAgentPuctStats<1>, Eval> for SingleAgentBackup
+impl<A, R, Eval, StepDelta> BackupPolicy<A, R, MultiAgentPuctStats<1>, Eval, StepDelta>
+    for SingleAgentBackup
 where
     A: Clone,
     R: Copy + MultiAgentReward<1>,
@@ -40,7 +41,7 @@ where
 {
     fn init_root(
         &self,
-        store: &mut TreeStore<A, R, MultiAgentPuctStats<1>>,
+        store: &mut TreeStore<A, R, MultiAgentPuctStats<1>, StepDelta>,
         root: NodeId,
         evaluation: &Eval,
     ) {
@@ -70,7 +71,7 @@ where
 
     fn backup(
         &self,
-        store: &mut TreeStore<A, R, MultiAgentPuctStats<1>>,
+        store: &mut TreeStore<A, R, MultiAgentPuctStats<1>, StepDelta>,
         path: &[PathElement],
         evaluation: Option<&Eval>,
     ) {
@@ -79,7 +80,7 @@ where
         }
 
         let last_element = path.last().unwrap();
-        let leaf_node = store.edge_child(last_element.edge);
+        let leaf_node = last_element.next_node;
 
         if let (NodeStatus::Expanded, Some(eval)) = (store.node_status(leaf_node), evaluation) {
             let policy_priors = eval.priors();
@@ -123,4 +124,3 @@ where
         }
     }
 }
-

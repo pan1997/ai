@@ -3,7 +3,7 @@
 use crate::agent::{Agent, HeuristicAgent, MctsAgent, RandomAgent};
 use crate::dynamics::compute_rank_rewards;
 use crate::game::{BlokusAction, BlokusClassicState, BlokusDuoState};
-use crate::pieces::{piece_size, registry, NUM_PIECES, TOTAL_SQUARES_PER_PLAYER};
+use crate::pieces::{NUM_PIECES, TOTAL_SQUARES_PER_PLAYER, piece_size, registry};
 use crate::world::BlokusDuoWorld;
 use mcts_traits::{AgentDynamics, TurnBasedDynamics, World};
 
@@ -18,15 +18,28 @@ fn test_piece_registry_and_canonical_orientations() {
         total_squares += size as usize;
         let orientations = reg.orientations_of(i);
         assert!(!orientations.is_empty(), "Piece {i} must have orientations");
-        assert!(orientations.len() <= 8, "Orientation count must not exceed 8");
+        assert!(
+            orientations.len() <= 8,
+            "Orientation count must not exceed 8"
+        );
 
         for shape in orientations {
             assert_eq!(shape.num_squares, size);
             assert!(shape.height >= 1 && shape.height <= 5);
             assert!(shape.width >= 1 && shape.width <= 5);
             // Verify normalization: min r == 0 and min c == 0
-            let min_r = shape.active_squares().iter().map(|&(r, _)| r).min().unwrap();
-            let min_c = shape.active_squares().iter().map(|&(_, c)| c).min().unwrap();
+            let min_r = shape
+                .active_squares()
+                .iter()
+                .map(|&(r, _)| r)
+                .min()
+                .unwrap();
+            let min_c = shape
+                .active_squares()
+                .iter()
+                .map(|&(_, c)| c)
+                .min()
+                .unwrap();
             assert_eq!(min_r, 0);
             assert_eq!(min_c, 0);
         }
@@ -34,7 +47,10 @@ fn test_piece_registry_and_canonical_orientations() {
     }
 
     assert_eq!(total_squares, TOTAL_SQUARES_PER_PLAYER);
-    assert_eq!(total_orientations, 91, "Expected exactly 91 canonical polyomino orientations");
+    assert_eq!(
+        total_orientations, 91,
+        "Expected exactly 91 canonical polyomino orientations"
+    );
 }
 
 #[test]

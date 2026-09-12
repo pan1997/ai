@@ -86,16 +86,14 @@ impl World for KuhnWorld {
             [] => out.extend([KuhnAction::Check, KuhnAction::Bet]),
             [KuhnAction::Check] => out.extend([KuhnAction::Check, KuhnAction::Bet]),
             [KuhnAction::Bet] => out.extend([KuhnAction::Fold, KuhnAction::Call]),
-            [KuhnAction::Check, KuhnAction::Bet] => out.extend([KuhnAction::Fold, KuhnAction::Call]),
+            [KuhnAction::Check, KuhnAction::Bet] => {
+                out.extend([KuhnAction::Fold, KuhnAction::Call])
+            }
             _ => {}
         }
     }
 
-    fn step(
-        &self,
-        ws: &mut Self::WorldState,
-        joint: &[Self::Action],
-    ) -> (Vec<f32>, bool) {
+    fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
         let action = joint[ws.current_player];
         ws.history.push(action);
 
@@ -173,6 +171,7 @@ impl AgentDynamics for KuhnAgentDynamics {
     type State = KuhnObservation;
     type Action = KuhnAction;
     type Reward = [f32; 1];
+    type StepDelta = ();
 
     fn initial(&self) -> Self::State {
         KuhnObservation {
@@ -189,12 +188,18 @@ impl AgentDynamics for KuhnAgentDynamics {
         }
         match s.history.as_slice() {
             [] => out.extend([KuhnAction::Check, KuhnAction::Bet]),
-            [KuhnAction::Check, KuhnAction::Bet] => out.extend([KuhnAction::Fold, KuhnAction::Call]),
+            [KuhnAction::Check, KuhnAction::Bet] => {
+                out.extend([KuhnAction::Fold, KuhnAction::Call])
+            }
             _ => {}
         }
     }
 
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+    fn step(
+        &self,
+        s: &mut Self::State,
+        action: &Self::Action,
+    ) -> StepOutcome<Self::Reward, Self::StepDelta> {
         s.history.push(*action);
 
         let reward;
@@ -204,7 +209,13 @@ impl AgentDynamics for KuhnAgentDynamics {
             [KuhnAction::Check] => {
                 s.history.push(KuhnAction::Check);
                 terminated = true;
-                reward = if s.my_card == 2 { 1.0 } else if s.my_card == 0 { -1.0 } else { 0.0 };
+                reward = if s.my_card == 2 {
+                    1.0
+                } else if s.my_card == 0 {
+                    -1.0
+                } else {
+                    0.0
+                };
             }
             [KuhnAction::Bet] => {
                 terminated = true;

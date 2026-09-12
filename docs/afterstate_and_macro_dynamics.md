@@ -91,101 +91,68 @@ Standard MCTS schedulers (like `SequentialScheduler`) terminate traversal at the
 
 Two distinct architectural routes resolve this:
 
-### Route A: Two-Phase / Round Scheduler (`RoundScheduler`)
+### Route A: Coordinated Round Scheduler (`RoundScheduler`)
 
-The scheduler explicitly distinguishes Decision Nodes from Afterstate Nodes:
+The scheduler explicitly coordinates descent between Decision Nodes ($D_t$) and Afterstate Nodes ($W_t$) in the tree:
 
 ```
 Traversal Step:
-  1. At Decision Node D_t:
-     - Select child edge a via PUCT: argmax [ Q(D_t, a) + U(D_t, a) ].
-     - Step dynamics: state -> afterstate w_t.
-     - If w_t is terminal (immediate win/draw), mark terminal and break.
-  2. At Afterstate Node w_t:
-     - Expand opponent candidate moves using π_opp(o | w_t).
-     - Select opponent edge o (via sampling ~ π_opp or adversarial selection).
-     - Step dynamics: afterstate -> decision node D_{t+1}.
-     - Break only when reaching Decision Node D_{t+1}.
+  1. At Decision Node D_t (agent == primary_player):
+     - If Unexpanded: evaluate via Model::evaluate(&state) and expand. Break traversal.
+     - If Expanded: select child edge a via primary selection policy (e.g. PUCT).
+     - Step dynamics: world.step_action(&mut state, a).
+     - If terminal: mark terminal and break traversal.
+  2. At Afterstate Node W_t (agent != primary_player):
+     - Descend through all intermediate opponents while !world.terminal(&state) && world.current_player(&state) != primary_player.
+     - Expand opponent candidate moves and initialize priors via TreeOpponentPolicy::init_afterstate_priors.
+     - Select opponent edge o via TreeOpponentPolicy::select_afterstate_child.
+     - Step dynamics: world.step_action(&mut state, o).
+     - If terminal: mark terminal and break traversal.
+  3. Returns to Phase 1 (current_player == primary_player):
+     - Evaluates ONLY at leaf Decision Nodes (node_agent == primary_agent). Zero evaluator dilution!
 ```
 
-#### Trait Abstraction for Pluggable Opponent Policy:
+#### Trait Abstraction in `mcts-engine::opponent`:
 
 ```rust
-/// Pluggable policy governing opponent responses at afterstate nodes.
-pub trait OpponentPolicy<State, Action> {
-    /// Generates candidate opponent actions and their prior probabilities at afterstate `w`.
-    fn candidates(&self, afterstate: &State, out: &mut Vec<(Action, f32)>);
-
-    /// Samples or selects an opponent reply during simulation traversal.
-    fn select_response(&self, afterstate: &State) -> Action;
+pub trait TreeOpponentPolicy<Action, Reward, Stats: EdgeStatsStore, State> {
+    fn init_afterstate_priors(&self, tree: &mut TreeStore<Action, Reward, Stats>, node: NodeId, state: &State);
+    fn select_afterstate_child(&self, tree: &TreeStore<Action, Reward, Stats>, node: NodeId, state: &State) -> Option<EdgeId>;
 }
 ```
 
-* **Pros**: Explicit afterstates in the tree; shared afterstate transpositions; inspectable opponent branching.
-* **Cons**: Requires a dedicated two-phase traversal loop in the search scheduler.
+Built-in policies:
+- **`AdversarialOpponent<S>`**: Adversarial MCTS opponent that searches within the same tree using `S: SelectionPolicy`.
+- **`RandomOpponent`**: Uniformly samples random legal child edges.
+- **`HeuristicOpponent<P>`**: Adapts any state-based `P: OpponentPolicy<State, Action>` into tree-based search.
 
 ---
 
-### Route B: Macro-Dynamics in `AgentDynamics` (Zero Engine Changes)
+### Route B: Absorbed Macro-Dynamics (`RoundBasedDynamics<W, P>`)
 
-The opponent policy is absorbed directly inside `AgentDynamics::step`:
+The opponent policy is absorbed directly inside `AgentDynamics::step`, exposed generically in `mcts-traits::RoundBasedDynamics`:
 
 ```rust
-pub struct MacroConnect4Dynamics<P: OpponentPolicy<Connect4State, usize>> {
+pub struct RoundBasedDynamics<W, P> {
+    pub world: W,
     pub opponent_policy: P,
-}
-
-impl<P> AgentDynamics for MacroConnect4Dynamics<P>
-where
-    P: OpponentPolicy<Connect4State, usize>,
-{
-    type State = Connect4State;
-    type Action = usize; // Only primary agent's column
-    type Reward = f32;   // Scalar return (+1 win, -1 loss, 0 draw)
-
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
-        // Step 1: Apply primary agent's action
-        let row = s.drop_piece(*action).expect("legal move");
-        if s.check_win_at(row, *action, Player::Red) {
-            return StepOutcome::new(1.0, true);
-        }
-        if s.is_board_full() {
-            return StepOutcome::new(0.0, true);
-        }
-
-        // Step 2: Opponent immediately replies via π_opp
-        let opp_col = self.opponent_policy.select_response(s);
-        let opp_row = s.drop_piece(opp_col).expect("legal opponent move");
-        if s.check_win_at(opp_row, opp_col, Player::Yellow) {
-            return StepOutcome::new(-1.0, true);
-        }
-
-        // Step 3: Returns state where it is primary agent's turn again!
-        StepOutcome::new(0.0, s.is_board_full())
-    }
-
-    fn current_agent(&self, _s: &Self::State) -> AgentId {
-        AgentId(0) // Always primary agent
-    }
+    pub primary_player: usize,
 }
 ```
 
-* **Pros**: Requires **zero changes** to `mcts-engine`, schedulers, or `TreeStore`. Runs immediately with existing `SequentialScheduler` and `SingleAgentBackup`.
-* **Cons**: Afterstates are ephemeral inside `step()`; not stored or shared as nodes in `TreeStore`. If $\pi_{\text{opp}}$ is stochastic, standard single-pointer tree edges cannot represent multiple child outcomes without chance nodes.
+* **Pros**: Requires zero engine changes; compatible with all schedulers (`SequentialScheduler`, `BatchedScheduler` on GPU, `MultiGameScheduler`).
+* **Cons**: Afterstate choices are absorbed inside `step()`; not stored as individual tree nodes, so opponent subtrees cannot be promoted via `promote_subtree`.
+* **Transition Determinism Invariant**: Because opponent replies are absorbed into a single macro edge without tree branching, re-stepping that edge during simulation descent requires $\tau(s, a) = s'$ to be deterministic. If an opponent policy is stochastic, it must be determinized per state (e.g., via state hashing in `connect4::RandomOpponent`) to prevent state aliasing and tree divergence across iterations. For unconstrained stochastic branching, Route A (`RoundScheduler`) is the mathematically sound formulation as each opponent move receives its own explicit edge in the tree.
 
 ---
 
 ## 5. Spectrum of Pluggable Opponent Policies
 
-By parameterizing the opponent policy $\pi_{\text{opp}}$, the agent can adopt different planning strategies:
-
-| Opponent Policy $\pi_{\text{opp}}$ | Mechanics | Best Used For |
-| :--- | :--- | :--- |
-| **`DeterministicHeuristic`** | Selects greedy 1-ply winning/blocking move or highest center-weight column. | Ultra-fast macro search (Route B); doubles effective depth with zero tree branching. |
-| **`RandomOpponent`** | Uniform probability across all legal opponent columns. | Expectimax planning against beginners or chaotic environments (2048 tile spawn). |
-| **`SoftmaxTactical`** | $\pi(o) \propto \exp(\text{score}(o) / \tau)$. Prioritizes threats while maintaining exploration. | Modeling human play or tournament pools with known tactical biases. |
-| **`ForcedMoveAbsorption (Hybrid)`** | If opponent has an immediate win/block, absorb into `step()` (1 ply). Otherwise expand afterstate. | Preserving adversarial minimax safety while skipping obvious forced responses. |
-| **`AdversarialMinimax`** | Selects $\arg\min Q$ (or runs PUCT for opponent). | Standard AlphaZero / game-theoretic optimal play. |
+| Opponent Policy $\pi_{\text{opp}}$ | Route A (`TreeOpponentPolicy`) | Route B (`OpponentPolicy`) | Best Used For |
+| :--- | :--- | :--- | :--- |
+| **`AdversarialOpponent`** | `AdversarialOpponent::new(MultiAgentPuctSelection)` | N/A | Adversarial self-play planning in the same tree; builds minimax visit counts. |
+| **`RandomOpponent`** | `mcts_engine::RandomOpponent` | `connect4::RandomOpponent` | Stochastic opponents or expectation planning against random baselines. |
+| **`Tactical / Heuristic`** | `HeuristicOpponent::new(TacticalOpponent)` | `RoundBasedDynamics(..., TacticalOpponent)` | Exploiting predictable tactical heuristic responses. |
 
 ---
 
@@ -211,12 +178,21 @@ By parameterizing the opponent policy $\pi_{\text{opp}}$, the agent can adopt di
 
 ---
 
-## 7. Recommendation & Future Roadmap
+## 7. Implementation & Integration Status
 
-1. **Phase 1 (Immediate / Prototype)**:
-   Implement `MacroConnect4Dynamics<P>` (Route B) with `HeuristicOpponent` and `TacticalOpponent` to benchmark depth gains and tournament win-rates against standard `TurnBasedDynamics<Connect4World>`.
-2. **Phase 2 (Engine Extension)**:
-   Introduce `TwoPhaseScheduler` in `mcts-engine` with formal support for Afterstate nodes and Expectation backup at `node_agent != root_agent`.
-3. **Phase 3 (Unified Stochastic Engine)**:
-   Validate the `TwoPhaseScheduler` across both 2-player afterstates (Connect 4) and chance environments (2048/TZF8 tile spawns), proving full Stochastic MuZero equivalence.
+1. **`mcts-traits`**:
+   - `StepOutcome<Reward, StepDelta>`: Emits immediate rewards, transition deltas (`StepDelta`), and termination status.
+   - `AgentDynamics`: Associated type `type StepDelta: Eq + Clone + Debug` allowing stochastic and opponent reaction branching.
+   - `OpponentPolicy<State, Action>`: Generic trait for state-based opponent responses.
+   - `RoundBasedDynamics<W, P>`: Universal macro-action dynamics adapter emitting opponent reply in `StepDelta`.
+2. **`mcts-engine`**:
+   - Zero-allocation `StepDelta` branching in `TreeStore`: child nodes indexed by `(EdgeId, StepDelta)`.
+   - Unified `SequentialScheduler`: single universal scheduler executing both standard 1-ply MCTS and multi-outcome macro dynamics, enforcing the Single-Perspective Decision Leaf Evaluation Invariant.
+   - `TreeOpponentPolicy`, `AdversarialOpponent`, `RandomOpponent`, `HeuristicOpponent`.
+3. **`connect4`**:
+   - `RandomOpponent` (uniform random with `rand::thread_rng()`) and `TacticalOpponent`.
+   - `MacroConnect4Dynamics`: full round lookahead emitting `StepDelta = Option<usize>`.
+   - `MacroMctsAgent` & `RoundMctsAgent`: full-round macro agents executing cleanly via `SequentialScheduler`.
+   - Multi-agent round-robin tournament runner supporting arbitrary agent combinations.
+
 

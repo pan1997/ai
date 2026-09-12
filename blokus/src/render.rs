@@ -1,7 +1,7 @@
 //! Terminal rendering utilities for Blokus board grids, player scoreboards, and MCTS statistics.
 
-use crate::game::{BlokusAction, BlokusState, Player, EMPTY};
-use crate::pieces::{piece_size, PIECE_NAMES};
+use crate::game::{BlokusAction, BlokusState, EMPTY, Player};
+use crate::pieces::{PIECE_NAMES, piece_size};
 
 /// Formats a Blokus board into a string with optional ANSI colors.
 pub fn render_board<const B: usize, const P: usize>(
@@ -169,7 +169,10 @@ pub fn render_inventory<const B: usize, const P: usize>(
     player: usize,
 ) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Inventory for Player {player} ({}):\n", Player::from_index(player).name()));
+    out.push_str(&format!(
+        "Inventory for Player {player} ({}):\n",
+        Player::from_index(player).name()
+    ));
 
     let mask = state.remaining_pieces[player];
     let mut count = 0;

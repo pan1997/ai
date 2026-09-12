@@ -59,17 +59,21 @@ impl Tzf8State {
         cells
     }
 
-    pub fn add_random_tile(&mut self) -> bool {
+    pub fn add_random_tile(&mut self) -> Option<(u8, u8, u16)> {
         let empty = self.empty_cells();
         if empty.is_empty() {
-            return false;
+            return None;
         }
         let rand_val = self.next_rand();
         let idx = (rand_val as usize) % empty.len();
         let (r, c) = empty[idx];
-        let val = if (rand_val >> 16).is_multiple_of(10) { 4 } else { 2 };
+        let val = if (rand_val >> 16).is_multiple_of(10) {
+            4
+        } else {
+            2
+        };
         self.board[r][c] = val;
-        true
+        Some((r as u8, c as u8, val as u16))
     }
 
     fn shift_row_left(row: &mut [u32; 4]) -> (bool, u32) {
@@ -175,9 +179,8 @@ impl Tzf8State {
         }
         for r in 0..4 {
             for c in 0..4 {
-                let val = self.board[r][c];
-                if (r + 1 < 4 && self.board[r + 1][c] == val)
-                    || (c + 1 < 4 && self.board[r][c + 1] == val)
+                if (r + 1 < 4 && self.board[r][c] == self.board[r + 1][c])
+                    || (c + 1 < 4 && self.board[r][c] == self.board[r][c + 1])
                 {
                     return true;
                 }
@@ -197,6 +200,7 @@ impl AgentDynamics for Tzf8Dynamics {
     type State = Tzf8State;
     type Action = Direction;
     type Reward = [f32; 1];
+    type StepDelta = Option<(u8, u8, u16)>;
 
     fn initial(&self) -> Self::State {
         Tzf8State::new(12345)
@@ -219,21 +223,25 @@ impl AgentDynamics for Tzf8Dynamics {
         }
     }
 
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+    fn step(
+        &self,
+        s: &mut Self::State,
+        action: &Self::Action,
+    ) -> StepOutcome<Self::Reward, Self::StepDelta> {
         let (changed, score_gain) = s.move_board(*action);
         if !changed {
             s.ongoing = false;
-            return StepOutcome::new([0.0], true);
+            return StepOutcome::with_delta([0.0], None, true);
         }
 
         s.score += score_gain;
-        s.add_random_tile();
+        let delta = s.add_random_tile();
 
         let terminated = !s.can_move();
         if terminated {
             s.ongoing = false;
         }
 
-        StepOutcome::new([score_gain as f32], terminated)
+        StepOutcome::with_delta([score_gain as f32], delta, terminated)
     }
 }

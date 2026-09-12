@@ -145,7 +145,7 @@ pub fn format_move_candidates(candidates: &[MoveCandidate]) -> String {
     }
 
     let mut sorted = candidates.to_vec();
-    sorted.sort_by(|a, b| b.visits.cmp(&a.visits));
+    sorted.sort_by_key(|a| std::cmp::Reverse(a.visits));
 
     let mut out = String::new();
     out.push_str("┌──────┬────────┬────────┬───────┬─────────────────────────┐\n");
@@ -167,4 +167,3 @@ pub fn format_move_candidates(candidates: &[MoveCandidate]) -> String {
     out.push_str("└──────┴────────┴────────┴───────┴─────────────────────────┘\n");
     out
 }
-

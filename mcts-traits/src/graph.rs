@@ -79,6 +79,7 @@ impl<const N: usize> AgentDynamics for GraphEnv<N> {
     type State = u32;
     type Action = u32;
     type Reward = [f32; N];
+    type StepDelta = ();
 
     fn initial(&self) -> Self::State {
         self.initial_state
@@ -91,12 +92,14 @@ impl<const N: usize> AgentDynamics for GraphEnv<N> {
         }
     }
 
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward> {
+    fn step(&self, s: &mut Self::State, action: &Self::Action) -> StepOutcome<Self::Reward, ()> {
         let t = self
             .transitions
             .get(&(*s, *action))
             .copied()
-            .unwrap_or_else(|| panic!("GraphEnv: invalid transition queried for state {s}, action {action}"));
+            .unwrap_or_else(|| {
+                panic!("GraphEnv: invalid transition queried for state {s}, action {action}")
+            });
         *s = t.next_state;
         StepOutcome::new(t.reward, t.terminated)
     }
@@ -111,9 +114,8 @@ impl<const N: usize> BatchedAgentDynamics for GraphEnv<N> {
         &self,
         states: &mut [Self::State],
         actions: &[Self::Action],
-        out_outcomes: &mut Vec<StepOutcome<Self::Reward>>,
+        out_outcomes: &mut Vec<StepOutcome<Self::Reward, ()>>,
     ) {
         crate::dynamics::default_step_batch(self, states, actions, out_outcomes);
     }
 }
-

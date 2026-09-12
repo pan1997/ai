@@ -131,8 +131,16 @@ fn generate_orientations(raw: &[(i8, i8)]) -> Vec<PolyominoShape> {
             }
 
             // Normalize to origin (min_r = 0, min_c = 0)
-            let min_r = transformed[..num_squares as usize].iter().map(|&(r, _)| r).min().unwrap();
-            let min_c = transformed[..num_squares as usize].iter().map(|&(_, c)| c).min().unwrap();
+            let min_r = transformed[..num_squares as usize]
+                .iter()
+                .map(|&(r, _)| r)
+                .min()
+                .unwrap();
+            let min_c = transformed[..num_squares as usize]
+                .iter()
+                .map(|&(_, c)| c)
+                .min()
+                .unwrap();
 
             let mut normalized = [(0u8, 0u8); 5];
             for (i, &(r, c)) in transformed[..num_squares as usize].iter().enumerate() {
@@ -142,8 +150,16 @@ fn generate_orientations(raw: &[(i8, i8)]) -> Vec<PolyominoShape> {
             // Sort lexicographically for canonical duplicate detection
             normalized[..num_squares as usize].sort_unstable();
 
-            let max_r = normalized[..num_squares as usize].iter().map(|&(r, _)| r).max().unwrap();
-            let max_c = normalized[..num_squares as usize].iter().map(|&(_, c)| c).max().unwrap();
+            let max_r = normalized[..num_squares as usize]
+                .iter()
+                .map(|&(r, _)| r)
+                .max()
+                .unwrap();
+            let max_c = normalized[..num_squares as usize]
+                .iter()
+                .map(|&(_, c)| c)
+                .max()
+                .unwrap();
 
             let shape = PolyominoShape {
                 num_squares,
@@ -189,4 +205,3 @@ pub fn registry() -> &'static PieceRegistry {
     static REGISTRY: std::sync::OnceLock<PieceRegistry> = std::sync::OnceLock::new();
     REGISTRY.get_or_init(PieceRegistry::new)
 }
-

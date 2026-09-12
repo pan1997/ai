@@ -3,11 +3,11 @@
 //! After a leaf state is evaluated or identified as terminal, a backup policy propagates returns
 //! backward along the traversed root-to-leaf path, updating visit counts and running value estimates.
 
-pub mod vector;
 pub mod single;
+pub mod vector;
 
-pub use vector::VectorBackup;
 pub use single::SingleAgentBackup;
+pub use vector::VectorBackup;
 
 use crate::tree_store::{EdgeId, EdgeStatsStore, NodeId, TreeStore};
 
@@ -18,6 +18,8 @@ pub struct PathElement {
     pub node: NodeId,
     /// The child edge chosen from `node`.
     pub edge: EdgeId,
+    /// The target child node reached by traversing `edge` and its step delta.
+    pub next_node: NodeId,
 }
 
 /// Interface for extracting per-agent rewards for $N$ players.
@@ -34,11 +36,11 @@ impl<const N: usize> MultiAgentReward<N> for [f32; N] {
 }
 
 /// Policy interface for backpropagating evaluations along traversed trajectories.
-pub trait BackupPolicy<Action, Reward, Stats: EdgeStatsStore, Evaluation> {
+pub trait BackupPolicy<Action, Reward, Stats: EdgeStatsStore, Evaluation, StepDelta = ()> {
     /// Initializes statistics for the root node during search setup (e.g. writing priors).
     fn init_root(
         &self,
-        store: &mut TreeStore<Action, Reward, Stats>,
+        store: &mut TreeStore<Action, Reward, Stats, StepDelta>,
         root: NodeId,
         evaluation: &Evaluation,
     );
@@ -48,9 +50,8 @@ pub trait BackupPolicy<Action, Reward, Stats: EdgeStatsStore, Evaluation> {
     /// If `evaluation` is `None`, the leaf is treated as terminal with zero subsequent value.
     fn backup(
         &self,
-        store: &mut TreeStore<Action, Reward, Stats>,
+        store: &mut TreeStore<Action, Reward, Stats, StepDelta>,
         path: &[PathElement],
         evaluation: Option<&Evaluation>,
     );
 }
-

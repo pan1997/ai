@@ -1,70 +1,372 @@
-//! Benchmark arena pitting two agents against each other across $N$ games.
+//! Benchmarking tournament arena runner for Connect 4.
 //!
-//! Alternates first-player colors across games to balance first-mover advantage.
+//! Evaluates win rates, tactical efficacy, and throughput across arbitrary lists of agents ($K \ge 2$).
+//! When $K \ge 2$ agents are provided, runs a complete round-robin tournament where every pair of agents
+//! plays the specified number of games with strictly balanced first-mover advantage (half Red, half Yellow).
 //!
-//! # Usage
+//! # Usage Examples
 //! ```bash
-//! cargo run -p connect4 --bin connect4-tournament -- [OPTIONS]
+//! # 1. Multi-agent round-robin tournament across 4 diverse agent types
+//! cargo run -p connect4 --bin connect4-tournament -- --agents round-adversarial:100,mcts:100,macro-tactical:100,tactical --games 10
 //!
-//! Options:
-//!   --games <N>           Total number of games [default: 10]
-//!   --mcts-iters <N>      MCTS iterations for Agent 1 [default: 200]
-//!   --opponent <TYPE>     Opponent type: 'random' or 'mcts' [default: random]
-//!   --opponent-iters <N>  MCTS iterations for Agent 2 (if opponent is mcts) [default: 50]
-//!   --rollouts <N>        Rollouts per leaf evaluation [default: 3]
-//!   -h, --help            Print help information
+//! # 2. Using repeatable --agent flags
+//! cargo run -p connect4 --bin connect4-tournament -- --agent round-adversarial:200 --agent mcts:200 --agent tactical --games 20
+//!
+//! # 3. Head-to-head match between two specific agents
+//! cargo run -p connect4 --bin connect4-tournament -- --p1 round-adversarial:200 --p2 tactical --games 20
 //! ```
 
-use connect4::agent::{Agent, MctsAgent, RandomAgent};
+use connect4::agent::{
+    Agent, MacroMctsAgent, MctsAgent, RandomAgent, RoundMctsAgent, TacticalAgent,
+};
+use connect4::evaluator::{RolloutEvaluator, UniformEvaluator};
 use connect4::game::{Connect4State, Player};
+use std::collections::HashMap;
 use std::env;
 use std::time::Instant;
 
+/// Specification for constructing a Connect 4 agent from CLI arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Connect4AgentSpec {
+    /// Baseline agent playing uniform random legal moves.
+    Random,
+    /// Greedy tactical heuristic (immediate win, block 1-ply win, center preference).
+    Tactical,
+    /// Standard 1-ply alternating MCTS (SequentialScheduler + TurnBasedDynamics).
+    Mcts { iters: usize, rollouts: usize },
+    /// Coordinated round-based MCTS with AdversarialOpponent in the same tree (RoundScheduler).
+    RoundAdversarial { iters: usize, rollouts: usize },
+    /// Coordinated round-based MCTS with TacticalOpponent in tree (RoundScheduler).
+    RoundTactical { iters: usize, rollouts: usize },
+    /// Coordinated round-based MCTS with RandomOpponent in tree (RoundScheduler).
+    RoundRandom { iters: usize, rollouts: usize },
+    /// Absorbed macro-dynamics MCTS with TacticalOpponent (Route B).
+    MacroTactical { iters: usize, rollouts: usize },
+    /// Absorbed macro-dynamics MCTS with RandomOpponent (Route B).
+    MacroRandom { iters: usize, rollouts: usize },
+}
+
+impl Connect4AgentSpec {
+    /// Parses an agent specification string (e.g. `round-adversarial:200:3`, `mcts:100`, `tactical`, `random`).
+    pub fn parse(s: &str, default_iters: usize, default_rollouts: usize) -> Result<Self, String> {
+        let parts: Vec<&str> = s.split(':').collect();
+        let parse_iters = |idx: usize| -> Result<usize, String> {
+            if parts.len() > idx {
+                parts[idx]
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid iteration count in '{s}'"))
+            } else {
+                Ok(default_iters)
+            }
+        };
+
+        let parse_rollouts = |idx: usize| -> Result<usize, String> {
+            if parts.len() > idx {
+                parts[idx]
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid rollouts count in '{s}'"))
+            } else {
+                Ok(default_rollouts)
+            }
+        };
+
+        match parts[0].trim().to_lowercase().as_str() {
+            "random" | "rand" => Ok(Self::Random),
+            "tactical" | "heur" | "heuristic" => Ok(Self::Tactical),
+            "mcts" | "mcts-sequential" | "sequential" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::Mcts { iters, rollouts })
+            }
+            "round-adversarial" | "round-mcts-adversarial" | "round-adv" | "round" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::RoundAdversarial { iters, rollouts })
+            }
+            "round-tactical" | "round-mcts-tactical" | "round-tact" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::RoundTactical { iters, rollouts })
+            }
+            "round-random" | "round-mcts-random" | "round-rand" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::RoundRandom { iters, rollouts })
+            }
+            "macro-tactical" | "macro-mcts-tactical" | "macro-tact" | "macro" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::MacroTactical { iters, rollouts })
+            }
+            "macro-random" | "macro-mcts-random" | "macro-rand" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::MacroRandom { iters, rollouts })
+            }
+            other => Err(format!(
+                "Unknown agent type '{other}'. Supported: random, tactical, mcts[:iters[:rollouts]], round-adversarial[:iters[:rollouts]], round-tactical[:iters[:rollouts]], round-random[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]]"
+            )),
+        }
+    }
+
+    /// Returns a human-readable display name summarizing type and hyperparameters.
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Random => "Random".to_string(),
+            Self::Tactical => "Tactical".to_string(),
+            Self::Mcts { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("MCTS({iters},{eval})")
+            }
+            Self::RoundAdversarial { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Round-Adv({iters},{eval})")
+            }
+            Self::RoundTactical { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Round-Tact({iters},{eval})")
+            }
+            Self::RoundRandom { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Round-Rand({iters},{eval})")
+            }
+            Self::MacroTactical { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Macro-Tact({iters},{eval})")
+            }
+            Self::MacroRandom { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Macro-Rand({iters},{eval})")
+            }
+        }
+    }
+
+    /// Instantiates an agent trait object ready for game execution.
+    pub fn instantiate(&self, name: &str, c_puct: f32, verbose: bool) -> Box<dyn Agent<6, 7>> {
+        match self {
+            Self::Random => Box::new(RandomAgent::new(name)),
+            Self::Tactical => Box::new(TacticalAgent::new(name)),
+            Self::Mcts { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(MctsAgent::new_with_model(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(MctsAgent::new_rollout(name, *iters, *rollouts, 20, verbose))
+                }
+            }
+            Self::RoundAdversarial { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(RoundMctsAgent::new_adversarial(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(RoundMctsAgent::new_adversarial(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+            Self::RoundTactical { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(RoundMctsAgent::new_tactical(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(RoundMctsAgent::new_tactical(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+            Self::RoundRandom { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(RoundMctsAgent::new_random(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(RoundMctsAgent::new_random(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+            Self::MacroTactical { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(MacroMctsAgent::new_tactical(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(MacroMctsAgent::new_tactical(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+            Self::MacroRandom { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(MacroMctsAgent::new_random(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(MacroMctsAgent::new_random(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// Disambiguates duplicate agent names by appending sequential numeric suffixes.
+fn generate_unique_names(specs: &[Connect4AgentSpec]) -> Vec<String> {
+    let raw_names: Vec<String> = specs.iter().map(|s| s.display_name()).collect();
+    let mut counts = HashMap::new();
+    for name in &raw_names {
+        *counts.entry(name.clone()).or_insert(0) += 1;
+    }
+
+    let mut current_idx = HashMap::new();
+    let mut final_names = Vec::with_capacity(specs.len());
+
+    for name in &raw_names {
+        if counts[name] > 1 {
+            let idx = current_idx.entry(name.clone()).or_insert(1);
+            final_names.push(format!("{name}-{idx}"));
+            *idx += 1;
+        } else {
+            final_names.push(name.clone());
+        }
+    }
+
+    final_names
+}
+
+/// Cumulative performance statistics for an agent across the tournament.
+#[derive(Debug, Clone, Default)]
+struct AgentTournamentStats {
+    games_played: usize,
+    wins: usize,
+    losses: usize,
+    draws: usize,
+    red_games: usize,
+    red_wins: usize,
+    yellow_games: usize,
+    yellow_wins: usize,
+    total_moves: usize,
+}
+
 fn print_help() {
     println!(
-        r#"Connect 4 - Tournament Benchmark Arena
+        r#"Connect 4 - Round-Robin Tournament Arena
 
 USAGE:
     connect4-tournament [OPTIONS]
 
 OPTIONS:
-    --games <N>           Total number of tournament games [default: 10]
-    --mcts-iters <N>      MCTS iterations for Agent 1 [default: 200]
-    --opponent <TYPE>     Opponent type: 'random' or 'mcts' [default: random]
-    --opponent-iters <N>  MCTS iterations for Agent 2 (if opponent is mcts) [default: 50]
-    --rollouts <N>        Rollout evaluations per leaf (0 for uniform) [default: 3]
-    -h, --help            Print help information
+    --agents <SPECS>         Comma-separated list of agent specifications.
+                             Examples:
+                               --agents round-adversarial:200,mcts:200,tactical,random
+                               --agents round-tactical:100:0,macro-tactical:100:0
+    --agent <SPEC>           Repeatable flag to add an individual agent to the tournament.
+                             Example: --agent round-adversarial:200 --agent mcts:200 --agent tactical
+    --games <N>              Games to play per pairwise matchup [default: 10]
+                             (half played as Red, half played as Yellow)
+    --iters <N>              Default MCTS iterations when omitted from spec [default: 200]
+    --rollouts <N>           Default rollout evaluations per leaf [default: 3] (0 for uniform)
+    --c-puct <FLOAT>         PUCT exploration constant [default: 1.414]
+    --verbose                Print search candidate tables for each move
+    -h, --help               Print help information
+
+PAIRWISE MATCHUP FLAGS (2-player shorthand):
+    --p1 <SPEC>              Player 1 agent spec [default: round-adversarial]
+    --p1-iters <N>           MCTS iterations for Player 1
+    --p1-rollouts <N>        Rollouts per leaf for Player 1
+    --p2 <SPEC>              Player 2 agent spec [default: random]
+    --p2-iters <N>           MCTS iterations for Player 2
+    --p2-rollouts <N>        Rollouts per leaf for Player 2
+
+BACKWARD-COMPATIBILITY ALIASES:
+    --players <SPECS>        Alias for --agents
+    --player <SPEC>          Alias for --agent
+    --mcts-iters <N>         Alias for --p1-iters
+    --opponent <TYPE>        Alias for --p2
+    --opponent-iters <N>     Alias for --p2-iters
+
+SUPPORTED AGENT TYPES:
+    random                   Uniform random legal moves
+    tactical (or heur)       Greedy tactical heuristic (immediate win, block 1-ply win, center)
+    mcts[:iters[:rollouts]]  Standard 1-ply alternating MCTS (SequentialScheduler)
+    round-adversarial[:...]  Coordinated round-based MCTS with AdversarialOpponent (RoundScheduler)
+    round-tactical[:...]     Coordinated round-based MCTS with TacticalOpponent (RoundScheduler)
+    round-random[:...]       Coordinated round-based MCTS with RandomOpponent (RoundScheduler)
+    macro-tactical[:...]     Absorbed macro-dynamics MCTS with TacticalOpponent (Route B)
+    macro-random[:...]       Absorbed macro-dynamics MCTS with RandomOpponent (Route B)
 "#
     );
-}
-
-fn build_agent(
-    name: &str,
-    agent_type: &str,
-    iters: usize,
-    rollouts: usize,
-) -> Box<dyn Agent<6, 7>> {
-    match agent_type {
-        "random" => Box::new(RandomAgent::new(name)),
-        "mcts" => {
-            if rollouts == 0 {
-                Box::new(MctsAgent::new_uniform(name, iters, false))
-            } else {
-                Box::new(MctsAgent::new_rollout(name, iters, rollouts, 20, false))
-            }
-        }
-        other => panic!("Unknown agent type '{other}'"),
-    }
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut total_games = 10;
-    let mut a1_iters = 200;
-    let mut opponent_type = "random".to_string();
-    let mut opponent_iters = 50;
-    let mut rollouts = 3;
+    let mut games_per_pair = 10;
+    let mut default_iters = 200;
+    let mut default_rollouts = 3;
+    let mut c_puct = 1.414;
+    let mut verbose = false;
+
+    let mut agent_specs: Vec<Connect4AgentSpec> = Vec::new();
+
+    // Pairwise override options
+    let mut p1_opt: Option<String> = None;
+    let mut p1_iters_opt: Option<usize> = None;
+    let mut p1_rollouts_opt: Option<usize> = None;
+
+    let mut p2_opt: Option<String> = None;
+    let mut p2_iters_opt: Option<usize> = None;
+    let mut p2_rollouts_opt: Option<usize> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -76,31 +378,95 @@ fn main() {
             "--games" => {
                 i += 1;
                 if i < args.len() {
-                    total_games = args[i].parse().unwrap_or(10);
+                    games_per_pair = args[i].parse().unwrap_or(10);
                 }
             }
-            "--mcts-iters" => {
+            "--iters" => {
                 i += 1;
                 if i < args.len() {
-                    a1_iters = args[i].parse().unwrap_or(200);
-                }
-            }
-            "--opponent" => {
-                i += 1;
-                if i < args.len() {
-                    opponent_type = args[i].clone();
-                }
-            }
-            "--opponent-iters" => {
-                i += 1;
-                if i < args.len() {
-                    opponent_iters = args[i].parse().unwrap_or(50);
+                    default_iters = args[i].parse().unwrap_or(200);
                 }
             }
             "--rollouts" => {
                 i += 1;
                 if i < args.len() {
-                    rollouts = args[i].parse().unwrap_or(3);
+                    default_rollouts = args[i].parse().unwrap_or(3);
+                }
+            }
+            "--c-puct" => {
+                i += 1;
+                if i < args.len() {
+                    c_puct = args[i].parse().unwrap_or(1.414);
+                }
+            }
+            "--verbose" => {
+                verbose = true;
+            }
+            "--agents" | "--players" => {
+                i += 1;
+                if i < args.len() {
+                    for item in args[i].split(',') {
+                        let trimmed = item.trim();
+                        if !trimmed.is_empty() {
+                            match Connect4AgentSpec::parse(trimmed, default_iters, default_rollouts)
+                            {
+                                Ok(spec) => agent_specs.push(spec),
+                                Err(err) => {
+                                    eprintln!("Error: {err}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "--agent" | "--player" => {
+                i += 1;
+                if i < args.len() {
+                    let trimmed = args[i].trim();
+                    match Connect4AgentSpec::parse(trimmed, default_iters, default_rollouts) {
+                        Ok(spec) => agent_specs.push(spec),
+                        Err(err) => {
+                            eprintln!("Error: {err}");
+                            return;
+                        }
+                    }
+                }
+            }
+            "--p1" | "--agent1" => {
+                i += 1;
+                if i < args.len() {
+                    p1_opt = Some(args[i].clone());
+                }
+            }
+            "--p1-iters" | "--mcts-iters" => {
+                i += 1;
+                if i < args.len() {
+                    p1_iters_opt = Some(args[i].parse().unwrap_or(200));
+                }
+            }
+            "--p1-rollouts" => {
+                i += 1;
+                if i < args.len() {
+                    p1_rollouts_opt = Some(args[i].parse().unwrap_or(3));
+                }
+            }
+            "--p2" | "--agent2" | "--opponent" => {
+                i += 1;
+                if i < args.len() {
+                    p2_opt = Some(args[i].clone());
+                }
+            }
+            "--p2-iters" | "--opponent-iters" => {
+                i += 1;
+                if i < args.len() {
+                    p2_iters_opt = Some(args[i].parse().unwrap_or(100));
+                }
+            }
+            "--p2-rollouts" => {
+                i += 1;
+                if i < args.len() {
+                    p2_rollouts_opt = Some(args[i].parse().unwrap_or(3));
                 }
             }
             other => {
@@ -111,124 +477,413 @@ fn main() {
         i += 1;
     }
 
-    let a1_name = format!("Agent1-MCTS({a1_iters})");
-    let a2_name = if opponent_type == "mcts" {
-        format!("Agent2-MCTS({opponent_iters})")
-    } else {
-        "Agent2-Random".to_string()
-    };
+    // If agent_specs was not populated via --agents/--agent, check --p1 / --p2 or default pair
+    if agent_specs.is_empty() {
+        let p1_str = p1_opt.unwrap_or_else(|| "round-adversarial".to_string());
+        let p1_iters = p1_iters_opt.unwrap_or(default_iters);
+        let p1_rollouts = p1_rollouts_opt.unwrap_or(default_rollouts);
+        let p1_spec = match Connect4AgentSpec::parse(&p1_str, p1_iters, p1_rollouts) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error in P1: {e}");
+                return;
+            }
+        };
 
-    println!("==================================================");
-    println!("        ⚔️  CONNECT 4 TOURNAMENT ARENA ⚔️          ");
-    println!("==================================================");
-    println!("Games: {total_games}");
-    println!("Player 1: {a1_name}");
-    println!("Player 2: {a2_name}");
-    println!("Rollouts: {rollouts}\n");
+        let p2_str = p2_opt.unwrap_or_else(|| "random".to_string());
+        let p2_iters = p2_iters_opt.unwrap_or(default_iters);
+        let p2_rollouts = p2_rollouts_opt.unwrap_or(default_rollouts);
+        let p2_spec = match Connect4AgentSpec::parse(&p2_str, p2_iters, p2_rollouts) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error in P2: {e}");
+                return;
+            }
+        };
 
-    let mut p1_wins = 0;
-    let mut p2_wins = 0;
-    let mut draws = 0;
-    let mut total_moves = 0;
+        agent_specs.push(p1_spec);
+        agent_specs.push(p2_spec);
+    }
+
+    let num_agents = agent_specs.len();
+    if num_agents < 2 {
+        eprintln!("Error: At least 2 agents are required to run a tournament.");
+        return;
+    }
+
+    let unique_names = generate_unique_names(&agent_specs);
+    let num_pairs = num_agents * (num_agents - 1) / 2;
+    let total_tournament_games = num_pairs * games_per_pair;
+
+    println!(
+        "=========================================================================================="
+    );
+    println!(
+        "                         ⚔️  CONNECT 4 TOURNAMENT ARENA ⚔️                               "
+    );
+    println!(
+        "=========================================================================================="
+    );
+    println!("Agents competing ({num_agents}):");
+    for (idx, name) in unique_names.iter().enumerate() {
+        println!("  [{}] {name}", idx + 1);
+    }
+    println!(
+        "\nFormat:       Round-Robin (every pair plays {games_per_pair} games: half Red, half Yellow)"
+    );
+    println!("Matchups:     {num_pairs} distinct pairings");
+    println!("Total Games:  {total_tournament_games}");
+    println!("C_PUCT:       {c_puct}\n");
+
+    let mut stats: Vec<AgentTournamentStats> = vec![AgentTournamentStats::default(); num_agents];
+    // Head-to-head matrix: h2h[i][j] = (wins, losses, draws) for agent i against agent j
+    let mut h2h: Vec<Vec<(usize, usize, usize)>> = vec![vec![(0, 0, 0); num_agents]; num_agents];
 
     let start_time = Instant::now();
+    let mut game_counter = 0;
 
-    for game_idx in 0..total_games {
-        // Alternate who plays Red (first move)
-        let p1_is_red = game_idx % 2 == 0;
+    for i in 0..num_agents {
+        for j in (i + 1)..num_agents {
+            let name_i = &unique_names[i];
+            let name_j = &unique_names[j];
 
-        let (mut red_agent, mut yellow_agent) = if p1_is_red {
-            (
-                build_agent(&a1_name, "mcts", a1_iters, rollouts),
-                build_agent(&a2_name, &opponent_type, opponent_iters, rollouts),
-            )
-        } else {
-            (
-                build_agent(&a2_name, &opponent_type, opponent_iters, rollouts),
-                build_agent(&a1_name, "mcts", a1_iters, rollouts),
-            )
-        };
+            println!(
+                "------------------------------------------------------------------------------------------"
+            );
+            println!("▶ Matchup: {name_i} vs. {name_j} ({games_per_pair} games)");
+            println!(
+                "------------------------------------------------------------------------------------------"
+            );
 
-        let mut state = Connect4State::<6, 7>::new();
-        let mut moves = 0;
+            let mut m_wins_i = 0;
+            let mut m_wins_j = 0;
+            let mut m_draws = 0;
 
-        let game_result = loop {
-            let active_agent = match state.current_player {
-                Player::Red => &mut red_agent,
-                Player::Yellow => &mut yellow_agent,
-            };
+            for game_idx in 0..games_per_pair {
+                game_counter += 1;
+                // Strictly balanced coloring: alternate who plays Red
+                let i_is_red = game_idx % 2 == 0;
+                let (red_idx, yellow_idx) = if i_is_red { (i, j) } else { (j, i) };
 
-            let col = active_agent.select_action(&state);
-            let current_player = state.current_player;
-            let placed_row = state
-                .drop_piece(col)
-                .unwrap_or_else(|e| panic!("Tournament: invalid move {col}: {e}"));
-            moves += 1;
+                let red_name = format!("{} (Red)", unique_names[red_idx]);
+                let yellow_name = format!("{} (Yellow)", unique_names[yellow_idx]);
 
-            if state.check_win_at(placed_row, col, current_player) {
-                break Some(current_player);
-            }
-            if state.is_board_full() {
-                break None;
-            }
-            state.current_player = current_player.other();
-        };
+                let mut red_agent = agent_specs[red_idx].instantiate(&red_name, c_puct, verbose);
+                let mut yellow_agent =
+                    agent_specs[yellow_idx].instantiate(&yellow_name, c_puct, verbose);
 
-        total_moves += moves;
+                let mut state = Connect4State::<6, 7>::new();
+                let mut moves: usize = 0;
 
-        match game_result {
-            Some(Player::Red) => {
-                if p1_is_red {
-                    p1_wins += 1;
-                    println!("Game #{:>2}: {} (Red) won in {moves} moves", game_idx + 1, a1_name);
-                } else {
-                    p2_wins += 1;
-                    println!("Game #{:>2}: {} (Red) won in {moves} moves", game_idx + 1, a2_name);
+                let game_result = loop {
+                    let active_agent = match state.current_player {
+                        Player::Red => &mut red_agent,
+                        Player::Yellow => &mut yellow_agent,
+                    };
+
+                    let col = active_agent.select_action(&state);
+                    let current_player = state.current_player;
+                    let placed_row = state
+                        .drop_piece(col)
+                        .unwrap_or_else(|e| panic!("Tournament: invalid move {col}: {e}"));
+                    moves += 1;
+
+                    if state.check_win_at(placed_row, col, current_player) {
+                        break Some(current_player);
+                    }
+                    if state.is_board_full() {
+                        break None;
+                    }
+                    state.current_player = current_player.other();
+                };
+
+                // Record participation
+                stats[red_idx].games_played += 1;
+                stats[red_idx].red_games += 1;
+                stats[red_idx].total_moves += moves.div_ceil(2);
+
+                stats[yellow_idx].games_played += 1;
+                stats[yellow_idx].yellow_games += 1;
+                stats[yellow_idx].total_moves += moves / 2;
+
+                match game_result {
+                    Some(Player::Red) => {
+                        stats[red_idx].wins += 1;
+                        stats[red_idx].red_wins += 1;
+                        stats[yellow_idx].losses += 1;
+
+                        h2h[red_idx][yellow_idx].0 += 1;
+                        h2h[yellow_idx][red_idx].1 += 1;
+
+                        if red_idx == i {
+                            m_wins_i += 1;
+                        } else {
+                            m_wins_j += 1;
+                        }
+
+                        println!(
+                            "  Game #{:>3}: {} (Red) won in {moves} moves",
+                            game_counter, unique_names[red_idx]
+                        );
+                    }
+                    Some(Player::Yellow) => {
+                        stats[yellow_idx].wins += 1;
+                        stats[yellow_idx].yellow_wins += 1;
+                        stats[red_idx].losses += 1;
+
+                        h2h[yellow_idx][red_idx].0 += 1;
+                        h2h[red_idx][yellow_idx].1 += 1;
+
+                        if yellow_idx == i {
+                            m_wins_i += 1;
+                        } else {
+                            m_wins_j += 1;
+                        }
+
+                        println!(
+                            "  Game #{:>3}: {} (Yellow) won in {moves} moves",
+                            game_counter, unique_names[yellow_idx]
+                        );
+                    }
+                    None => {
+                        stats[red_idx].draws += 1;
+                        stats[yellow_idx].draws += 1;
+
+                        h2h[red_idx][yellow_idx].2 += 1;
+                        h2h[yellow_idx][red_idx].2 += 1;
+
+                        m_draws += 1;
+
+                        println!("  Game #{:>3}: Draw in {moves} moves", game_counter);
+                    }
                 }
             }
-            Some(Player::Yellow) => {
-                if p1_is_red {
-                    p2_wins += 1;
-                    println!("Game #{:>2}: {} (Yellow) won in {moves} moves", game_idx + 1, a2_name);
-                } else {
-                    p1_wins += 1;
-                    println!("Game #{:>2}: {} (Yellow) won in {moves} moves", game_idx + 1, a1_name);
-                }
-            }
-            None => {
-                draws += 1;
-                println!("Game #{:>2}: Draw in {moves} moves", game_idx + 1);
-            }
+
+            println!(
+                "  ↳ Matchup Outcome: {} {}-{}-{} {}",
+                name_i, m_wins_i, m_wins_j, m_draws, name_j
+            );
         }
     }
 
     let elapsed = start_time.elapsed();
-    let moves_per_sec = total_moves as f64 / elapsed.as_secs_f64().max(0.001);
+    let total_all_moves: usize = stats.iter().map(|s| s.total_moves).sum();
+    let moves_per_sec = total_all_moves as f64 / elapsed.as_secs_f64().max(0.001);
 
-    println!("\n==================================================");
-    println!("               TOURNAMENT RESULTS                 ");
-    println!("==================================================");
-    println!("Total Games:      {total_games}");
+    // Print Head-to-Head Cross Table
     println!(
-        "{} Wins: {:>3} ({:>5.1}%)",
-        a1_name,
-        p1_wins,
-        (p1_wins as f64 / total_games as f64) * 100.0
+        "\n=========================================================================================="
     );
     println!(
-        "{} Wins: {:>3} ({:>5.1}%)",
-        a2_name,
-        p2_wins,
-        (p2_wins as f64 / total_games as f64) * 100.0
+        "                               HEAD-TO-HEAD MATRIX (W-L-D)                                "
     );
     println!(
-        "Draws:             {:>3} ({:>5.1}%)",
-        draws,
-        (draws as f64 / total_games as f64) * 100.0
+        "=========================================================================================="
     );
-    println!("Avg Moves / Game: {:>5.1}", total_moves as f64 / total_games as f64);
+    print!("{:<32} |", "Agent");
+    for idx in 0..num_agents {
+        print!(" [{:>2}]   |", idx + 1);
+    }
+    println!(" Total (W-L-D)   | Win Rate");
+    println!("{}", "-".repeat(34 + num_agents * 9 + 28));
+
+    for i in 0..num_agents {
+        print!("[{:>2}] {:<28} |", i + 1, unique_names[i]);
+        for (j, &(w, l, d)) in h2h[i].iter().enumerate().take(num_agents) {
+            if i == j {
+                print!("  ---   |");
+            } else {
+                print!(" {:>2}-{:<2}-{:<1}|", w, l, d);
+            }
+        }
+        let total_w = stats[i].wins;
+        let total_l = stats[i].losses;
+        let total_d = stats[i].draws;
+        let wr = if stats[i].games_played > 0 {
+            (total_w as f64 / stats[i].games_played as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            " {:>3}-{:<3}-{:<2}  | {:>5.1}%",
+            total_w, total_l, total_d, wr
+        );
+    }
+
+    // Print Final Leaderboard Standings sorted by Win Rate
+    let mut rank_indices: Vec<usize> = (0..num_agents).collect();
+    rank_indices.sort_by(|&a, &b| {
+        let wr_a = if stats[a].games_played > 0 {
+            stats[a].wins as f64 / stats[a].games_played as f64
+        } else {
+            0.0
+        };
+        let wr_b = if stats[b].games_played > 0 {
+            stats[b].wins as f64 / stats[b].games_played as f64
+        } else {
+            0.0
+        };
+        wr_b.partial_cmp(&wr_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    println!(
+        "\n=========================================================================================="
+    );
+    println!(
+        "                                    FINAL STANDINGS                                       "
+    );
+    println!(
+        "=========================================================================================="
+    );
+    println!(
+        "{:<4} {:<30} {:>6} {:>6} {:>6} {:>6} {:>8} {:>9} {:>9}",
+        "Pos", "Agent", "Games", "Wins", "Loss", "Draw", "Win %", "Red W%", "Yel W%"
+    );
+    println!("{}", "-".repeat(90));
+
+    for (pos, &idx) in rank_indices.iter().enumerate() {
+        let s = &stats[idx];
+        let win_pct = if s.games_played > 0 {
+            (s.wins as f64 / s.games_played as f64) * 100.0
+        } else {
+            0.0
+        };
+        let red_pct = if s.red_games > 0 {
+            (s.red_wins as f64 / s.red_games as f64) * 100.0
+        } else {
+            0.0
+        };
+        let yellow_pct = if s.yellow_games > 0 {
+            (s.yellow_wins as f64 / s.yellow_games as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        println!(
+            "{:>2}.  {:<30} {:>6} {:>6} {:>6} {:>6} {:>7.1}% {:>8.1}% {:>8.1}%",
+            pos + 1,
+            unique_names[idx],
+            s.games_played,
+            s.wins,
+            s.losses,
+            s.draws,
+            win_pct,
+            red_pct,
+            yellow_pct
+        );
+    }
+
+    println!(
+        "=========================================================================================="
+    );
+    println!("Total Matchups:   {num_pairs}");
+    println!("Total Games:      {total_tournament_games}");
     println!("Elapsed Time:     {:.2?}", elapsed);
+    println!("Total Moves:      {total_all_moves}");
     println!("Throughput:       {:.1} moves/sec", moves_per_sec);
-    println!("==================================================");
+    println!(
+        "=========================================================================================="
+    );
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_all_agent_specs() {
+        assert_eq!(
+            Connect4AgentSpec::parse("random", 200, 3).unwrap(),
+            Connect4AgentSpec::Random
+        );
+        assert_eq!(
+            Connect4AgentSpec::parse("tactical", 200, 3).unwrap(),
+            Connect4AgentSpec::Tactical
+        );
+        assert_eq!(
+            Connect4AgentSpec::parse("mcts", 200, 3).unwrap(),
+            Connect4AgentSpec::Mcts {
+                iters: 200,
+                rollouts: 3
+            }
+        );
+        assert_eq!(
+            Connect4AgentSpec::parse("mcts:500:5", 200, 3).unwrap(),
+            Connect4AgentSpec::Mcts {
+                iters: 500,
+                rollouts: 5
+            }
+        );
+        assert_eq!(
+            Connect4AgentSpec::parse("round-adversarial:100:0", 200, 3).unwrap(),
+            Connect4AgentSpec::RoundAdversarial {
+                iters: 100,
+                rollouts: 0
+            }
+        );
+        assert_eq!(
+            Connect4AgentSpec::parse("round-tactical:150:2", 200, 3).unwrap(),
+            Connect4AgentSpec::RoundTactical {
+                iters: 150,
+                rollouts: 2
+            }
+        );
+        assert_eq!(
+            Connect4AgentSpec::parse("macro-tactical:80", 200, 3).unwrap(),
+            Connect4AgentSpec::MacroTactical {
+                iters: 80,
+                rollouts: 3
+            }
+        );
+    }
+
+    #[test]
+    fn test_unique_name_generation() {
+        let specs = vec![
+            Connect4AgentSpec::Random,
+            Connect4AgentSpec::Random,
+            Connect4AgentSpec::Tactical,
+        ];
+        let names = generate_unique_names(&specs);
+        assert_eq!(names, vec!["Random-1", "Random-2", "Tactical"]);
+    }
+
+    #[test]
+    fn test_instantiate_all_specs() {
+        let specs = [
+            Connect4AgentSpec::Random,
+            Connect4AgentSpec::Tactical,
+            Connect4AgentSpec::Mcts {
+                iters: 10,
+                rollouts: 0,
+            },
+            Connect4AgentSpec::RoundAdversarial {
+                iters: 10,
+                rollouts: 1,
+            },
+            Connect4AgentSpec::RoundTactical {
+                iters: 10,
+                rollouts: 0,
+            },
+            Connect4AgentSpec::RoundRandom {
+                iters: 10,
+                rollouts: 0,
+            },
+            Connect4AgentSpec::MacroTactical {
+                iters: 10,
+                rollouts: 0,
+            },
+            Connect4AgentSpec::MacroRandom {
+                iters: 10,
+                rollouts: 0,
+            },
+        ];
+
+        let state = Connect4State::<6, 7>::new();
+        for spec in &specs {
+            let mut agent = spec.instantiate("Test", 1.414, false);
+            let action = agent.select_action(&state);
+            assert!(action < 7);
+        }
+    }
+}

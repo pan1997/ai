@@ -30,7 +30,10 @@ pub fn add_dirichlet_noise<R: Rng + ?Sized>(
     if priors.len() <= 1 {
         return;
     }
-    assert!(alpha > 0.0, "add_dirichlet_noise: alpha must be strictly positive");
+    assert!(
+        alpha > 0.0,
+        "add_dirichlet_noise: alpha must be strictly positive"
+    );
     assert!(
         (0.0..=1.0).contains(&epsilon),
         "add_dirichlet_noise: epsilon must be in range [0.0, 1.0]"
@@ -62,7 +65,10 @@ pub fn add_root_dirichlet_noise<Action, Reward, Stats, R>(
     Stats: EdgeStatsStore + PriorStore,
     R: Rng + ?Sized,
 {
-    assert!(root.is_valid(), "add_root_dirichlet_noise: root node handle is invalid");
+    assert!(
+        root.is_valid(),
+        "add_root_dirichlet_noise: root node handle is invalid"
+    );
     assert_eq!(
         tree.node_status(root),
         NodeStatus::Expanded,
