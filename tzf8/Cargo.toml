@@ -1,0 +1,21 @@
+[package]
+name = "tzf8"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance 2048 game engine, Expectimax chance-node MCTS agents, and benchmark tournament arena"
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+rand = { workspace = true }
+
+[[bin]]
+name = "tzf8-play"
+path = "src/bin/play.rs"
+
+[[bin]]
+name = "tzf8-tournament"
+path = "src/bin/tournament.rs"
+

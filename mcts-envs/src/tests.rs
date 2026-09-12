@@ -128,8 +128,8 @@ fn test_hex_dsu_deep_connectivity_and_path_compression() {
 
 #[test]
 fn test_tzf8_mcts_search() {
-    let env = Tzf8Dynamics;
-    let model = RolloutEvaluator::new(env, 5, 10);
+    let env = Tzf8Dynamics::new();
+    let model = RolloutEvaluator::new(Tzf8Dynamics::new(), 5, 10);
     let selection = MultiAgentPuctSelection::<1> { c_puct: 1.0 };
     let backup = SingleAgentBackup::new(0.99);
     let stats = MultiAgentPuctStats::<1>::new();

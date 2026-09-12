@@ -919,3 +919,88 @@ fn test_sequential_scheduler_random_opponent_with_step_delta_branching() {
     let delta_branches: Vec<_> = tree.delta_children(edge0).collect();
     assert!(!delta_branches.is_empty());
 }
+
+#[test]
+fn test_normalized_uct_selection_large_q_values() {
+    use crate::selection::NormalizedUctSelection;
+
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _, ()> = TreeStore::with_capacity(10, 10, stats);
+    let root = tree.insert_root(AgentId(0));
+    tree.expand_node(root, &[10, 20]);
+
+    let edge0 = tree.first_child_edge(root);
+    let edge1 = EdgeId(edge0.0 + 1);
+
+    let selection = NormalizedUctSelection::<1>::default();
+
+    // 1. Unvisited edges should have +inf score (explored first)
+    assert_eq!(selection.select_child(&tree, root), Some(edge0));
+
+    // Simulate edge0 visited once with huge Q value
+    tree.stats.visits[edge0.as_usize()] = 1;
+    tree.stats.mean_value[edge0.as_usize()] = [10_000.0];
+
+    // edge1 is still unvisited -> must be selected next!
+    assert_eq!(selection.select_child(&tree, root), Some(edge1));
+
+    // Simulate edge1 visited once with slightly higher Q value
+    tree.stats.visits[edge1.as_usize()] = 1;
+    tree.stats.mean_value[edge1.as_usize()] = [10_050.0];
+
+    // Now both edges are visited.
+    // Normalized Q: edge0 -> 0.0, edge1 -> 1.0.
+    // Parent visits = 2.
+    // Exploration term for both is c_uct * sqrt(ln(3) / 1) ≈ 1.414 * 1.048 ≈ 1.48.
+    // edge0 score ≈ 0.0 + 1.48 = 1.48.
+    // edge1 score ≈ 1.0 + 1.48 = 2.48.
+    // edge1 has higher score and should be selected!
+    assert_eq!(selection.select_child(&tree, root), Some(edge1));
+
+    // Now suppose edge1 is visited 10 more times, so N(edge1) = 11.
+    // Parent visits = 1 + 11 = 12.
+    // Exploration term for edge0: 1.414 * sqrt(ln(13) / 1) ≈ 1.414 * 1.6 ≈ 2.26 -> total 0.0 + 2.26 = 2.26.
+    // Exploration term for edge1: 1.414 * sqrt(ln(13) / 11) ≈ 1.414 * 0.48 ≈ 0.68 -> total 1.0 + 0.68 = 1.68.
+    // Edge0 now has HIGHER score due to exploration!
+    tree.stats.visits[edge1.as_usize()] = 11;
+    assert_eq!(selection.select_child(&tree, root), Some(edge0));
+}
+
+#[test]
+fn test_normalized_puct_selection_scale_invariance() {
+    use crate::selection::NormalizedPuctSelection;
+
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _, ()> = TreeStore::with_capacity(10, 10, stats);
+    let root = tree.insert_root(AgentId(0));
+    tree.expand_node(root, &[10, 20]);
+
+    let edge0 = tree.first_child_edge(root);
+    let edge1 = EdgeId(edge0.0 + 1);
+
+    // Set priors: edge0 has 0.7, edge1 has 0.3
+    tree.stats.priors[edge0.as_usize()] = 0.7;
+    tree.stats.priors[edge1.as_usize()] = 0.3;
+
+    let selection = NormalizedPuctSelection::<1>::default();
+
+    // 1. Initial selection selects child with highest prior (edge0)
+    assert_eq!(selection.select_child(&tree, root), Some(edge0));
+
+    // Simulate edge0 visited with huge Q = 50,000.0
+    tree.stats.visits[edge0.as_usize()] = 1;
+    tree.stats.mean_value[edge0.as_usize()] = [50_000.0];
+
+    // Under unnormalized PUCT, edge0 would stay at 50,000 while edge1 would be 0.0 + 1.4*0.3 = 0.42.
+    // But under NormalizedPuctSelection, edge0's Q_norm is 0.5 (only 1 visited child),
+    // and edge1's score is 0.0 + 1.4142 * 0.3 * sqrt(1) / 1 = 0.424.
+    // edge0 score is 0.5 + 1.4142 * 0.7 * 1 / 2 = 0.5 + 0.495 = 0.995.
+    assert_eq!(selection.select_child(&tree, root), Some(edge0));
+
+    // After edge0 gets a few visits, edge1 will be selected because exploration bonus drives it:
+    tree.stats.visits[edge0.as_usize()] = 10;
+    // Parent visits = 10. sqrt(10) ≈ 3.16.
+    // edge1 score = 0.0 + 1.4142 * 0.3 * 3.16 / 1 ≈ 1.34 > 1.0!
+    // edge0 score <= 1.0 + exploration (< 1.34).
+    assert_eq!(selection.select_child(&tree, root), Some(edge1));
+}

@@ -4,10 +4,12 @@
 //! leaf node by picking the most promising child edge according to exploration/exploitation trade-offs.
 
 pub mod gumbel;
+pub mod normalized;
 pub mod puct;
 pub mod uct;
 
 pub use gumbel::GumbelPuctSelection;
+pub use normalized::{NormalizedPuctSelection, NormalizedUctSelection};
 pub use puct::{MultiAgentPuctSelection, MultiAgentPuctStats};
 pub use uct::UctSelection;
 

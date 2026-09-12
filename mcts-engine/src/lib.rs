@@ -40,8 +40,8 @@ pub use opponent::{AdversarialOpponent, HeuristicOpponent, RandomOpponent, TreeO
 pub use scheduler::{BatchedScheduler, MultiGameScheduler, SequentialScheduler};
 pub use search::{TrajectoryOutcome, descend_trajectory};
 pub use selection::{
-    GumbelPuctSelection, MultiAgentPuctSelection, MultiAgentPuctStats, SelectionPolicy,
-    UctSelection,
+    GumbelPuctSelection, MultiAgentPuctSelection, MultiAgentPuctStats, NormalizedPuctSelection,
+    NormalizedUctSelection, SelectionPolicy, UctSelection,
 };
 pub use tree_store::{
     EdgeId, EdgeStatsStore, NodeId, NodeStatus, PriorStore, TreeStore, VirtualLossStore,

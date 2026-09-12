@@ -9,6 +9,7 @@ description = "Reference games and environments for MCTS"
 [dependencies]
 mcts-traits = { workspace = true }
 mcts-engine = { workspace = true }
+tzf8 = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 

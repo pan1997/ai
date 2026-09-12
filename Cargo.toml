@@ -6,6 +6,7 @@ members = [
     "mcts-envs",
     "connect4",
     "blokus",
+    "tzf8",
 ]
 
 [workspace.package]
@@ -20,5 +21,6 @@ mcts-engine = { path = "mcts-engine" }
 mcts-envs = { path = "mcts-envs" }
 connect4 = { path = "connect4" }
 blokus = { path = "blokus" }
+tzf8 = { path = "tzf8" }
 rand = "0.8"
 rand_distr = "0.4"
