@@ -41,18 +41,30 @@ Implemented in [`mcts-envs/src/hex.rs`](file:///home/pankaj/Projects/ai/mcts-env
 
 ---
 
-### 1.3 2048 / Tzf8 (`Tzf8Dynamics`)
+### 1.3 2048 / Tzf8 (`tzf8` Crate)
 
-Implemented in [`mcts-envs/src/tzf8.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/tzf8.rs).
+Implemented in [`tzf8`](file:///home/pankaj/Projects/ai/tzf8) (with a lightweight reference version in [`mcts-envs/src/tzf8.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/tzf8.rs)).
 
 - **Type**: Single-Player, Stochastic MDP.
-- **Board**: $4 \times 4$ integer tile grid.
+- **Board Architecture**: Highly optimized 64-bit bitboard (`u64`) where each of the 16 cells occupies a 4-bit nibble encoding powers of two ($0 \implies 0, 1 \implies 2, 2 \implies 4, \dots, 11 \implies 2048$).
+- **Performance**: Precomputed $65,536$-entry lookup tables (LUT) execute row shifts, tile merges, and score additions in $O(1)$ CPU operations.
 - **Action Space**: 4 directional shifts: `Left`, `Right`, `Up`, `Down`.
-- **Dynamics**:
-  - Sliders push and merge identical adjacent tiles, accumulating merged values into the score.
-  - After each valid slide, a new tile (value 2 with 90% probability, value 4 with 10% probability) spawns in a random empty cell via xorshift64 PRNG.
-- **Reward**: Immediate score gained during tile merges ($r_t \ge 0$).
-- **Traits Implemented**: `AgentDynamics` (Single-agent return accumulation $Q = r + \gamma V$).
+- **Chance Mechanics & Delta-Branching**:
+  - After each valid slide, a random tile spawns (value 2 with $90\%$ probability, value 4 with $10\%$ probability) in an empty cell.
+  - The stochastic spawn is emitted via `StepDelta = TileSpawn { pos: u8, val: u16 }`.
+  - Enables exact sample-mean Expectimax search down flat `TreeStore` arrays without dummy chance nodes.
+- **Evaluators**:
+  - `CornerHeuristicEvaluator`: Snake monotonicity (rewarding high tiles anchored in a corner), empty cell bonus, and edge smoothness.
+  - `RolloutEvaluator`: Monte Carlo random rollouts to terminal states.
+  - `UniformEvaluator`: Fast uniform prior baseline.
+- **Agents**:
+  - `MctsAgent`: Supports pure UCT, dynamic Min-Max normalized UCT (`mcts-norm`), and normalized PUCT with FPU.
+  - `HeuristicAgent`: 1-ply greedy lookahead selecting the shift that maximizes the corner heuristic.
+  - `RandomAgent`: Uniform random legal actions.
+  - `HumanAgent`: Interactive arrow/WASD keyboard player.
+- **CLI Utilities**:
+  - `tzf8-play`: Interactive terminal game with ANSI board rendering, live MCTS move evaluation, and visit distributions.
+  - `tzf8-tournament`: Benchmark arena evaluating agents across $N$ identical seeds, tracking average score, moves/second, and max tile distribution ($\ge 2048, \ge 4096, \ge 8192, \ge 16384$).
 
 ---
 

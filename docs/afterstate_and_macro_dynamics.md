@@ -194,5 +194,9 @@ pub struct RoundBasedDynamics<W, P> {
    - `MacroConnect4Dynamics`: full round lookahead emitting `StepDelta = Option<usize>`.
    - `MacroMctsAgent` & `RoundMctsAgent`: full-round macro agents executing cleanly via `SequentialScheduler`.
    - Multi-agent round-robin tournament runner supporting arbitrary agent combinations.
+4. **`tzf8`**:
+   - Stochastic 2048 game dynamics using `StepDelta = TileSpawn { pos: u8, val: u16 }` for sample-mean Expectimax search down flat `TreeStore` arrays.
+   - Dynamic Min-Max normalization (`NormalizedUctSelection`, `NormalizedPuctSelection`) scaling arbitrary score values into $[0, 1]$ exploration balance.
+   - Multi-agent tournament benchmark arena comparing heuristics, rollouts, pure UCT, normalized UCT, and PUCT.
 
 

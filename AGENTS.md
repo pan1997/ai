@@ -14,13 +14,14 @@ mcts-engine/  --> Core Structure-of-Arrays (SoA) engine, selection, backup, and 
 mcts-envs/    --> Reference environments, benchmark games, and heuristic/rollout evaluators
 connect4/     --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
 blokus/       --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents, and CLI players
+tzf8/         --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents, and CLI players
 ```
 
 ### Dependency Rules
-1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, `connect4`, or `blokus`.
-2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`, `connect4`, or `blokus`.
+1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, `connect4`, `blokus`, or `tzf8`.
+2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`, `connect4`, `blokus`, or `tzf8`.
 3. `mcts-envs` depends on `mcts-traits` and optionally `mcts-engine` (for testing and integration).
-4. Environment crates (e.g. `connect4`, `blokus`) depend on `mcts-traits` and `mcts-engine`.
+4. Environment crates (e.g. `connect4`, `blokus`, `tzf8`) depend on `mcts-traits` and `mcts-engine`.
 
 ---
 

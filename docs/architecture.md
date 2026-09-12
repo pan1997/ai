@@ -6,13 +6,14 @@ This document details the architectural principles, memory layouts, and design c
 
 ## 1. Tripartite Crate Hierarchy
 
-The workspace is organized into five decoupled crates:
+The workspace is organized into six decoupled crates:
 
 ```
 +-------------------------------------------------------------+
 |              Dedicated Game & Benchmark Crates              |
 |  - connect4: Connect 4 game engine, MCTS & CLI agents       |
 |  - blokus:   Blokus Classic (4P) & Duo (2P), polyomino reg. |
+|  - tzf8:     Dedicated 2048 Expectimax engine & tournament  |
 |  - mcts-envs: Hex (DSU win tracking), 2048, Kuhn Poker,     |
 |              RolloutEvaluator & UniformRandomModel          |
 +------------------------------+------------------------------+
@@ -21,9 +22,11 @@ The workspace is organized into five decoupled crates:
 +-------------------------------------------------------------+
 |                        mcts-engine                          |
 |  - TreeStore (Structure-of-Arrays contiguous memory)         |
-|  - Selection: UCT, MultiAgentPUCT, GumbelAlphaZero          |
+|  - Selection: UCT, Normalized UCT/PUCT, MultiAgentPUCT,      |
+|              GumbelAlphaZero                                |
 |  - Backup: SingleAgentBackup, VectorBackup                  |
 |  - Schedulers: Sequential, Batched, MultiGame               |
+|  - Arena: Round-robin & multi-player tournament engines     |
 +------------------------------+------------------------------+
                                |
                                v
@@ -37,8 +40,8 @@ The workspace is organized into five decoupled crates:
 
 ### Decoupling Rationale
 - **Zero Heavy Dependencies in Traits**: `mcts-traits` compiles in milliseconds and has zero mandatory runtime dependencies. This allows external libraries, neural network backends (e.g. PyTorch / ONNX / Candle / Burn), or game simulators to integrate without pulling in search engine implementation details.
-- **Engine Agnostic to Game Details**: `mcts-engine` knows nothing about grids, cards, or board games. It operates strictly on generic types `Action`, `Reward`, and `Stats`.
-- **Decoupled Game Environments**: Reference environments and benchmark games (`mcts-envs`, `connect4`, `blokus`) depend on traits and engine interfaces, without introducing cyclic coupling.
+- **Engine Agnostic to Game Details**: `mcts-engine` knows nothing about grids, cards, or board games. It operates strictly on generic types `Action`, `Reward`, `Stats`, and optional `StepDelta`.
+- **Decoupled Game Environments**: Reference environments and benchmark games (`connect4`, `blokus`, `tzf8`, `mcts-envs`) depend on traits and engine interfaces, without introducing cyclic coupling.
 
 ---
 
@@ -50,25 +53,26 @@ Standard MCTS implementations typically represent trees as graphs of heap-alloca
 3. **Synchronization Bottlenecks**: Fine-grained node-level mutexes cripple throughput in multi-threaded search.
 
 ### The `TreeStore` Solution
-`TreeStore<Action, Reward, Stats>` solves these issues by adopting a Structure-of-Arrays (SoA) layout with contiguous backing arrays and typed 32-bit handles (`NodeId`, `EdgeId`):
+`TreeStore<Action, Reward, Stats, StepDelta = ()>` solves these issues by adopting a Structure-of-Arrays (SoA) layout with contiguous backing arrays, typed 32-bit handles (`NodeId`, `EdgeId`), and flat delta-branch arrays:
 
 ```
                         +----------------------+
                         |      TreeStore       |
                         +----------+-----------+
                                    |
-         +-------------------------+-------------------------+
-         |                                                   |
-         v                                                   v
-  +--------------+                                    +--------------+
-  |  NodeArrays  |                                    |  EdgeArrays  |
-  +--------------+                                    +--------------+
-  | parent_edge  |: Vec<EdgeId>                       | action       |: Vec<Action>
-  | first_child  |: Vec<EdgeId>                       | child_node   |: Vec<NodeId>
-  | num_children |: Vec<u32>                          | reward       |: Vec<Option<Reward>>
-  | agent        |: Vec<AgentId>                      +--------------+
-  | status       |: Vec<NodeStatus>                          |
-  +--------------+                                           v
+         +-------------------------+-------------------------+-------------------------+
+         |                                                   |                         |
+         v                                                   v                         v
+  +--------------+                                    +--------------+          +--------------------+
+  |  NodeArrays  |                                    |  EdgeArrays  |          | DeltaBranchArrays  |
+  +--------------+                                    +--------------+          +--------------------+
+  | parent_edge  |: Vec<EdgeId>                       | action       |: Vec<Action>| delta              |: Vec<StepDelta>
+  | first_child  |: Vec<EdgeId>                       | child_node   |: Vec<NodeId>| child_node         |: Vec<NodeId>
+  | num_children |: Vec<u32>                          | reward       |: Vec<Option<Reward>>| next_branch   |: Vec<u32>
+  | agent        |: Vec<AgentId>                      | first_branch |: Vec<u32>+--------------------+
+  | status       |: Vec<NodeStatus>                   +--------------+
+  +--------------+                                           |
+                                                             v
                                                       +--------------+
                                                       |  StatsStore  |
                                                       +--------------+
@@ -84,6 +88,15 @@ Standard MCTS implementations typically represent trees as graphs of heap-alloca
 - Traversing child edges (`store.child_edges(node)`) is a sequential scan over a contiguous slice:
   $$\text{EdgeId}(first), \text{EdgeId}(first + 1), \dots, \text{EdgeId}(first + k - 1)$$
 - All visits and priors for sibling edges reside on the same or adjacent CPU cache lines, minimizing L1/L2 data cache misses during selection passes.
+
+### Stochastic Transitions & Zero-Overhead Delta-Branching (`StepDelta`)
+Many environments feature stochastic dynamics (e.g. random tile spawns in 2048, card draws in poker) or multi-outcome opponent responses:
+- Rather than bloating the tree with separate "Chance Nodes" that disrupt policy evaluation and minimax backups, `TreeStore` maintains a flat array-linked delta branch pool `DeltaBranchArrays<StepDelta>`.
+- An edge represents the agent's action $a$. When the environment steps, it returns `StepOutcome { reward, delta, terminated }`.
+- `store.get_or_insert_child(edge, &delta, next_agent)` traverses `first_branch` and `next_branch` indices to find or allocate the subsequent state node for that specific stochastic outcome.
+- Traversals sample outcomes according to true environment probabilities $s' \sim T(s, a)$. Backpropagation accumulates returns on the decision edge $a$, naturally converging to the true **Expectimax** value:
+  $$Q(s, a) = r(s, a) + \gamma \sum_{\delta} \mathbb{P}(\delta \mid s, a) V(s', \delta)$$
+- All delta branches are stored in contiguous flat vectors without dynamic allocation per node.
 
 ### Index Size & Memory Footprint
 By using `u32` for `NodeId` and `EdgeId`, each tree can scale up to **4,294,967,295** nodes and edges while halving pointer sizes compared to 64-bit machine pointers. `NodeId::INVALID` and `EdgeId::INVALID` are represented by `u32::MAX`.

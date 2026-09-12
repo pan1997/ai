@@ -10,7 +10,12 @@
 //! - [`kuhn_poker`]: Kuhn Poker 3-card imperfect-information game demonstrating private card deals, public pot history,
 //!   and the separation between [`World`](mcts_traits::World) and [`AgentDynamics`](mcts_traits::AgentDynamics).
 //!
-//! Note: Connect 4 is now located in its own dedicated workspace crate: `connect4`.
+//! Note: Production-grade games with dedicated CLI players and arenas are located in their own workspace crates:
+//! - `connect4`: Dedicated Connect 4 engine, MCTS agents, and tournament CLI.
+//! - `blokus`: Dedicated Blokus (Classic & Duo) engine, polyomino registry, and tournament CLI.
+//! - `tzf8`: Dedicated 2048 bitboard engine, Expectimax agents, ANSI renderer, and tournament arena.
+//!
+//! (The [`tzf8`] module in this crate is a lightweight reference implementation for test suites).
 //!
 //! ## Baseline Evaluators
 //!

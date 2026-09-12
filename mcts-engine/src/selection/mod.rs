@@ -2,6 +2,13 @@
 //!
 //! Selection policies define how the tree search descends from the root to an unexpanded or
 //! leaf node by picking the most promising child edge according to exploration/exploitation trade-offs.
+//!
+//! Supported policies include:
+//! - [`UctSelection`]: Classic Upper Confidence Bounds for Trees (Kocsis & Szepesvári, 2006).
+//! - [`NormalizedUctSelection`]: Dynamic sibling Min-Max normalized UCT for arbitrary reward/score scales.
+//! - [`MultiAgentPuctSelection`]: AlphaZero-style Predictor UCT with virtual loss support.
+//! - [`NormalizedPuctSelection`]: MuZero-style dynamic Min-Max normalized PUCT with First Play Urgency (FPU).
+//! - [`GumbelPuctSelection`]: Danihelka et al. (2022) policy improvement via Gumbel noise at the root.
 
 pub mod gumbel;
 pub mod normalized;

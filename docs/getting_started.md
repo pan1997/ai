@@ -10,8 +10,14 @@ In your application's `Cargo.toml`:
 
 ```toml
 [dependencies]
+# Core traits and search engine
 mcts-traits = { path = "path/to/mcts-traits" }
 mcts-engine = { path = "path/to/mcts-engine" }
+
+# Game environments (choose as needed)
+connect4    = { path = "path/to/connect4" }
+blokus      = { path = "path/to/blokus" }
+tzf8        = { path = "path/to/tzf8" }
 mcts-envs   = { path = "path/to/mcts-envs" }
 ```
 
@@ -144,4 +150,37 @@ scheduler.search(
 ```
 
 All 32 games advance their simulation sweeps in lockstep, amortizing neural evaluations and keeping GPU utilization high.
+
+---
+
+## 5. Running Benchmark Arenas & CLI Games
+
+The repository provides ready-to-run interactive CLI players and tournament arenas across the game crates:
+
+### Connect 4
+```bash
+# Play against MCTS in the terminal
+cargo run --release -p connect4 --bin connect4-play
+
+# Run a round-robin tournament
+cargo run --release -p connect4 --bin connect4-tournament -- --players mcts:1000,mcts:5000,random --games 20
+```
+
+### Blokus
+```bash
+# Play interactive Blokus Duo in the terminal
+cargo run --release -p blokus --bin blokus-play
+
+# Run a 4-player Blokus Classic tournament
+cargo run --release -p blokus --bin blokus-tournament -- --players heuristic,mcts-hr:500:2:15,mcts-hu:2500,mcts:5000 --games 20
+```
+
+### 2048 / Tzf8
+```bash
+# Interactive terminal 2048 with real-time MCTS move evaluations
+cargo run --release -p tzf8 --bin tzf8-play
+
+# Evaluate Expectimax agents and normalization strategies across 100 boards
+cargo run --release -p tzf8 --bin tzf8-tournament -- --agents heuristic,mcts:1000,mcts-norm:1000,mcts-puct:1000 --boards 100
+```
 
