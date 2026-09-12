@@ -483,3 +483,168 @@ where
         }
     }
 }
+
+/// Specification for constructing a Connect 4 agent from CLI arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Connect4AgentSpec {
+    /// Baseline agent playing uniform random legal moves.
+    Random,
+    /// Greedy tactical heuristic (immediate win, block 1-ply win, center preference).
+    Tactical,
+    /// Standard zero-sum adversarial MCTS.
+    Mcts { iters: usize, rollouts: usize },
+    /// Macro-action MCTS assuming opponent follows a tactical heuristic.
+    MacroTactical { iters: usize, rollouts: usize },
+    /// Macro-action MCTS assuming opponent chooses uniform random moves.
+    MacroRandom { iters: usize, rollouts: usize },
+}
+
+impl Connect4AgentSpec {
+    /// Parses an agent specification string (e.g. `mcts:200:3`, `macro-tactical:100`, `tactical`, `random`).
+    pub fn parse(s: &str, default_iters: usize, default_rollouts: usize) -> Result<Self, String> {
+        let parts: Vec<&str> = s.split(':').collect();
+        let parse_iters = |idx: usize| -> Result<usize, String> {
+            if parts.len() > idx {
+                parts[idx]
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid iteration count in '{s}'"))
+            } else {
+                Ok(default_iters)
+            }
+        };
+
+        let parse_rollouts = |idx: usize| -> Result<usize, String> {
+            if parts.len() > idx {
+                parts[idx]
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid rollouts count in '{s}'"))
+            } else {
+                Ok(default_rollouts)
+            }
+        };
+
+        match parts[0].trim().to_lowercase().as_str() {
+            "random" | "rand" => Ok(Self::Random),
+            "tactical" | "heur" | "heuristic" => Ok(Self::Tactical),
+            "mcts" | "mcts-sequential" | "sequential" | "adversarial" | "round-adversarial"
+            | "round-adv" | "round" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::Mcts { iters, rollouts })
+            }
+            "macro-tactical"
+            | "macro-mcts-tactical"
+            | "macro-tact"
+            | "macro"
+            | "tactical-mcts"
+            | "round-tactical"
+            | "round-tact" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::MacroTactical { iters, rollouts })
+            }
+            "macro-random" | "macro-mcts-random" | "macro-rand" | "random-mcts"
+            | "round-random" | "round-rand" => {
+                let iters = parse_iters(1)?;
+                let rollouts = parse_rollouts(2)?;
+                Ok(Self::MacroRandom { iters, rollouts })
+            }
+            other => Err(format!(
+                "Unknown agent type '{other}'. Supported: mcts[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]], tactical, random"
+            )),
+        }
+    }
+
+    /// Returns a human-readable display name summarizing type and hyperparameters.
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Random => "Random".to_string(),
+            Self::Tactical => "Tactical".to_string(),
+            Self::Mcts { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("MCTS({iters},{eval})")
+            }
+            Self::MacroTactical { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Macro-Tact({iters},{eval})")
+            }
+            Self::MacroRandom { iters, rollouts } => {
+                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
+                format!("Macro-Rand({iters},{eval})")
+            }
+        }
+    }
+
+    /// Instantiates an agent trait object ready for game execution.
+    pub fn instantiate(&self, name: &str, c_puct: f32, verbose: bool) -> BoxAgent<6, 7> {
+        match self {
+            Self::Random => Box::new(RandomAgent::new(name)),
+            Self::Tactical => Box::new(TacticalAgent::new(name)),
+            Self::Mcts { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(MctsAgent::new_adversarial(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(MctsAgent::new_adversarial(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+            Self::MacroTactical { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(MctsAgent::new_macro_tactical(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(MctsAgent::new_macro_tactical(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+            Self::MacroRandom { iters, rollouts } => {
+                if *rollouts == 0 {
+                    Box::new(MctsAgent::new_macro_random(
+                        name,
+                        *iters,
+                        c_puct,
+                        UniformEvaluator,
+                        verbose,
+                    ))
+                } else {
+                    Box::new(MctsAgent::new_macro_random(
+                        name,
+                        *iters,
+                        c_puct,
+                        RolloutEvaluator::new(*rollouts, 20),
+                        verbose,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// Disambiguates duplicate agent names by appending sequential numeric suffixes.
+pub fn generate_unique_names(specs: &[Connect4AgentSpec]) -> Vec<String> {
+    let raw_names: Vec<String> = specs.iter().map(|s| s.display_name()).collect();
+    mcts_engine::arena::disambiguate_names(&raw_names)
+}

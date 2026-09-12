@@ -16,220 +16,11 @@
 //! cargo run -p connect4 --bin connect4-tournament -- --p1 round-adversarial:200 --p2 tactical --games 20
 //! ```
 
-use connect4::agent::{Agent, MctsAgent, RandomAgent, TacticalAgent};
-use connect4::evaluator::{RolloutEvaluator, UniformEvaluator};
+use connect4::agent::{Agent, Connect4AgentSpec, generate_unique_names};
 use connect4::game::{Connect4State, Player};
-use mcts_engine::arena::{GameOutcome, H2HMatrix, TwoPlayerTournamentStats, disambiguate_names};
+use mcts_engine::arena::{GameOutcome, H2HMatrix, TwoPlayerTournamentStats};
 use std::env;
 use std::time::Instant;
-
-/// Specification for constructing a Connect 4 agent from CLI arguments.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Connect4AgentSpec {
-    /// Baseline agent playing uniform random legal moves.
-    Random,
-    /// Greedy tactical heuristic (immediate win, block 1-ply win, center preference).
-    Tactical,
-    /// Standard 1-ply alternating MCTS (SequentialScheduler + TurnBasedDynamics).
-    Mcts { iters: usize, rollouts: usize },
-    /// Coordinated round-based MCTS with AdversarialOpponent in the same tree (RoundScheduler).
-    RoundAdversarial { iters: usize, rollouts: usize },
-    /// Coordinated round-based MCTS with TacticalOpponent in tree (RoundScheduler).
-    RoundTactical { iters: usize, rollouts: usize },
-    /// Coordinated round-based MCTS with RandomOpponent in tree (RoundScheduler).
-    RoundRandom { iters: usize, rollouts: usize },
-    /// Absorbed macro-dynamics MCTS with TacticalOpponent (Route B).
-    MacroTactical { iters: usize, rollouts: usize },
-    /// Absorbed macro-dynamics MCTS with RandomOpponent (Route B).
-    MacroRandom { iters: usize, rollouts: usize },
-}
-
-impl Connect4AgentSpec {
-    /// Parses an agent specification string (e.g. `round-adversarial:200:3`, `mcts:100`, `tactical`, `random`).
-    pub fn parse(s: &str, default_iters: usize, default_rollouts: usize) -> Result<Self, String> {
-        let parts: Vec<&str> = s.split(':').collect();
-        let parse_iters = |idx: usize| -> Result<usize, String> {
-            if parts.len() > idx {
-                parts[idx]
-                    .trim()
-                    .parse::<usize>()
-                    .map_err(|_| format!("Invalid iteration count in '{s}'"))
-            } else {
-                Ok(default_iters)
-            }
-        };
-
-        let parse_rollouts = |idx: usize| -> Result<usize, String> {
-            if parts.len() > idx {
-                parts[idx]
-                    .trim()
-                    .parse::<usize>()
-                    .map_err(|_| format!("Invalid rollouts count in '{s}'"))
-            } else {
-                Ok(default_rollouts)
-            }
-        };
-
-        match parts[0].trim().to_lowercase().as_str() {
-            "random" | "rand" => Ok(Self::Random),
-            "tactical" | "heur" | "heuristic" => Ok(Self::Tactical),
-            "mcts" | "mcts-sequential" | "sequential" => {
-                let iters = parse_iters(1)?;
-                let rollouts = parse_rollouts(2)?;
-                Ok(Self::Mcts { iters, rollouts })
-            }
-            "round-adversarial" | "round-mcts-adversarial" | "round-adv" | "round" => {
-                let iters = parse_iters(1)?;
-                let rollouts = parse_rollouts(2)?;
-                Ok(Self::RoundAdversarial { iters, rollouts })
-            }
-            "round-tactical" | "round-mcts-tactical" | "round-tact" => {
-                let iters = parse_iters(1)?;
-                let rollouts = parse_rollouts(2)?;
-                Ok(Self::RoundTactical { iters, rollouts })
-            }
-            "round-random" | "round-mcts-random" | "round-rand" => {
-                let iters = parse_iters(1)?;
-                let rollouts = parse_rollouts(2)?;
-                Ok(Self::RoundRandom { iters, rollouts })
-            }
-            "macro-tactical" | "macro-mcts-tactical" | "macro-tact" | "macro" => {
-                let iters = parse_iters(1)?;
-                let rollouts = parse_rollouts(2)?;
-                Ok(Self::MacroTactical { iters, rollouts })
-            }
-            "macro-random" | "macro-mcts-random" | "macro-rand" => {
-                let iters = parse_iters(1)?;
-                let rollouts = parse_rollouts(2)?;
-                Ok(Self::MacroRandom { iters, rollouts })
-            }
-            other => Err(format!(
-                "Unknown agent type '{other}'. Supported: random, tactical, mcts[:iters[:rollouts]], round-adversarial[:iters[:rollouts]], round-tactical[:iters[:rollouts]], round-random[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]]"
-            )),
-        }
-    }
-
-    /// Returns a human-readable display name summarizing type and hyperparameters.
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::Random => "Random".to_string(),
-            Self::Tactical => "Tactical".to_string(),
-            Self::Mcts { iters, rollouts } => {
-                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
-                format!("MCTS({iters},{eval})")
-            }
-            Self::RoundAdversarial { iters, rollouts } => {
-                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
-                format!("Round-Adv({iters},{eval})")
-            }
-            Self::RoundTactical { iters, rollouts } => {
-                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
-                format!("Round-Tact({iters},{eval})")
-            }
-            Self::RoundRandom { iters, rollouts } => {
-                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
-                format!("Round-Rand({iters},{eval})")
-            }
-            Self::MacroTactical { iters, rollouts } => {
-                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
-                format!("Macro-Tact({iters},{eval})")
-            }
-            Self::MacroRandom { iters, rollouts } => {
-                let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
-                format!("Macro-Rand({iters},{eval})")
-            }
-        }
-    }
-
-    /// Instantiates an agent trait object ready for game execution.
-    pub fn instantiate(
-        &self,
-        name: &str,
-        c_puct: f32,
-        verbose: bool,
-    ) -> connect4::agent::BoxAgent<6, 7> {
-        match self {
-            Self::Random => Box::new(RandomAgent::new(name)),
-            Self::Tactical => Box::new(TacticalAgent::new(name)),
-            Self::Mcts { iters, rollouts } => {
-                if *rollouts == 0 {
-                    Box::new(MctsAgent::new_with_model(
-                        name,
-                        *iters,
-                        c_puct,
-                        UniformEvaluator,
-                        verbose,
-                    ))
-                } else {
-                    Box::new(MctsAgent::new_rollout(name, *iters, *rollouts, 20, verbose))
-                }
-            }
-            Self::RoundAdversarial { iters, rollouts } => {
-                if *rollouts == 0 {
-                    Box::new(MctsAgent::new_adversarial(
-                        name,
-                        *iters,
-                        c_puct,
-                        UniformEvaluator,
-                        verbose,
-                    ))
-                } else {
-                    Box::new(MctsAgent::new_adversarial(
-                        name,
-                        *iters,
-                        c_puct,
-                        RolloutEvaluator::new(*rollouts, 20),
-                        verbose,
-                    ))
-                }
-            }
-            Self::RoundTactical { iters, rollouts } | Self::MacroTactical { iters, rollouts } => {
-                if *rollouts == 0 {
-                    Box::new(MctsAgent::new_macro_tactical(
-                        name,
-                        *iters,
-                        c_puct,
-                        UniformEvaluator,
-                        verbose,
-                    ))
-                } else {
-                    Box::new(MctsAgent::new_macro_tactical(
-                        name,
-                        *iters,
-                        c_puct,
-                        RolloutEvaluator::new(*rollouts, 20),
-                        verbose,
-                    ))
-                }
-            }
-            Self::RoundRandom { iters, rollouts } | Self::MacroRandom { iters, rollouts } => {
-                if *rollouts == 0 {
-                    Box::new(MctsAgent::new_macro_random(
-                        name,
-                        *iters,
-                        c_puct,
-                        UniformEvaluator,
-                        verbose,
-                    ))
-                } else {
-                    Box::new(MctsAgent::new_macro_random(
-                        name,
-                        *iters,
-                        c_puct,
-                        RolloutEvaluator::new(*rollouts, 20),
-                        verbose,
-                    ))
-                }
-            }
-        }
-    }
-}
-
-/// Disambiguates duplicate agent names by appending sequential numeric suffixes.
-fn generate_unique_names(specs: &[Connect4AgentSpec]) -> Vec<String> {
-    let raw_names: Vec<String> = specs.iter().map(|s| s.display_name()).collect();
-    disambiguate_names(&raw_names)
-}
 
 fn print_help() {
     println!(
@@ -239,12 +30,14 @@ USAGE:
     connect4-tournament [OPTIONS]
 
 OPTIONS:
-    --agents <SPECS>         Comma-separated list of agent specifications.
+    --agents <SPECS> (or --players)
+                             Comma-separated list of agent specifications.
                              Examples:
-                               --agents round-adversarial:200,mcts:200,tactical,random
-                               --agents round-tactical:100:0,macro-tactical:100:0
-    --agent <SPEC>           Repeatable flag to add an individual agent to the tournament.
-                             Example: --agent round-adversarial:200 --agent mcts:200 --agent tactical
+                               --agents mcts:2000,tactical,random
+                               --agents mcts:2000,macro-tactical:2000,macro-random:2000
+    --agent <SPEC> (or --player)
+                             Repeatable flag to add an individual agent.
+                             Example: --agent mcts:2000 --agent tactical --agent random
     --games <N>              Games to play per pairwise matchup [default: 10]
                              (half played as Red, half played as Yellow)
     --iters <N>              Default MCTS iterations when omitted from spec [default: 200]
@@ -254,29 +47,24 @@ OPTIONS:
     -h, --help               Print help information
 
 PAIRWISE MATCHUP FLAGS (2-player shorthand):
-    --p1 <SPEC>              Player 1 agent spec [default: round-adversarial]
+    --p1 <SPEC>              Player 1 agent spec [default: mcts]
     --p1-iters <N>           MCTS iterations for Player 1
     --p1-rollouts <N>        Rollouts per leaf for Player 1
     --p2 <SPEC>              Player 2 agent spec [default: random]
     --p2-iters <N>           MCTS iterations for Player 2
     --p2-rollouts <N>        Rollouts per leaf for Player 2
 
-BACKWARD-COMPATIBILITY ALIASES:
-    --players <SPECS>        Alias for --agents
-    --player <SPEC>          Alias for --agent
-    --mcts-iters <N>         Alias for --p1-iters
-    --opponent <TYPE>        Alias for --p2
-    --opponent-iters <N>     Alias for --p2-iters
+SUPPORTED AGENT SPECS:
+    mcts[:iters[:rollouts]]            Standard zero-sum adversarial MCTS (default)
+    macro-tactical[:iters[:rollouts]]  Macro MCTS assuming opponent plays tactical heuristic
+    macro-random[:iters[:rollouts]]    Macro MCTS assuming opponent plays uniformly random
+    tactical (or heur)                 Greedy tactical heuristic (immediate win, block 1-ply win)
+    random (or rand)                   Uniform random legal moves
 
-SUPPORTED AGENT TYPES:
-    random                   Uniform random legal moves
-    tactical (or heur)       Greedy tactical heuristic (immediate win, block 1-ply win, center)
-    mcts[:iters[:rollouts]]  Standard 1-ply alternating MCTS (SequentialScheduler)
-    round-adversarial[:...]  Coordinated round-based MCTS with AdversarialOpponent (RoundScheduler)
-    round-tactical[:...]     Coordinated round-based MCTS with TacticalOpponent (RoundScheduler)
-    round-random[:...]       Coordinated round-based MCTS with RandomOpponent (RoundScheduler)
-    macro-tactical[:...]     Absorbed macro-dynamics MCTS with TacticalOpponent (Route B)
-    macro-random[:...]       Absorbed macro-dynamics MCTS with RandomOpponent (Route B)
+BACKWARD-COMPATIBILITY ALIASES:
+    round-adversarial                  Alias for mcts
+    round-tactical                     Alias for macro-tactical
+    round-random                       Alias for macro-random
 "#
     );
 }
@@ -412,7 +200,7 @@ fn main() {
 
     // If agent_specs was not populated via --agents/--agent, check --p1 / --p2 or default pair
     if agent_specs.is_empty() {
-        let p1_str = p1_opt.unwrap_or_else(|| "round-adversarial".to_string());
+        let p1_str = p1_opt.unwrap_or_else(|| "mcts".to_string());
         let p1_iters = p1_iters_opt.unwrap_or(default_iters);
         let p1_rollouts = p1_rollouts_opt.unwrap_or(default_rollouts);
         let p1_spec = match Connect4AgentSpec::parse(&p1_str, p1_iters, p1_rollouts) {
@@ -632,14 +420,14 @@ mod tests {
         );
         assert_eq!(
             Connect4AgentSpec::parse("round-adversarial:100:0", 200, 3).unwrap(),
-            Connect4AgentSpec::RoundAdversarial {
+            Connect4AgentSpec::Mcts {
                 iters: 100,
                 rollouts: 0
             }
         );
         assert_eq!(
             Connect4AgentSpec::parse("round-tactical:150:2", 200, 3).unwrap(),
-            Connect4AgentSpec::RoundTactical {
+            Connect4AgentSpec::MacroTactical {
                 iters: 150,
                 rollouts: 2
             }
@@ -673,17 +461,9 @@ mod tests {
                 iters: 10,
                 rollouts: 0,
             },
-            Connect4AgentSpec::RoundAdversarial {
+            Connect4AgentSpec::Mcts {
                 iters: 10,
                 rollouts: 1,
-            },
-            Connect4AgentSpec::RoundTactical {
-                iters: 10,
-                rollouts: 0,
-            },
-            Connect4AgentSpec::RoundRandom {
-                iters: 10,
-                rollouts: 0,
             },
             Connect4AgentSpec::MacroTactical {
                 iters: 10,

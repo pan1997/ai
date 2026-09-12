@@ -452,3 +452,48 @@ fn test_macro_mcts_agent_as_yellow() {
         "MacroMctsAgent playing as Yellow must pick the winning move (col 3)"
     );
 }
+
+#[test]
+fn test_adversarial_mcts_blocks_horizontal_threat() {
+    // Reconstruct the exact scenario from Game 120 where Red has 3 in a row (cols 1, 2, 3 on bottom row)
+    // and threatens col 0. Adversarial MCTS as Yellow MUST block at col 0.
+    let mut state = Connect4State::<6, 7>::new();
+    // Ply 1: Red in col 3
+    state.current_player = Player::Red;
+    state.drop_piece(3).unwrap();
+    // Ply 2: Yellow in col 3
+    state.current_player = Player::Yellow;
+    state.drop_piece(3).unwrap();
+    // Ply 3: Red in col 1
+    state.current_player = Player::Red;
+    state.drop_piece(1).unwrap();
+    // Ply 4: Yellow in col 4
+    state.current_player = Player::Yellow;
+    state.drop_piece(4).unwrap();
+    // Ply 5: Red in col 2
+    state.current_player = Player::Red;
+    state.drop_piece(2).unwrap();
+    // Ply 6: Yellow in col 3
+    state.current_player = Player::Yellow;
+    state.drop_piece(3).unwrap();
+    // Ply 7: Red in col 4
+    state.current_player = Player::Red;
+    state.drop_piece(4).unwrap();
+
+    // Now it is Yellow's turn at Ply 8.
+    // Red has pieces at (5, 1), (5, 2), (5, 3) and can win at (5, 0).
+    state.current_player = Player::Yellow;
+
+    let mut adv_agent = MctsAgent::new_adversarial(
+        "AdversarialMCTS",
+        500,
+        1.414,
+        RolloutEvaluator::new(3, 20),
+        false,
+    );
+    let chosen_col = adv_agent.select_action(&state);
+    assert_eq!(
+        chosen_col, 0,
+        "Adversarial MCTS must recognize minimax threat and block at column 0"
+    );
+}
