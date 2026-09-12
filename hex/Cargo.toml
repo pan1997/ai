@@ -1,0 +1,21 @@
+[package]
+name = "hex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance Hex board game engine, DSU win tracking, MCTS agents, and tournament arena"
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+rand = { workspace = true }
+
+[[bin]]
+name = "hex-play"
+path = "src/bin/play.rs"
+
+[[bin]]
+name = "hex-tournament"
+path = "src/bin/tournament.rs"
+

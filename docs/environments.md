@@ -25,19 +25,30 @@ Implemented in [`connect4`](file:///home/pankaj/Projects/ai/connect4).
 
 ---
 
-### 1.2 Hex (`HexWorld<N>` & `TurnBasedDynamics<HexWorld<N>>`)
+### 1.2 Hex (`hex` Crate)
 
-Implemented in [`mcts-envs/src/hex.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/hex.rs).
+Implemented in [`hex`](file:///home/pankaj/Projects/ai/hex) (with backwards-compatible re-exports in [`mcts-envs/src/hex.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/hex.rs)).
 
-- **Type**: 2-Player Zero-Sum, Turn-Based, Perfect Information, No Draws.
-- **Board**: Rhombus of hexagons of size $N \times N$ (default: $11 \times 11$).
+- **Type**: 2-Player Zero-Sum, Turn-Based, Perfect Information, Deterministic (No Draws by Hex Theorem).
+- **Board**: Rhombus of hexagons with parametric dimension $N \times N$ (international tournament standard: $11 \times 11$).
 - **Players**:
-  - `Black`: Must connect the Top row to the Bottom row.
-  - `White`: Must connect the Left column to the Right column.
-- **Action Space**: Cell index $r \cdot N + c \in \{0, \dots, N^2 - 1\}$.
-- **Win Detection**: Disjoint Set Union (DSU) connectivity tracking.
-- **Traits Implemented**: `World`, `TurnBasedWorld`, and `AgentDynamics` via `TurnBasedDynamics`.
-- **Reward Encoding**: Winner gets `+1.0`, loser gets `-1.0`.
+  - `Black`: Must connect the Top row to the Bottom row (moves first).
+  - `White`: Must connect the Left column to the Right column (moves second).
+- **Action Space**: Cell index $r \cdot N + c \in \{0, \dots, N^2 - 1\}$, algebraic notation (`A1` through `K11`), or row-column pairs.
+- **Win Detection**: High-performance Disjoint Set Union (DSU) connectivity tracking with path compression and virtual boundary endpoints.
+- **Evaluators**:
+  - `ShortestPathHeuristicEvaluator`: 0-1 BFS / Dijkstra measuring the minimum stones each player needs to complete a connection ($d_{\text{Black}}$ vs $d_{\text{White}}$). Highly informative, sub-microsecond position evaluation.
+  - `RolloutEvaluator`: Monte Carlo random rollouts to terminal states.
+  - `UniformEvaluator`: Fast uniform prior baseline.
+- **Agents**:
+  - `HeuristicAgent`: 1-ply greedy lookahead using the 0-1 BFS shortest path metric.
+  - `MctsAgent`: Zero-copy MCTS planning supporting UCT, PUCT, rollout models, and heuristic guidance.
+  - `RandomAgent`: Uniform random legal actions.
+  - `HumanAgent`: Interactive keyboard player accepting algebraic coordinates (`F6`), row/col (`5 5`), or flat cell indices.
+- **CLI Utilities**:
+  - `hex-play`: Interactive terminal game with colored ANSI rhombus rendering, live move candidate inspection, and win detection.
+  - `hex-tournament`: Benchmark arena executing round-robin tournaments across arbitrary agent configurations with strictly balanced first-mover advantage, generating head-to-head cross-tables and leaderboards.
+- **Reward Encoding**: Black win yields `[+1.0, -1.0]`, White win yields `[-1.0, +1.0]`.
 
 ---
 

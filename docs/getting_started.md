@@ -18,6 +18,7 @@ mcts-engine = { path = "path/to/mcts-engine" }
 connect4    = { path = "path/to/connect4" }
 blokus      = { path = "path/to/blokus" }
 tzf8        = { path = "path/to/tzf8" }
+hex         = { path = "path/to/hex" }
 mcts-envs   = { path = "path/to/mcts-envs" }
 ```
 
@@ -182,5 +183,14 @@ cargo run --release -p tzf8 --bin tzf8-play
 
 # Evaluate Expectimax agents and normalization strategies across 100 boards
 cargo run --release -p tzf8 --bin tzf8-tournament -- --agents heuristic,mcts:1000,mcts-norm:1000,mcts-puct:1000 --boards 100
+```
+
+### Hex
+```bash
+# Interactive terminal Hex player (rhombus board rendering)
+cargo run --release -p hex --bin hex-play
+
+# Multi-agent round-robin tournament (balanced first-mover advantage)
+cargo run --release -p hex --bin hex-tournament -- --size 11 --agents heuristic,mcts-h:500,mcts:500,random --games 10
 ```
 

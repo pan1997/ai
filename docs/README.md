@@ -8,7 +8,8 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
        |  - connect4:  Dedicated Connect 4 game engine, agents & CLI |
        |  - blokus:    Blokus Classic & Duo multi-agent engine & CLI |
        |  - tzf8:      Dedicated 2048 Expectimax engine & tournament |
-       |  - mcts-envs: Hex, 2048, Kuhn Poker, baseline evaluators    |
+       |  - hex:       Dedicated Hex engine, DSU tracking & arena    |
+       |  - mcts-envs: Reference environments, baseline evaluators   |
        +------------------------------+------------------------------+
                                       |
                                       v
@@ -34,7 +35,7 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 - **Decoupled Architecture**:
   - `mcts-traits`: Zero-dependency, unopinionated trait interfaces. No blanket trait bounds; algorithms dictate their own requirements.
   - `mcts-engine`: High-throughput selection, backup, and scheduling engines.
-  - `connect4`, `blokus`, & `tzf8`: Dedicated production-grade game engines, Expectimax planners, and tournament CLI players.
+  - `connect4`, `blokus`, `tzf8`, & `hex`: Dedicated production-grade game engines, Expectimax planners, and tournament CLI players.
   - `mcts-envs`: Reference environments and baseline rollout models for rapid benchmarking and verification.
 - **Modern Search Algorithms**:
   - **UCT**: Classic exploration/exploitation formula with configurable constant.
@@ -63,7 +64,8 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 | [`connect4`](file:///home/pankaj/Projects/ai/connect4) | `connect4/` | Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players (`connect4-play`, `connect4-tournament`). |
 | [`blokus`](file:///home/pankaj/Projects/ai/blokus) | `blokus/` | Dedicated Blokus (Classic & Duo) engine, polyomino registry, heuristic models, and CLI players (`blokus-play`, `blokus-tournament`). |
 | [`tzf8`](file:///home/pankaj/Projects/ai/tzf8) | `tzf8/` | Dedicated 2048 Expectimax engine, chance-node agents, and arena tournament runner (`tzf8-play`, `tzf8-tournament`). |
-| [`mcts-envs`](file:///home/pankaj/Projects/ai/mcts-envs) | `mcts-envs/` | Reference environments: Hex, 2048, Kuhn Poker, plus rollout and baseline uniform evaluators. |
+| [`hex`](file:///home/pankaj/Projects/ai/hex) | `hex/` | Dedicated Hex game engine, DSU connectivity tracking, shortest-path heuristic, and tournament arena (`hex-play`, `hex-tournament`). |
+| [`mcts-envs`](file:///home/pankaj/Projects/ai/mcts-envs) | `mcts-envs/` | Reference environments (Kuhn Poker, Hex/2048 re-exports), plus rollout and baseline uniform evaluators. |
 
 ---
 

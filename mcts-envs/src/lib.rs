@@ -14,8 +14,9 @@
 //! - `connect4`: Dedicated Connect 4 engine, MCTS agents, and tournament CLI.
 //! - `blokus`: Dedicated Blokus (Classic & Duo) engine, polyomino registry, and tournament CLI.
 //! - `tzf8`: Dedicated 2048 bitboard engine, Expectimax agents, ANSI renderer, and tournament arena.
+//! - `hex`: Dedicated Hex engine, DSU connectivity tracking, shortest-path heuristic, and tournament arena.
 //!
-//! (The [`tzf8`] module in this crate is a lightweight reference implementation for test suites).
+//! (The [`tzf8`] and [`hex`] modules in this crate are lightweight reference re-exports for test suites).
 //!
 //! ## Baseline Evaluators
 //!

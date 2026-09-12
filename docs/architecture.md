@@ -6,7 +6,7 @@ This document details the architectural principles, memory layouts, and design c
 
 ## 1. Tripartite Crate Hierarchy
 
-The workspace is organized into six decoupled crates:
+The workspace is organized into seven decoupled crates:
 
 ```
 +-------------------------------------------------------------+
@@ -14,8 +14,8 @@ The workspace is organized into six decoupled crates:
 |  - connect4: Connect 4 game engine, MCTS & CLI agents       |
 |  - blokus:   Blokus Classic (4P) & Duo (2P), polyomino reg. |
 |  - tzf8:     Dedicated 2048 Expectimax engine & tournament  |
-|  - mcts-envs: Hex (DSU win tracking), 2048, Kuhn Poker,     |
-|              RolloutEvaluator & UniformRandomModel          |
+|  - hex:      Dedicated Hex engine, DSU tracking & arena     |
+|  - mcts-envs: Reference environments, baseline evaluators   |
 +------------------------------+------------------------------+
                                |
                                v
@@ -41,7 +41,7 @@ The workspace is organized into six decoupled crates:
 ### Decoupling Rationale
 - **Zero Heavy Dependencies in Traits**: `mcts-traits` compiles in milliseconds and has zero mandatory runtime dependencies. This allows external libraries, neural network backends (e.g. PyTorch / ONNX / Candle / Burn), or game simulators to integrate without pulling in search engine implementation details.
 - **Engine Agnostic to Game Details**: `mcts-engine` knows nothing about grids, cards, or board games. It operates strictly on generic types `Action`, `Reward`, `Stats`, and optional `StepDelta`.
-- **Decoupled Game Environments**: Reference environments and benchmark games (`connect4`, `blokus`, `tzf8`, `mcts-envs`) depend on traits and engine interfaces, without introducing cyclic coupling.
+- **Decoupled Game Environments**: Reference environments and benchmark games (`connect4`, `blokus`, `tzf8`, `hex`, `mcts-envs`) depend on traits and engine interfaces, without introducing cyclic coupling.
 
 ---
 
