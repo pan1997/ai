@@ -27,7 +27,8 @@ USAGE:
     hex-play [OPTIONS]
 
 OPTIONS:
-    --size <N>       Board dimension N (supports 7, 9, or 11) [default: 11]
+    --board-size <N> (or --size)
+                     Board dimension N (supports 7, 9, or 11) [default: 11]
     --p1 <SPEC>      Player 1 (Black, moves first) [default: human]
     --p2 <SPEC>      Player 2 (White, moves second) [default: mcts-h:1000]
     --pie-rule       Enable the Pie (Swap) rule on Move 2 for White
@@ -149,7 +150,7 @@ fn main() {
                 print_help();
                 return;
             }
-            "--size" => {
+            "--board-size" | "--size" => {
                 i += 1;
                 if i < args.len() {
                     size = args[i].parse().unwrap_or(11);

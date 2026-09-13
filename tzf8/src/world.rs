@@ -134,3 +134,21 @@ impl World for Tzf8World {
         !ws.ongoing || !ws.can_move()
     }
 }
+
+impl mcts_traits::TurnBasedWorld for Tzf8World {
+    type StepReward = [f32; 1];
+
+    #[inline]
+    fn current_player(&self, _ws: &Self::WorldState) -> usize {
+        0
+    }
+
+    #[inline]
+    fn step_action(
+        &self,
+        ws: &mut Self::WorldState,
+        action: &Self::Action,
+    ) -> StepOutcome<Self::StepReward> {
+        self.step_action(ws, *action)
+    }
+}

@@ -15,7 +15,8 @@ USAGE:
     blokus-play [OPTIONS]
 
 OPTIONS:
-    --variant <VAR>    Game variant: 'duo' (14x14, 2P) [default] or 'classic' (20x20, 4P)
+    --board-size <N> (or --size, --variant)
+                       Game variant: '14'/'duo' (14x14, 2P) [default] or '20'/'classic' (20x20, 4P)
     --mode <MODE>      For Duo: 'human-ai' [default], 'ai-human', 'ai-ai', 'human-human', 'ai-heuristic'
                        For Classic: 'human-3ai' [default], '4ai'
     --iters <N>        MCTS search iterations per move [default: 400]
@@ -188,9 +189,14 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--variant" => {
+            "--variant" | "--board-size" | "--size" => {
                 if i + 1 < args.len() {
-                    variant = args[i + 1].clone();
+                    let val = args[i + 1].to_lowercase();
+                    variant = match val.as_str() {
+                        "14" | "duo" => "duo".to_string(),
+                        "20" | "classic" => "classic".to_string(),
+                        _ => val,
+                    };
                     i += 1;
                 }
             }

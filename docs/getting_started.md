@@ -182,15 +182,15 @@ cargo run --release -p blokus --bin blokus-tournament -- --players heuristic,mct
 cargo run --release -p tzf8 --bin tzf8-play
 
 # Evaluate Expectimax agents and normalization strategies across 100 boards
-cargo run --release -p tzf8 --bin tzf8-tournament -- --agents heuristic,mcts:1000,mcts-norm:1000,mcts-puct:1000 --boards 100
+cargo run --release -p tzf8 --bin tzf8-tournament -- --agents heuristic,mcts:1000,mcts-norm:1000,mcts-puct:1000 --games 100
 ```
 
 ### Hex
 ```bash
 # Interactive terminal Hex player (rhombus board rendering)
-cargo run --release -p hex --bin hex-play
+cargo run --release -p hex --bin hex-play -- --board-size 11 --pie-rule
 
 # Multi-agent round-robin tournament (balanced first-mover advantage)
-cargo run --release -p hex --bin hex-tournament -- --size 11 --agents heuristic,mcts-h:500,mcts:500,random --games 10
+cargo run --release -p hex --bin hex-tournament -- --board-size 11 --agents heuristic,mcts-h:500,mcts:500,random --games 10 --pie-rule
 ```
 

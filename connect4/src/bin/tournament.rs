@@ -16,9 +16,9 @@
 //! cargo run -p connect4 --bin connect4-tournament -- --p1 round-adversarial:200 --p2 tactical --games 20
 //! ```
 
-use connect4::agent::{Agent, Connect4AgentSpec, generate_unique_names};
-use connect4::game::{Connect4State, Player};
-use mcts_engine::arena::{GameOutcome, H2HMatrix, TwoPlayerTournamentStats};
+use connect4::Connect4World;
+use connect4::agent::{Connect4AgentSpec, generate_unique_names};
+use mcts_engine::arena::{GameOutcome, H2HMatrix, MatchDriver, TwoPlayerTournamentStats};
 use std::env;
 use std::time::Instant;
 
@@ -38,7 +38,8 @@ OPTIONS:
     --agent <SPEC> (or --player)
                              Repeatable flag to add an individual agent.
                              Example: --agent mcts:2000 --agent tactical --agent random
-    --games <N>              Games to play per pairwise matchup [default: 10]
+    --games <N> (or --rounds)
+                             Games to play per pairwise matchup [default: 10]
                              (half played as Red, half played as Yellow)
     --iters <N>              Default MCTS iterations when omitted from spec [default: 200]
     --rollouts <N>           Default rollout evaluations per leaf [default: 3] (0 for uniform)
@@ -96,7 +97,7 @@ fn main() {
                 print_help();
                 return;
             }
-            "--games" => {
+            "--games" | "--rounds" => {
                 i += 1;
                 if i < args.len() {
                     games_per_pair = args[i].parse().unwrap_or(10);
@@ -292,36 +293,12 @@ fn main() {
                 let mut yellow_agent =
                     agent_specs[yellow_idx].instantiate(&yellow_name, c_puct, verbose);
 
-                let mut state = Connect4State::<6, 7>::new();
-                let mut moves: usize = 0;
+                let world = Connect4World::<6, 7>::new();
+                let driver = MatchDriver::new();
+                let result = driver.play_2p(&world, &mut *red_agent, &mut *yellow_agent, None);
 
-                let game_result = loop {
-                    let active_agent = match state.current_player {
-                        Player::Red => &mut red_agent,
-                        Player::Yellow => &mut yellow_agent,
-                    };
-
-                    let col = active_agent.select_action(&state);
-                    let current_player = state.current_player;
-                    let placed_row = state
-                        .drop_piece(col)
-                        .unwrap_or_else(|e| panic!("Tournament: invalid move {col}: {e}"));
-                    moves += 1;
-
-                    if state.check_win_at(placed_row, col, current_player) {
-                        break Some(current_player);
-                    }
-                    if state.is_board_full() {
-                        break None;
-                    }
-                    state.current_player = current_player.other();
-                };
-
-                let outcome = match game_result {
-                    Some(Player::Red) => GameOutcome::Seat0Wins,
-                    Some(Player::Yellow) => GameOutcome::Seat1Wins,
-                    None => GameOutcome::Draw,
-                };
+                let outcome = result.outcome_2p.unwrap_or(GameOutcome::Draw);
+                let moves = result.total_moves;
 
                 h2h.record_game(red_idx, yellow_idx, outcome);
                 TwoPlayerTournamentStats::record_game(
@@ -393,6 +370,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use connect4::Connect4State;
 
     #[test]
     fn test_parse_all_agent_specs() {

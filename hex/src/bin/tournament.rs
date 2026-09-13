@@ -14,9 +14,10 @@
 //! ```
 
 use hex::agent::HexAgentSpec;
-use hex::game::{HexPlayer, HexState};
 use hex::world::HexWorld;
-use mcts_engine::arena::{GameOutcome, H2HMatrix, TwoPlayerTournamentStats, disambiguate_names};
+use mcts_engine::arena::{
+    GameOutcome, H2HMatrix, MatchDriver, TwoPlayerTournamentStats, disambiguate_names,
+};
 use std::env;
 use std::time::Instant;
 
@@ -30,13 +31,17 @@ USAGE:
 OPTIONS:
     --agents <SPECS> (or --players)
                              Comma-separated list of agent specifications.
-                             Example: --agents heuristic,mcts-h:500,mcts:500,random
+                             Examples:
+                               --agents heuristic,mcts-h:500,random
+                               --agents mcts:1000,mcts-h:1000,mcts-u:1000
     --agent <SPEC> (or --player)
                              Repeatable flag to add an individual agent.
                              Example: --agent heuristic --agent mcts-h:500 --agent random
-    --games <N>              Games to play per pairwise matchup [default: 10]
+    --games <N> (or --rounds)
+                             Games to play per pairwise matchup [default: 10]
                              (half played as Black, half played as White)
-    --size <N>               Board dimension N (supports 7, 9, 11) [default: 11]
+    --board-size <N> (or --size)
+                             Board dimension N (supports 7, 9, 11) [default: 11]
     --pie-rule               Enable the Pie (Swap) rule on Move 2 for White
     --verbose                Print per-game move progression
     -h, --help               Print help information
@@ -63,48 +68,24 @@ fn run_game<const N: usize>(
     let mut agent_white = spec_white.instantiate::<N>(name_white.to_string(), false);
 
     let world = HexWorld::<N>::with_pie_rule(pie_rule);
-    let mut state = HexState::<N>::with_pie_rule(pie_rule);
-    let mut moves_black = 0;
-    let mut moves_white = 0;
+    let driver = MatchDriver::new();
+    let result = driver.play_2p(&world, &mut *agent_black, &mut *agent_white, None);
 
-    while !world.is_terminal(&state) {
-        let action = match state.current_player {
-            HexPlayer::Black => {
-                moves_black += 1;
-                agent_black.select_action(&state)
-            }
-            HexPlayer::White => {
-                moves_white += 1;
-                agent_white.select_action(&state)
-            }
+    let outcome = result.outcome_2p.unwrap_or(GameOutcome::Draw);
+    let mb = result.moves_per_seat[0];
+    let mw = result.moves_per_seat[1];
+
+    if verbose {
+        let winner_name = match outcome {
+            GameOutcome::Seat0Wins => name_black,
+            GameOutcome::Seat1Wins => name_white,
+            GameOutcome::Draw => "Draw",
         };
-
-        let outcome = world.step_action(&mut state, action);
-
-        if outcome.terminated {
-            let result = if outcome.reward[0] > 0.0 {
-                GameOutcome::Seat0Wins
-            } else if outcome.reward[1] > 0.0 {
-                GameOutcome::Seat1Wins
-            } else {
-                GameOutcome::Draw
-            };
-
-            if verbose {
-                let winner_name = match result {
-                    GameOutcome::Seat0Wins => name_black,
-                    GameOutcome::Seat1Wins => name_white,
-                    GameOutcome::Draw => "Draw",
-                };
-                let total_moves = moves_black + moves_white;
-                println!("    Game finished in {total_moves:>3} moves: Winner = {winner_name}");
-            }
-
-            return (result, moves_black, moves_white);
-        }
+        let total_moves = mb + mw;
+        println!("    Game finished in {total_moves:>3} moves: Winner = {winner_name}");
     }
 
-    (GameOutcome::Draw, moves_black, moves_white)
+    (outcome, mb, mw)
 }
 
 fn run_tournament<const N: usize>(
@@ -265,13 +246,13 @@ fn main() {
                     }
                 }
             }
-            "--games" => {
+            "--games" | "--rounds" => {
                 i += 1;
                 if i < args.len() {
                     games_per_pair = args[i].parse().unwrap_or(10);
                 }
             }
-            "--size" => {
+            "--board-size" | "--size" => {
                 i += 1;
                 if i < args.len() {
                     size = args[i].parse().unwrap_or(11);

@@ -237,9 +237,12 @@ impl<const N: usize> Model<HexState<N>> for RolloutEvaluator<N> {
             }
         }
 
+        let mut batch_board = s.board.clone();
+        let mut batch_dsu_black = s.dsu_black.clone();
+
         for _ in 0..self.num_rollouts {
-            let mut batch_board = s.board.clone();
-            let mut batch_dsu_black = s.dsu_black.clone();
+            batch_board.clone_from(&s.board);
+            batch_dsu_black.clone_from(&s.dsu_black);
             empty_cells.shuffle(&mut rng);
 
             let mut curr = s.current_player;

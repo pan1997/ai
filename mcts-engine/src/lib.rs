@@ -34,8 +34,8 @@ pub mod tree_store;
 mod tests;
 
 pub use arena::{
-    GameOutcome, H2HMatrix, MultiPlayerTournamentStats, TwoPlayerTournamentStats,
-    disambiguate_names,
+    GameOutcome, H2HMatrix, MatchDriver, MatchResult, MultiPlayerTournamentStats,
+    TwoPlayerTournamentStats, disambiguate_names,
 };
 pub use backup::{BackupPolicy, MultiAgentReward, PathElement, SingleAgentBackup, VectorBackup};
 pub use dirichlet::{add_dirichlet_noise, add_root_dirichlet_noise};

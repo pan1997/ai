@@ -34,11 +34,12 @@ Implemented in [`hex`](file:///home/pankaj/Projects/ai/hex) (with backwards-comp
 - **Players**:
   - `Black`: Must connect the Top row to the Bottom row (moves first).
   - `White`: Must connect the Left column to the Right column (moves second).
-- **Action Space**: Cell index $r \cdot N + c \in \{0, \dots, N^2 - 1\}$, algebraic notation (`A1` through `K11`), or row-column pairs.
+- **Action Space**: Cell index $r \cdot N + c \in \{0, \dots, N^2 - 1\}$, algebraic notation (`A1` through `K11`), row-column pairs, or `HexAction::Swap` (Pie rule).
+- **Pie (Swap) Rule**: Supported via `HexConfig { pie_rule: true }` and `--pie-rule` CLI flag. On Move 2, Player 2 (White) can choose to "swap" and take Black's opening move, effectively mitigating Hex's theoretical first-mover advantage.
 - **Win Detection**: High-performance Disjoint Set Union (DSU) connectivity tracking with path compression and virtual boundary endpoints.
 - **Evaluators**:
   - `ShortestPathHeuristicEvaluator`: 0-1 BFS / Dijkstra measuring the minimum stones each player needs to complete a connection ($d_{\text{Black}}$ vs $d_{\text{White}}$). Highly informative, sub-microsecond position evaluation.
-  - `RolloutEvaluator`: Monte Carlo random rollouts to terminal states.
+  - `RolloutEvaluator`: Monte Carlo random rollouts to terminal states. Implements an optimized batch-fill permutation strategy that populates all remaining empty cells in one pass with pre-allocated scratch DSU buffers, executing hundreds of thousands of rollouts/sec.
   - `UniformEvaluator`: Fast uniform prior baseline.
 - **Agents**:
   - `HeuristicAgent`: 1-ply greedy lookahead using the 0-1 BFS shortest path metric.
@@ -46,8 +47,8 @@ Implemented in [`hex`](file:///home/pankaj/Projects/ai/hex) (with backwards-comp
   - `RandomAgent`: Uniform random legal actions.
   - `HumanAgent`: Interactive keyboard player accepting algebraic coordinates (`F6`), row/col (`5 5`), or flat cell indices.
 - **CLI Utilities**:
-  - `hex-play`: Interactive terminal game with colored ANSI rhombus rendering, live move candidate inspection, and win detection.
-  - `hex-tournament`: Benchmark arena executing round-robin tournaments across arbitrary agent configurations with strictly balanced first-mover advantage, generating head-to-head cross-tables and leaderboards.
+  - `hex-play`: Interactive terminal game with colored ANSI rhombus rendering, live move candidate inspection, and win detection. Options: `--board-size <N>` (alias `--size`), `--pie-rule`.
+  - `hex-tournament`: Benchmark arena executing round-robin tournaments across arbitrary agent configurations with strictly balanced first-mover advantage, generating head-to-head cross-tables and leaderboards. Options: `--games <N>` (alias `--rounds`), `--board-size <N>` (alias `--size`), `--pie-rule`.
 - **Reward Encoding**: Black win yields `[+1.0, -1.0]`, White win yields `[-1.0, +1.0]`.
 
 ---

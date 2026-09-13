@@ -56,15 +56,41 @@ impl std::fmt::Display for AgentId {
 /// General agent interface capable of choosing actions in an environment state.
 ///
 /// Models an active decision maker in real games, self-play arenas, or tournament drivers.
-pub trait Agent<State, Action> {
+/// The generic parameter `Delta` represents transition metadata or chance outcomes (e.g. tile spawns),
+/// defaulting to `()` for deterministic turn-based environments.
+pub trait Agent<State, Action, Delta = ()> {
     /// Human-readable name or label of the agent.
     fn name(&self) -> &str;
 
     /// Selects an action given the current environment state.
     fn select_action(&mut self, state: &State) -> Action;
+
+    /// Selects an action given the current environment state and the sequence
+    /// of `(Action, Delta)` transitions that took place in the environment
+    /// since this agent's previous decision.
+    ///
+    /// The default implementation forwards directly to [`Agent::select_action`].
+    /// Stateful agents (e.g. MCTS agents with persistent search trees) can override
+    /// this method to advance their tree root and call `promote_subtree`.
+    #[inline]
+    fn select_action_with_history(
+        &mut self,
+        state: &State,
+        _history: &[(Action, Delta)],
+    ) -> Action {
+        self.select_action(state)
+    }
+
+    /// Resets persistent search trees, transposition tables, or history at the start of a match.
+    ///
+    /// The default implementation is a no-op.
+    #[inline]
+    fn reset(&mut self) {}
 }
 
-impl<State, Action, A: Agent<State, Action> + ?Sized> Agent<State, Action> for Box<A> {
+impl<State, Action, Delta, A: Agent<State, Action, Delta> + ?Sized> Agent<State, Action, Delta>
+    for Box<A>
+{
     #[inline]
     fn name(&self) -> &str {
         (**self).name()
@@ -73,5 +99,39 @@ impl<State, Action, A: Agent<State, Action> + ?Sized> Agent<State, Action> for B
     #[inline]
     fn select_action(&mut self, state: &State) -> Action {
         (**self).select_action(state)
+    }
+
+    #[inline]
+    fn select_action_with_history(&mut self, state: &State, history: &[(Action, Delta)]) -> Action {
+        (**self).select_action_with_history(state, history)
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        (**self).reset();
+    }
+}
+
+impl<State, Action, Delta, A: Agent<State, Action, Delta> + ?Sized> Agent<State, Action, Delta>
+    for &mut A
+{
+    #[inline]
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    #[inline]
+    fn select_action(&mut self, state: &State) -> Action {
+        (**self).select_action(state)
+    }
+
+    #[inline]
+    fn select_action_with_history(&mut self, state: &State, history: &[(Action, Delta)]) -> Action {
+        (**self).select_action_with_history(state, history)
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        (**self).reset();
     }
 }

@@ -1,5 +1,6 @@
 //! Standardized benchmark tournament arena evaluating 2048 agents across identical seeded boards.
 
+use mcts_engine::arena::MatchDriver;
 use mcts_traits::Agent;
 use std::env;
 use std::time::Instant;
@@ -77,7 +78,7 @@ fn print_usage() {
     println!("                     Examples: 'heuristic,mcts:200,random', 'mcts-rollout:100:5'");
     println!("                     (default: 'heuristic,mcts:100,random')");
     println!(
-        "  --boards <N>       Number of standardized boards to evaluate per agent (default: 10)"
+        "  --games <N> (or --boards, --rounds)\n                     Number of standardized boards to evaluate per agent (default: 10)"
     );
     println!("  --seed <S>         Base random seed for board reproducibility (default: 42)");
     println!("  --verbose          Print per-board match progress");
@@ -103,12 +104,12 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            "--boards" => {
+            "--games" | "--boards" | "--rounds" => {
                 if i + 1 < args.len() {
-                    num_boards = args[i + 1].parse().expect("Invalid --boards number");
+                    num_boards = args[i + 1].parse().expect("Invalid --games number");
                     i += 2;
                 } else {
-                    eprintln!("Error: --boards requires a value");
+                    eprintln!("Error: --games requires a value");
                     std::process::exit(1);
                 }
             }
@@ -179,20 +180,15 @@ fn main() {
         let mut stats = AgentStats::new(agent_name);
         let agent_start = Instant::now();
 
+        let driver = MatchDriver::new();
         for b in 0..num_boards {
             let board_seed = base_seed.wrapping_add((b as u64).wrapping_mul(10007));
             let world = Tzf8World::with_seed(board_seed);
-            let mut state: Tzf8State = Tzf8World::initial_with_seed(board_seed);
+            let state: Tzf8State = Tzf8World::initial_with_seed(board_seed);
 
-            let mut moves = 0;
-            while !world.is_terminal(&state) {
-                let action = agent.select_action(&state);
-                let outcome = world.step_action(&mut state, action);
-                moves += 1;
-                if outcome.terminated {
-                    break;
-                }
-            }
+            let match_result = driver.play_single(&world, &mut *agent, Some(state));
+            let state = match_result.final_state;
+            let moves = match_result.total_moves;
 
             let max_t = state.max_tile();
             let score = state.score;

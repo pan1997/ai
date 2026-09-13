@@ -93,7 +93,7 @@ Two distinct architectural routes resolve this:
 
 ### Route A: Coordinated Round Scheduler (`RoundScheduler`)
 
-The scheduler explicitly coordinates descent between Decision Nodes ($D_t$) and Afterstate Nodes ($W_t$) in the tree:
+The scheduler explicitly coordinates descent between Decision Nodes ($D_t$) and Afterstate Nodes ($W_t$) in the tree, retaining explicit nodes for both players while maintaining the Single-Perspective Leaf Evaluation Invariant:
 
 ```
 Traversal Step:
@@ -105,7 +105,7 @@ Traversal Step:
   2. At Afterstate Node W_t (agent != primary_player):
      - Descend through all intermediate opponents while !world.terminal(&state) && world.current_player(&state) != primary_player.
      - Expand opponent candidate moves and initialize priors via TreeOpponentPolicy::init_afterstate_priors.
-     - Select opponent edge o via TreeOpponentPolicy::select_afterstate_child.
+     - Select opponent edge o via TreeOpponentPolicy::select_afterstate_child (e.g. AdversarialOpponent using PUCT).
      - Step dynamics: world.step_action(&mut state, o).
      - If terminal: mark terminal and break traversal.
   3. Returns to Phase 1 (current_player == primary_player):
@@ -115,14 +115,27 @@ Traversal Step:
 #### Trait Abstraction in `mcts-engine::opponent`:
 
 ```rust
-pub trait TreeOpponentPolicy<Action, Reward, Stats: EdgeStatsStore, State> {
-    fn init_afterstate_priors(&self, tree: &mut TreeStore<Action, Reward, Stats>, node: NodeId, state: &State);
-    fn select_afterstate_child(&self, tree: &TreeStore<Action, Reward, Stats>, node: NodeId, state: &State) -> Option<EdgeId>;
+pub trait TreeOpponentPolicy<Action, Reward, Stats: EdgeStatsStore, State, StepDelta = ()> {
+    /// Populates priors on outgoing edges when an afterstate node is first expanded.
+    fn init_afterstate_priors(
+        &self,
+        tree: &mut TreeStore<Action, Reward, Stats, StepDelta>,
+        node: NodeId,
+        state: &State,
+    );
+
+    /// Selects an edge out of an afterstate node during simulation traversal.
+    fn select_afterstate_child(
+        &self,
+        tree: &TreeStore<Action, Reward, Stats, StepDelta>,
+        node: NodeId,
+        state: &State,
+    ) -> Option<EdgeId>;
 }
 ```
 
 Built-in policies:
-- **`AdversarialOpponent<S>`**: Adversarial MCTS opponent that searches within the same tree using `S: SelectionPolicy`.
+- **`AdversarialOpponent<S>`**: Adversarial MCTS opponent that searches within the same tree using `S: SelectionPolicy` (e.g. `MultiAgentPuctSelection`), maximizing the opponent's return $Q_{\text{opp}}$.
 - **`RandomOpponent`**: Uniformly samples random legal child edges.
 - **`HeuristicOpponent<P>`**: Adapts any state-based `P: OpponentPolicy<State, Action>` into tree-based search.
 
@@ -146,39 +159,113 @@ pub struct RoundBasedDynamics<W, P> {
 
 ---
 
-## 5. Spectrum of Pluggable Opponent Policies
+## 5. Unifying Ply-by-Ply Subtree Promotion with Round-Based Dynamics
 
-| Opponent Policy $\pi_{\text{opp}}$ | Route A (`TreeOpponentPolicy`) | Route B (`OpponentPolicy`) | Best Used For |
-| :--- | :--- | :--- | :--- |
-| **`AdversarialOpponent`** | `AdversarialOpponent::new(MultiAgentPuctSelection)` | N/A | Adversarial self-play planning in the same tree; builds minimax visit counts. |
-| **`RandomOpponent`** | `mcts_engine::RandomOpponent` | `connect4::RandomOpponent` | Stochastic opponents or expectation planning against random baselines. |
-| **`Tactical / Heuristic`** | `HeuristicOpponent::new(TacticalOpponent)` | `RoundBasedDynamics(..., TacticalOpponent)` | Exploiting predictable tactical heuristic responses. |
+A central challenge in MCTS engineering is bridging the gap between **subtree reuse** and **evaluator single-perspective**:
+
+### 5.1 The Subtree Promotion Dilemma in Absorbed Macro-Dynamics (Route B)
+In Route B, the search tree contains nodes only for the primary player. When the agent plays $a_0$, and the opponent replies with $o_0$ in the real game:
+- The opponent's move was absorbed inside `step()` and stored in `StepDelta`.
+- Because $o_0$ did not have an explicit outgoing edge or child node in the tree, promoting the subtree via [`TreeStore::promote_subtree`](../mcts-engine/src/tree_store.rs) is obstructed: the tree has no intermediate node for the opponent's ply to preserve the child subtree under $o_0$.
+
+### 5.2 How Adversarial Afterstate MCTS (Route A) Resolves the Dilemma
+In Route A, the search tree maintains explicit nodes for **both** players, but coordinates the search so that:
+1. **Central Selection Policy**: Operates on Decision Nodes $D_t$ ($P_0$'s turn).
+2. **Adversarial Tree Opponent Policy**: Operates on Afterstate Nodes $W_t$ ($P_1$'s turn) using tree-based PUCT/UCT.
+3. **Evaluator Invocation**: Happens **exclusively** at Decision Nodes $D_t$.
+
+```
+[Decision Node D_0]  (Root Agent / P0 to act)
+        │
+        ├── Action a_0  (selected by primary SelectionPolicy)
+        ▼
+[Afterstate Node W_0] (Opponent / P1 to act)
+        │
+        ├── Action o_0  (selected by AdversarialTreeOpponent)
+        ▼
+[Decision Node D_1]  (Root Agent / P0 to act again!)
+        │
+        └── Model::evaluate() called ONLY here!
+```
+
+#### Why Subtree Promotion Works Here:
+When $a_0$ is played and the real opponent replies with $o_0$ in the real game:
+- The agent finds edge $a_0$ from $D_0 \to W_0$.
+- Under $W_0$, the agent finds the edge matching $o_0 \to D_1$.
+- The agent simply calls `tree.promote_subtree(D_1)`, retaining all simulations and statistics already explored under $D_1$!
+- **Zero Evaluator Dilution**: The neural network or heuristic model never evaluated $W_0$, so it never needed to learn the opponent's perspective.
+
+### 5.3 Match Driver & Transition History Interface
+To enable tree reuse without storing the game `State` inside the agent, the match runner provides the sequence of transitions that occurred since the agent's last decision:
+
+```rust
+pub trait Agent<State, Action, Delta = ()> {
+    fn name(&self) -> &str;
+    fn select_action(&mut self, state: &State) -> Action;
+
+    /// Stateful decision entry point provided with transitions since last decision.
+    /// Default implementation delegates to `select_action(state)`.
+    fn select_action_with_history(
+        &mut self,
+        state: &State,
+        _history: &[(Action, Delta)],
+    ) -> Action {
+        self.select_action(state)
+    }
+
+    /// Resets persistent search trees or history between games.
+    fn reset(&mut self) {}
+}
+```
+
+The tree descent loop is universal across all paradigms:
+- **Round-Based Macro (Route B)**: `history` has 1 item: `[(my_action, opp_delta)]`.
+- **Adversarial Afterstate (Route A) / Alternating**: `history` has 2 items: `[(my_action, ()), (opp_action, ())]` (or 4 in 4-player Blokus).
+- **Stochastic 2048**: `history` has 1 item: `[(my_slide, tile_spawn_delta)]`.
+
+The agent descends through `history`, calls `tree.promote_subtree(new_root)`, and continues search seamlessly.
 
 ---
 
-## 6. Comprehensive Trade-Off Evaluation
+## 6. Architectural Paradigm Comparison
 
-### 6.1 The Advantages
+| Dimension | Standard Alternating (`TurnBasedDynamics`) | Absorbed Macro Dynamics (Route B) | Adversarial Afterstate (Route A) |
+|---|---|---|---|
+| **Tree Nodes** | Explicit for all players ($P_0, P_1$) | Primary agent only ($P_0$) | Explicit for all players ($D_t, W_t$) |
+| **Evaluator Invariant** | Evaluates every ply (both $P_0$ and $P_1$) | **Evaluates $P_0$ only** | **Evaluates $P_0$ only** |
+| **Subtree Promotion** |  Full support (`promote_subtree`) | ❌ Obstructed (opponent in delta) |  **Full support (`promote_subtree`)** |
+| **Opponent Modeling** | Strictly Adversarial (Minimax) | Fixed Heuristic / Random | Pluggable (Adversarial, Heuristic, Random) |
+| **Search Depth Metric** | Half-moves (plies) | **Full game rounds** | **Full game rounds** |
+| **Branching per Round** | $B$ at each ply ($B + B$) | $B$ primary actions | $B_{\text{agent}} \times B_{\text{opp}}$ joint combinations |
+| **Scheduler Compatibility** | All (`Sequential`, `Batched`, `MultiGame`) | All (`Sequential`, `Batched`, `MultiGame`) | Requires `RoundScheduler` |
+
+---
+
+## 7. Comprehensive Trade-Off Evaluation
+
+### 7.1 The Advantages
 
 1. **Elimination of Evaluator Dilution**:
-   Value and policy networks only need to predict values for the primary agent. Input tensors do not need "current player" indicators or channel inversions.
-2. **Depth Compression for Forced Sequences**:
-   In tactical endgames, many moves are forced replies. Absorbing forced moves doubles the lookahead depth per tree node.
-3. **Exploitative Play Beyond Nash Equilibrium**:
-   Minimax assumes a perfect opponent and plays conservatively. If the opponent has a known blind spot (e.g. failing to detect diagonal traps), a parameterized $\pi_{\text{opp}}$ allows MCTS to find winning traps that minimax would discard as "refutable by optimal play".
+   Value and policy networks only need to predict values for the primary agent. Input tensors do not need "current player" indicators, channel inversions, or dual-headed sign logic.
+2. **Subtree Reuse with Round-Level Perspective**:
+   Combines the sample efficiency of tree reuse across game turns with the training simplicity of single-perspective value models.
+3. **Exploitative & Non-Nash Opponent Personas**:
+   By swapping the `TreeOpponentPolicy`, the agent can seamlessly transition between playing conservative Minimax against unknown grandmasters, or exploitative trap-setting against heuristic bots.
 
-### 6.2 The Risks & Pitfalls
+### 7.2 The Risks & Pitfalls
 
-1. **Model Misspecification (The Delusion Hazard)**:
-   If $\pi_{\text{opp}}$ assigns zero probability to an unorthodox move that the opponent *actually plays*, the MCTS agent will have zero tree branches prepared for that reply. Minimax remains the safest choice when the opponent's strategy is unknown.
-2. **Branching Factor in Explicit Afterstates (Route A)**:
-   If afterstates branch on all 7 opponent columns, the tree still contains $7 \times 7 = 49$ leaves per round. Explicit afterstates require candidate pruning (e.g. top-$K$ opponent moves) to achieve speedups.
-3. **Self-Play Training Symmetry**:
-   In AlphaZero self-play, both players share identical networks and update synchronously. Absorbing a static opponent policy is ideal for playing against humans or fixed agents, but complicates symmetric self-play training unless $\pi_{\text{opp}}$ is dynamically tied to the agent's current network checkpoint.
+1. **Multi-Ply Expansion Overhead per Iteration**:
+   In standard alternating MCTS, 1 simulation iteration = 1 ply traversed + 1 leaf expanded. In Route A, 1 simulation iteration traverses through at least 2 plies ($D_0 \to W_0 \to D_1$) before reaching a leaf evaluation.
+2. **Branching Factor Multiplier ($B_1 \times B_2$)**:
+   If afterstates expand all opponent candidate moves, the tree contains $B_1 \times B_2$ nodes per round (e.g. $7 \times 7 = 49$ in Connect 4). Without policy priors or candidate pruning on $W_t$, visit counts can become diluted across unpromising opponent responses.
+3. **Mid-Round Terminal Trajectories**:
+   If the primary agent's action $a_0$ immediately wins the game, the trajectory ends at $W_0$ without an opponent reply. The scheduler must short-circuit and back up immediately.
+4. **Virtual Loss across Multi-Edge Paths (Batched GPU Search)**:
+   In `BatchedScheduler`, virtual loss must be applied and removed across all edges in the multi-ply path ($a_0$ and $o_0$) to properly diversify parallel simulation trajectories.
 
 ---
 
-## 7. Implementation & Integration Status
+## 8. Implementation & Integration Status
 
 1. **`mcts-traits`**:
    - `StepOutcome<Reward, StepDelta>`: Emits immediate rewards, transition deltas (`StepDelta`), and termination status.

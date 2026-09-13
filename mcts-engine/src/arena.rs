@@ -3,6 +3,7 @@
 //! Provides game-agnostic round-robin tournament execution, head-to-head matrix tracking,
 //! seat-fairness accounting, and standardized ASCII standings rendering.
 
+use mcts_traits::{Agent, TurnBasedWorld};
 use std::collections::HashMap;
 
 /// Outcome of a two-player game from the perspective of Seat 0 vs Seat 1.
@@ -444,9 +445,229 @@ impl MultiPlayerTournamentStats {
     }
 }
 
+/// Detailed outcome of executing a match between agents in a turn-based world environment.
+#[derive(Debug, Clone)]
+pub struct MatchResult<State, Reward> {
+    /// Final world state at game termination.
+    pub final_state: State,
+    /// Total moves played across the match.
+    pub total_moves: usize,
+    /// Number of moves made by each seat index.
+    pub moves_per_seat: Vec<usize>,
+    /// Total wall-clock duration of the match.
+    pub duration: std::time::Duration,
+    /// Immediate terminal reward vector returned by the world at game end.
+    pub final_reward: Reward,
+    /// Convenience two-player outcome (`Seat0Wins`, `Seat1Wins`, `Draw`) if applicable.
+    pub outcome_2p: Option<GameOutcome>,
+    /// Index of the winning seat (or `None` if tied / draw).
+    pub winner_seat: Option<usize>,
+}
+
+/// Generic match driver for executing turn-based games between agents.
+///
+/// Handles:
+/// - Initializing world state and invoking [`Agent::reset`] across all participants.
+/// - Maintaining per-agent transition history queues for [`Agent::select_action_with_history`].
+/// - Enforcing turn-order arbitration via [`TurnBasedWorld::current_player`].
+/// - Timing matches and compiling comprehensive [`MatchResult`] telemetry.
+#[derive(Debug, Clone, Default)]
+pub struct MatchDriver {
+    /// Optional upper bound on total moves before aborting as a draw.
+    pub max_moves: Option<usize>,
+}
+
+impl MatchDriver {
+    /// Constructs a new `MatchDriver` without move limits.
+    pub const fn new() -> Self {
+        Self { max_moves: None }
+    }
+
+    /// Configures an upper limit on total moves.
+    pub const fn with_max_moves(mut self, max_moves: usize) -> Self {
+        self.max_moves = Some(max_moves);
+        self
+    }
+
+    /// Plays a 2-player turn-based match between two agents.
+    ///
+    /// Automatically derives the 2-player outcome (`Seat0Wins`, `Seat1Wins`, `Draw`)
+    /// by comparing `reward[0]` and `reward[1]`.
+    pub fn play_2p<W, Act>(
+        &self,
+        world: &W,
+        agent_0: &mut (dyn Agent<W::WorldState, Act> + '_),
+        agent_1: &mut (dyn Agent<W::WorldState, Act> + '_),
+        initial_state: Option<W::WorldState>,
+    ) -> MatchResult<W::WorldState, [f32; 2]>
+    where
+        W: TurnBasedWorld<Action = Act, StepReward = [f32; 2]>,
+        Act: Clone,
+    {
+        self.play_2p_with_callback(world, agent_0, agent_1, initial_state, |_, _, _| {})
+    }
+
+    /// Plays a 2-player turn-based match with a per-step callback.
+    pub fn play_2p_with_callback<W, Act, F>(
+        &self,
+        world: &W,
+        agent_0: &mut (dyn Agent<W::WorldState, Act> + '_),
+        agent_1: &mut (dyn Agent<W::WorldState, Act> + '_),
+        initial_state: Option<W::WorldState>,
+        on_step: F,
+    ) -> MatchResult<W::WorldState, [f32; 2]>
+    where
+        W: TurnBasedWorld<Action = Act, StepReward = [f32; 2]>,
+        Act: Clone,
+        F: FnMut(usize, &Act, &W::WorldState),
+    {
+        let mut agents: [&mut dyn Agent<W::WorldState, Act>; 2] = [agent_0, agent_1];
+        self.play_multi_with_callback::<W, Act, 2, F>(world, &mut agents, initial_state, on_step)
+    }
+
+    /// Plays a single-player turn-based environment (e.g. 2048) until termination.
+    pub fn play_single<W, Act>(
+        &self,
+        world: &W,
+        agent: &mut (dyn Agent<W::WorldState, Act> + '_),
+        initial_state: Option<W::WorldState>,
+    ) -> MatchResult<W::WorldState, [f32; 1]>
+    where
+        W: TurnBasedWorld<Action = Act, StepReward = [f32; 1]>,
+        Act: Clone,
+    {
+        let mut agents: [&mut dyn Agent<W::WorldState, Act>; 1] = [agent];
+        self.play_multi_with_callback::<W, Act, 1, _>(
+            world,
+            &mut agents,
+            initial_state,
+            |_, _, _| {},
+        )
+    }
+
+    /// Plays an $N$-player turn-based match across $P$ participating agents.
+    pub fn play_multi<W, Act, const P: usize>(
+        &self,
+        world: &W,
+        agents: &mut [&mut dyn Agent<W::WorldState, Act>],
+        initial_state: Option<W::WorldState>,
+    ) -> MatchResult<W::WorldState, [f32; P]>
+    where
+        W: TurnBasedWorld<Action = Act, StepReward = [f32; P]>,
+        Act: Clone,
+    {
+        self.play_multi_with_callback::<W, Act, P, _>(world, agents, initial_state, |_, _, _| {})
+    }
+
+    /// Plays an $N$-player turn-based match across $P$ participating agents with a per-step callback.
+    pub fn play_multi_with_callback<W, Act, const P: usize, F>(
+        &self,
+        world: &W,
+        agents: &mut [&mut dyn Agent<W::WorldState, Act>],
+        initial_state: Option<W::WorldState>,
+        mut on_step: F,
+    ) -> MatchResult<W::WorldState, [f32; P]>
+    where
+        W: TurnBasedWorld<Action = Act, StepReward = [f32; P]>,
+        Act: Clone,
+        F: FnMut(usize, &Act, &W::WorldState),
+    {
+        assert_eq!(
+            agents.len(),
+            P,
+            "MatchDriver::play_multi: expected {P} agents, but received {}",
+            agents.len()
+        );
+
+        for agent in agents.iter_mut() {
+            agent.reset();
+        }
+
+        let start = std::time::Instant::now();
+        let mut state = initial_state.unwrap_or_else(|| world.initial());
+        let mut moves_per_seat = vec![0; P];
+        let mut history_buffers: Vec<Vec<(Act, ())>> = (0..P).map(|_| Vec::new()).collect();
+        let mut final_reward = [0.0f32; P];
+
+        while !world.terminal(&state) {
+            let total_moves: usize = moves_per_seat.iter().sum();
+            if self.max_moves.is_some_and(|max| total_moves >= max) {
+                break;
+            }
+
+            let active_seat = world.current_player(&state);
+            assert!(
+                active_seat < P,
+                "TurnBasedWorld::current_player returned out-of-bounds seat {active_seat} (expected < {P})"
+            );
+
+            let action = agents[active_seat]
+                .select_action_with_history(&state, &history_buffers[active_seat]);
+            history_buffers[active_seat].clear();
+            moves_per_seat[active_seat] += 1;
+
+            let outcome = world.step_action(&mut state, &action);
+            final_reward = outcome.reward;
+
+            on_step(active_seat, &action, &state);
+
+            for buf in &mut history_buffers {
+                buf.push((action.clone(), ()));
+            }
+
+            if outcome.terminated {
+                break;
+            }
+        }
+
+        let total_moves: usize = moves_per_seat.iter().sum();
+        let duration = start.elapsed();
+
+        let outcome_2p = if P == 2 {
+            if final_reward[0] > final_reward[1] {
+                Some(GameOutcome::Seat0Wins)
+            } else if final_reward[1] > final_reward[0] {
+                Some(GameOutcome::Seat1Wins)
+            } else {
+                Some(GameOutcome::Draw)
+            }
+        } else {
+            None
+        };
+
+        // Determine winner seat by highest reward (if unique)
+        let mut best_score = f32::NEG_INFINITY;
+        let mut best_seat = None;
+        let mut tie = false;
+
+        for (seat, &score) in final_reward.iter().enumerate() {
+            if score > best_score {
+                best_score = score;
+                best_seat = Some(seat);
+                tie = false;
+            } else if (score - best_score).abs() < f32::EPSILON {
+                tie = true;
+            }
+        }
+
+        let winner_seat = if tie { None } else { best_seat };
+
+        MatchResult {
+            final_state: state,
+            total_moves,
+            moves_per_seat,
+            duration,
+            final_reward,
+            outcome_2p,
+            winner_seat,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mcts_traits::World;
 
     #[test]
     fn test_disambiguate_names() {
@@ -523,5 +744,161 @@ mod tests {
 
         assert_eq!(stats[3].total_wins, 0);
         assert_eq!(stats[3].seat_counts[3], 1);
+    }
+
+    struct Mock2PWorld;
+
+    impl mcts_traits::World for Mock2PWorld {
+        type WorldState = (usize, usize); // (current_player, total)
+        type Action = usize;
+        type Observation = (usize, usize);
+
+        fn n_players(&self) -> usize {
+            2
+        }
+
+        fn initial(&self) -> Self::WorldState {
+            (0, 0)
+        }
+
+        fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
+            *ws
+        }
+
+        fn actions(&self, _ws: &Self::WorldState, _player: usize, out: &mut Vec<Self::Action>) {
+            out.clear();
+            out.push(1);
+            out.push(2);
+        }
+
+        fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
+            let act = joint[ws.0];
+            let outcome = self.step_action(ws, &act);
+            (outcome.reward.to_vec(), outcome.terminated)
+        }
+
+        fn terminal(&self, ws: &Self::WorldState) -> bool {
+            ws.1 >= 6
+        }
+    }
+
+    impl TurnBasedWorld for Mock2PWorld {
+        type StepReward = [f32; 2];
+
+        fn current_player(&self, ws: &Self::WorldState) -> usize {
+            ws.0
+        }
+
+        fn step_action(
+            &self,
+            ws: &mut Self::WorldState,
+            action: &Self::Action,
+        ) -> mcts_traits::StepOutcome<Self::StepReward> {
+            ws.1 += action;
+            let active = ws.0;
+            let terminated = self.terminal(ws);
+            if terminated {
+                let reward = if active == 0 {
+                    [1.0, -1.0]
+                } else {
+                    [-1.0, 1.0]
+                };
+                mcts_traits::StepOutcome::new(reward, true)
+            } else {
+                ws.0 = 1 - ws.0;
+                mcts_traits::StepOutcome::new([0.0, 0.0], false)
+            }
+        }
+    }
+
+    struct HistoryTrackingAgent {
+        name: String,
+        action_to_play: usize,
+        history_seen: Vec<(usize, ())>,
+        resets: usize,
+    }
+
+    impl Agent<(usize, usize), usize> for HistoryTrackingAgent {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn select_action(&mut self, _state: &(usize, usize)) -> usize {
+            self.action_to_play
+        }
+
+        fn select_action_with_history(
+            &mut self,
+            state: &(usize, usize),
+            history: &[(usize, ())],
+        ) -> usize {
+            self.history_seen.extend_from_slice(history);
+            self.select_action(state)
+        }
+
+        fn reset(&mut self) {
+            self.resets += 1;
+            self.history_seen.clear();
+        }
+    }
+
+    #[test]
+    fn test_match_driver_2p() {
+        let world = Mock2PWorld;
+        let mut p0 = HistoryTrackingAgent {
+            name: "P0".to_string(),
+            action_to_play: 2,
+            history_seen: Vec::new(),
+            resets: 0,
+        };
+        let mut p1 = HistoryTrackingAgent {
+            name: "P1".to_string(),
+            action_to_play: 1,
+            history_seen: Vec::new(),
+            resets: 0,
+        };
+
+        let driver = MatchDriver::new();
+        let result = driver.play_2p(&world, &mut p0, &mut p1, None);
+
+        // Moves sequence:
+        // Turn 1 (P0): +2 -> total 2, p0 history []
+        // Turn 2 (P1): +1 -> total 3, p1 history [(2, ())]
+        // Turn 3 (P0): +2 -> total 5, p0 history [(2, ()), (1, ())]
+        // Turn 4 (P1): +1 -> total 6 -> terminal! Winner is P1
+        assert_eq!(result.total_moves, 4);
+        assert_eq!(result.moves_per_seat, vec![2, 2]);
+        assert_eq!(result.final_state, (1, 6));
+        assert_eq!(result.final_reward, [-1.0, 1.0]);
+        assert_eq!(result.outcome_2p, Some(GameOutcome::Seat1Wins));
+        assert_eq!(result.winner_seat, Some(1));
+        assert_eq!(p0.resets, 1);
+        assert_eq!(p1.resets, 1);
+        assert!(!p0.history_seen.is_empty());
+        assert!(!p1.history_seen.is_empty());
+    }
+
+    #[test]
+    fn test_match_driver_max_moves() {
+        let world = Mock2PWorld;
+        let mut p0 = HistoryTrackingAgent {
+            name: "P0".to_string(),
+            action_to_play: 1,
+            history_seen: Vec::new(),
+            resets: 0,
+        };
+        let mut p1 = HistoryTrackingAgent {
+            name: "P1".to_string(),
+            action_to_play: 1,
+            history_seen: Vec::new(),
+            resets: 0,
+        };
+
+        // Terminate early after 2 moves
+        let driver = MatchDriver::new().with_max_moves(2);
+        let result = driver.play_2p(&world, &mut p0, &mut p1, None);
+
+        assert_eq!(result.total_moves, 2);
+        assert_eq!(result.outcome_2p, Some(GameOutcome::Draw));
     }
 }

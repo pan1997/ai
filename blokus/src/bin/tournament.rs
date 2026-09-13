@@ -4,8 +4,9 @@
 //! and randomized seating to eliminate turn-order and color bias.
 
 use blokus::agent::{Agent, BoxAgent, HeuristicAgent, MctsAgent, RandomAgent};
-use blokus::game::{BlokusState, Player};
-use mcts_engine::arena::{MultiPlayerTournamentStats, disambiguate_names};
+use blokus::game::{BlokusAction, BlokusState, Player};
+use blokus::world::BlokusWorld;
+use mcts_engine::arena::{MatchDriver, MultiPlayerTournamentStats, disambiguate_names};
 use rand::seq::SliceRandom;
 use std::env;
 use std::time::Instant;
@@ -216,7 +217,8 @@ USAGE:
     blokus-tournament [OPTIONS]
 
 OPTIONS:
-    --players <SPECS>  Comma-separated list of agents to compete.
+    --agents <SPECS> (or --players)
+                       Comma-separated list of agents to compete.
                        Supported agent specs:
                          'mcts:<iters>'                            MCTS with static area heuristic
                          'mcts-hu:<iters>'                         MCTS with Heuristic Utility priors (MCTS-HU)
@@ -226,16 +228,19 @@ OPTIONS:
                          'heuristic' (or 'heur')                   Greedy 1-ply corner/pentomino heuristic
                          'random' (or 'rand')                      Uniform random legal moves
                        Examples:
-                         --players heuristic,mcts-hu:1000,mcts-hr:500:2:15,mcts:1000   (4-player Classic)
-                         --players mcts-hu:1000,heuristic                             (2-player Duo)
+                         --agents heuristic,mcts-hu:1000,mcts-hr:500:2:15,mcts:1000   (4-player Classic)
+                         --agents mcts-hu:1000,heuristic                             (2-player Duo)
 
-    --player <SPEC>    Repeatable flag to add an individual agent.
-                       Example: --player mcts-hu:1000 --player mcts-hr:500:2 --player heuristic --player random
+    --agent <SPEC> (or --player)
+                       Repeatable flag to add an individual agent.
+                       Example: --agent mcts-hu:1000 --agent mcts-hr:500:2 --agent heuristic --agent random
 
-    --mode <MODE>      Explicit variant: 'classic' (20x20, 4P) or 'duo' (14x14, 2P).
+    --board-size <N> (or --size, --mode)
+                       Explicit variant: '14'/'duo' (14x14, 2P) or '20'/'classic' (20x20, 4P).
                        Inferred automatically if 2 or 4 players are given.
 
-    --games <N>        Number of tournament games to simulate [default: 10]
+    --games <N> (or --rounds)
+                       Number of tournament games to simulate [default: 10]
     --iters <N>        Default MCTS iterations if omitted from spec [default: 500]
     -h, --help         Print help information
 "#
@@ -268,8 +273,6 @@ fn run_tournament<const B: usize, const P: usize>(
     let start_time = Instant::now();
 
     for game_idx in 1..=num_games {
-        let mut state = BlokusState::<B, P>::new();
-
         // Randomly shuffle seats to eliminate turn order / color advantage
         let mut seat_to_agent: Vec<usize> = (0..P).collect();
         seat_to_agent.shuffle(&mut rng);
@@ -280,14 +283,15 @@ fn run_tournament<const B: usize, const P: usize>(
             .map(|&agent_idx| specs[agent_idx].instantiate(&names[agent_idx]))
             .collect();
 
-        // Play game until terminal
-        while !state.is_terminal() {
-            let active_seat = state.current_player as usize;
-            let action = active_players[active_seat].select_action(&state);
-            if state.apply_action(&action).is_err() {
-                break;
-            }
-        }
+        let world = BlokusWorld::<B, P>::new();
+        let driver = MatchDriver::new();
+        let mut agent_refs: Vec<&mut dyn Agent<BlokusState<B, P>, BlokusAction>> = active_players
+            .iter_mut()
+            .map(|a| &mut **a as &mut dyn Agent<BlokusState<B, P>, BlokusAction>)
+            .collect();
+
+        let match_result = driver.play_multi::<_, _, P>(&world, &mut agent_refs, None);
+        let state = match_result.final_state;
 
         // Compute scores and record match statistics
         let scores: Vec<i32> = (0..P).map(|s| state.score(s)).collect();
@@ -343,13 +347,18 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--mode" => {
+            "--mode" | "--board-size" | "--size" => {
                 if i + 1 < args.len() {
-                    mode_arg = Some(args[i + 1].to_lowercase());
+                    let val = args[i + 1].to_lowercase();
+                    mode_arg = match val.as_str() {
+                        "14" | "duo" => Some("duo".to_string()),
+                        "20" | "classic" => Some("classic".to_string()),
+                        _ => Some(val),
+                    };
                     i += 1;
                 }
             }
-            "--games" => {
+            "--games" | "--rounds" => {
                 if i + 1 < args.len() {
                     games = args[i + 1].parse().unwrap_or(10);
                     i += 1;
@@ -361,7 +370,7 @@ fn main() {
                     i += 1;
                 }
             }
-            "--players" => {
+            "--players" | "--agents" => {
                 if i + 1 < args.len() {
                     let raw = &args[i + 1];
                     for item in raw.split(',') {
@@ -370,7 +379,7 @@ fn main() {
                             match AgentSpec::parse(trimmed, default_iters) {
                                 Ok(spec) => player_specs.push(spec),
                                 Err(err) => {
-                                    eprintln!("Error parsing --players: {err}");
+                                    eprintln!("Error parsing agent spec: {err}");
                                     std::process::exit(1);
                                 }
                             }
@@ -379,13 +388,13 @@ fn main() {
                     i += 1;
                 }
             }
-            "--player" => {
+            "--player" | "--agent" => {
                 if i + 1 < args.len() {
                     let raw = &args[i + 1];
                     match AgentSpec::parse(raw, default_iters) {
                         Ok(spec) => player_specs.push(spec),
                         Err(err) => {
-                            eprintln!("Error parsing --player: {err}");
+                            eprintln!("Error parsing agent spec: {err}");
                             std::process::exit(1);
                         }
                     }

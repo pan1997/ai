@@ -1,4 +1,4 @@
-use crate::agent::AgentId;
+use crate::agent::{Agent, AgentId};
 use crate::dynamics::{
     AgentDynamics, OpponentPolicy, RoundBasedDynamics, StepOutcome, Transition, TurnBasedDynamics,
     default_step_batch,
@@ -289,4 +289,69 @@ fn test_round_based_dynamics_adapter() {
     assert!(outcome2.terminated);
     assert_eq!(outcome2.delta, Some(10));
     assert_eq!(outcome2.reward, [1.0, -1.0]);
+}
+
+struct TestMockAgent {
+    reset_count: usize,
+    history_seen: Vec<(usize, u32)>,
+}
+
+impl Agent<(usize, usize), usize, u32> for TestMockAgent {
+    fn name(&self) -> &str {
+        "TestMockAgent"
+    }
+
+    fn select_action(&mut self, state: &(usize, usize)) -> usize {
+        state.0 + state.1
+    }
+
+    fn select_action_with_history(
+        &mut self,
+        state: &(usize, usize),
+        history: &[(usize, u32)],
+    ) -> usize {
+        self.history_seen.extend_from_slice(history);
+        self.select_action(state)
+    }
+
+    fn reset(&mut self) {
+        self.reset_count += 1;
+        self.history_seen.clear();
+    }
+}
+
+#[test]
+fn test_agent_trait_history_and_lifecycle() {
+    let mut agent = TestMockAgent {
+        reset_count: 0,
+        history_seen: Vec::new(),
+    };
+
+    assert_eq!(agent.name(), "TestMockAgent");
+    assert_eq!(agent.select_action(&(2, 3)), 5);
+
+    agent.select_action_with_history(&(1, 1), &[(10, 100), (20, 200)]);
+    assert_eq!(agent.history_seen, vec![(10, 100), (20, 200)]);
+
+    agent.reset();
+    assert_eq!(agent.reset_count, 1);
+    assert!(agent.history_seen.is_empty());
+
+    // Test Box<dyn Agent> forwarding
+    let mut boxed: Box<dyn Agent<(usize, usize), usize, u32>> = Box::new(agent);
+    assert_eq!(boxed.name(), "TestMockAgent");
+    assert_eq!(boxed.select_action(&(4, 4)), 8);
+    boxed.select_action_with_history(&(2, 2), &[(5, 50)]);
+    boxed.reset();
+
+    // Test &mut dyn Agent forwarding
+    let mut boxed2: Box<dyn Agent<(usize, usize), usize, u32>> = Box::new(TestMockAgent {
+        reset_count: 0,
+        history_seen: Vec::new(),
+    });
+    let ref_agent: &mut dyn Agent<(usize, usize), usize, u32> = &mut *boxed2;
+    assert_eq!(ref_agent.name(), "TestMockAgent");
+    assert_eq!(ref_agent.select_action(&(1, 2)), 3);
+    ref_agent.select_action_with_history(&(0, 0), &[(1, 2)]);
+    ref_agent.reset();
 }
