@@ -82,15 +82,15 @@ We partition the system into an **Asynchronous Actor-Learner Pattern**:
 To adhere strictly to **`AGENTS.md §1 & §2`**, crate dependencies must remain rigorously decoupled:
 
 ```
-mcts-traits/  --> Zero-dependency traits and interfaces (abstractions only)
-mcts-engine/  --> Core Structure-of-Arrays (SoA) engine, selection, backup, and schedulers
-mcts-envs/    --> Reference environments, benchmark games, and heuristic/rollout evaluators
-connect4/     --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
-blokus/       --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents
-tzf8/         --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents
-hex/          --> Dedicated Hex game engine, DSU connectivity tracking, MCTS agents
-mcts-onnx/    --> [NEW] ONNX Runtime (ort) inference client, dynamic micro-batcher,
-              --> model sync watcher, and binary trajectory spooler
+mcts-traits/            --> Zero-dependency traits and interfaces (abstractions only)
+mcts-engine/            --> Core Structure-of-Arrays (SoA) engine, selection, backup, and schedulers
+mcts-envs/              --> Reference environments, benchmark games, and heuristic/rollout evaluators
+environments/connect4/  --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
+environments/blokus/    --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents
+environments/tzf8/      --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents
+environments/hex/       --> Dedicated Hex game engine, DSU connectivity tracking, MCTS agents
+mcts-onnx/              --> [NEW] ONNX Runtime (ort) inference client, dynamic micro-batcher,
+                        --> model sync watcher, and binary trajectory spooler
 ```
 
 ### Dependency Invariants

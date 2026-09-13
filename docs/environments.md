@@ -8,7 +8,7 @@ The `mcts-envs` crate contains reference game environments and baseline heuristi
 
 ### 1.1 Connect 4 (`Connect4World<R, C>` & `TurnBasedDynamics<Connect4World<R, C>>`)
 
-Implemented in [`connect4`](file:///home/pankaj/Projects/ai/connect4).
+Implemented in [`connect4`](file:///home/pankaj/Projects/ai/environments/connect4).
 
 - **Type**: 2-Player Zero-Sum, Turn-Based, Perfect Information.
 - **Board**: Parametric grid of size $R \times C$ (default: $6 \times 7$; CLI utilities support `--board <RxC>` with options `6x7`, `7x8`, `7x9`, `8x8`, `11x15`, `11x19`).
@@ -30,7 +30,7 @@ Implemented in [`connect4`](file:///home/pankaj/Projects/ai/connect4).
 
 ### 1.2 Hex (`hex` Crate)
 
-Implemented in [`hex`](file:///home/pankaj/Projects/ai/hex) (with backwards-compatible re-exports in [`mcts-envs/src/hex.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/hex.rs)).
+Implemented in [`hex`](file:///home/pankaj/Projects/ai/environments/hex) (with backwards-compatible re-exports in [`mcts-envs/src/hex.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/hex.rs)).
 
 - **Type**: 2-Player Zero-Sum, Turn-Based, Perfect Information, Deterministic (No Draws by Hex Theorem).
 - **Board**: Rhombus of hexagons with parametric dimension $N \times N$ (international tournament standard: $11 \times 11$).
@@ -58,7 +58,7 @@ Implemented in [`hex`](file:///home/pankaj/Projects/ai/hex) (with backwards-comp
 
 ### 1.3 2048 / Tzf8 (`tzf8` Crate)
 
-Implemented in [`tzf8`](file:///home/pankaj/Projects/ai/tzf8) (with a lightweight reference version in [`mcts-envs/src/tzf8.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/tzf8.rs)).
+Implemented in [`tzf8`](file:///home/pankaj/Projects/ai/environments/tzf8) (with a lightweight reference version in [`mcts-envs/src/tzf8.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/tzf8.rs)).
 
 - **Type**: Single-Player, Stochastic MDP.
 - **Board Architecture**: Highly optimized 64-bit bitboard (`u64`) where each of the 16 cells occupies a 4-bit nibble encoding powers of two ($0 \implies 0, 1 \implies 2, 2 \implies 4, \dots, 11 \implies 2048$).
@@ -103,7 +103,7 @@ Implemented in [`mcts-envs/src/kuhn_poker.rs`](file:///home/pankaj/Projects/ai/m
 
 ### 1.5 Blokus Classic & Duo (`BlokusWorld<B, P>` & `TurnBasedDynamics<BlokusWorld<B, P>>`)
 
-Implemented in [`blokus`](file:///home/pankaj/Projects/ai/blokus).
+Implemented in [`blokus`](file:///home/pankaj/Projects/ai/environments/blokus).
 
 - **Type**: Multi-Agent (2 or 4 Players), Perfect Information, Sequential Placement.
 - **Board**:
@@ -118,6 +118,42 @@ Implemented in [`blokus`](file:///home/pankaj/Projects/ai/blokus).
   - `World`: Full $P$-player match referee with simultaneous joint-action interface and rank rewards.
   - `TurnBasedWorld`: In-place single-action transition returning normalized rank reward vector $\mathbf{r} \in [-1.0, 1.0]^P$ summing to $0.0$.
   - `TurnBasedDynamics<BlokusWorld>`: Universal planning dynamics powering `MctsAgent`.
+
+---
+
+### 1.6 Sequence (`sequence` Crate)
+
+Implemented in [`environments/sequence`](file:///home/pankaj/Projects/ai/environments/sequence).
+
+- **Type**: 2 to 6 Players, 2 or 3 Teams, Imperfect Information, Stochastic Draw Deck, Sequential Board-and-Card Strategy.
+- **Board**: $10 \times 10$ matrix of 100 cells featuring 4 wild corners and 96 card spaces (each of the 48 non-Jack playing cards appears exactly twice).
+- **Deck**: Double standard French deck (104 cards).
+- **Special Cards**:
+  - `Two-Eyed Jacks` ($J\clubsuit, J\diamondsuit$): Wildcards allowing placement on any unoccupied non-corner space.
+  - `One-Eyed Jacks` ($J\spadesuit, J\heartsuit$): Anti-wild removal allowing removing any opponent token that is not part of a completed (locked) sequence.
+- **Sequence Rules**:
+  - 5 connected tokens horizontally, vertically, or diagonally.
+  - Corner spaces are wild and can be used by all teams simultaneously.
+  - Double sequences: 9 chips in a continuous straight line count as 2 sequences (sharing chip 5).
+  - Intersection limit: two sequences of the same team may share at most 1 non-corner chip.
+  - Dead cards: cards whose two board spaces are both occupied can be turned in for a fresh draw.
+- **Traits Implemented**:
+  - `World` & `TurnBasedWorld`: External referee managing hidden hands, face-down draw deck, and zero-sum team reward vectors ($[+1.0, -1.0]$ for 2 teams, $[+1.0, -0.5, -0.5]$ for 3 teams).
+  - `SequenceObservation`: Filtered player-specific perspective masking hidden cards and deck order.
+  - `TurnBasedDynamics<SequenceWorld<P>>`: Internal search planning dynamics.
+  - `RoundBasedDynamics<SequenceWorld<P>, Pol>`: Macro round dynamics absorbing opponent policy models.
+- **Determinization**:
+  - `determinize_state`: Pools all unseen cards ($104 - |\text{hand}| - |\text{discards}|$), shuffles, and deals hypothetical hands and draw deck, preserving exact card counts.
+- **Agents**:
+  - `IsMctsAgent`: Information Set MCTS generating $D$ root determinizations, running $I/D$ iterations per determinization, and aggregating visit counts.
+  - `OpponentModelMctsAgent`: Macro MCTS combining root determinizations with explicit opponent policies (`macro-heuristic`, `macro-random`).
+  - `MctsAgent`: Standard perfect-information MCTS.
+  - `HeuristicAgent`: 1-ply greedy threat and sequence completion agent.
+  - `RandomAgent`: Uniform random legal actions.
+  - `HumanAgent`: Interactive CLI player with card/board rendering.
+- **CLI Utilities**:
+  - `sequence-play`: Interactive game supporting 2 to 6 players, team play, and AI matchups (`--players`, `--teams`, `--mode`, `--iters`).
+  - `sequence-tournament`: Round-robin tournament arena between diverse agents (`--agents`, `--games`, `--p1`, `--p2`).
 
 ---
 

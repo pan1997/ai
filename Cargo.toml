@@ -4,10 +4,11 @@ members = [
     "mcts-traits",
     "mcts-engine",
     "mcts-envs",
-    "connect4",
-    "blokus",
-    "tzf8",
-    "hex",
+    "environments/connect4",
+    "environments/blokus",
+    "environments/tzf8",
+    "environments/hex",
+    "environments/sequence",
 ]
 
 [workspace.package]
@@ -20,10 +21,11 @@ license = "MIT OR Apache-2.0"
 mcts-traits = { path = "mcts-traits" }
 mcts-engine = { path = "mcts-engine" }
 mcts-envs = { path = "mcts-envs" }
-connect4 = { path = "connect4" }
-blokus = { path = "blokus" }
-tzf8 = { path = "tzf8" }
-hex = { path = "hex" }
+connect4 = { path = "environments/connect4" }
+blokus = { path = "environments/blokus" }
+tzf8 = { path = "environments/tzf8" }
+hex = { path = "environments/hex" }
+sequence = { path = "environments/sequence" }
 rand = "0.8"
 rand_distr = "0.4"
 

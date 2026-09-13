@@ -9,20 +9,21 @@ This document provides operational instructions, architectural invariants, and d
 This repository is a high-performance, zero-allocation Monte Carlo Tree Search (MCTS) toolkit partitioned into decoupled crates:
 
 ```
-mcts-traits/  --> Zero-dependency traits and interfaces (abstractions only)
-mcts-engine/  --> Core Structure-of-Arrays (SoA) engine, selection, backup, and schedulers
-mcts-envs/    --> Reference environments, benchmark games, and heuristic/rollout evaluators
-connect4/     --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
-blokus/       --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents, and CLI players
-tzf8/         --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents, and CLI players
-hex/          --> Dedicated Hex game engine, DSU connectivity tracking, MCTS agents, and CLI players
+mcts-traits/            --> Zero-dependency traits and interfaces (abstractions only)
+mcts-engine/            --> Core Structure-of-Arrays (SoA) engine, selection, backup, and schedulers
+mcts-envs/              --> Reference environments, benchmark games, and heuristic/rollout evaluators
+environments/connect4/  --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
+environments/blokus/    --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents, and CLI players
+environments/tzf8/      --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents, and CLI players
+environments/hex/       --> Dedicated Hex game engine, DSU connectivity tracking, MCTS agents, and CLI players
+environments/sequence/  --> Dedicated Sequence game engine, ISMCTS agents, and interactive CLI players
 ```
 
 ### Dependency Rules
-1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, `connect4`, `blokus`, `tzf8`, or `hex`.
-2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`, `connect4`, `blokus`, `tzf8`, or `hex`.
+1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, `connect4`, `blokus`, `tzf8`, `hex`, or `sequence`.
+2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`, `connect4`, `blokus`, `tzf8`, `hex`, or `sequence`.
 3. `mcts-envs` depends on `mcts-traits` and optionally `mcts-engine` (for testing and integration).
-4. Environment crates (e.g. `connect4`, `blokus`, `tzf8`, `hex`) depend on `mcts-traits` and `mcts-engine`.
+4. Environment crates in `environments/` (e.g. `connect4`, `blokus`, `tzf8`, `hex`, `sequence`) depend on `mcts-traits` and `mcts-engine`.
 
 ---
 

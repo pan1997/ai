@@ -1,0 +1,23 @@
+[package]
+name = "sequence"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance Sequence game engine, ISMCTS agents, and interactive CLI players"
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+cardpack = "0.11"
+rand = { workspace = true }
+rand_distr = { workspace = true }
+
+[[bin]]
+name = "sequence-play"
+path = "src/bin/play.rs"
+
+[[bin]]
+name = "sequence-tournament"
+path = "src/bin/tournament.rs"
+
