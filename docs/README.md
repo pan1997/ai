@@ -74,6 +74,7 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 Explore the detailed topic guides:
 
 - [Architecture Guide](file:///home/pankaj/Projects/ai/docs/architecture.md): Deep dive into the tripartite separation, SoA memory design, and the `World` vs `AgentDynamics` model.
+- [Actor-Learner Architecture RFC](file:///home/pankaj/Projects/ai/docs/actor_learner_architecture.md): Low-level design for asynchronous Rust MCTS self-play decoupled from Python PyTorch training via ONNX Runtime (`ort`), dynamic micro-batching, and binary trajectory spooling.
 - [Afterstate & Macro-Dynamics RFC](file:///home/pankaj/Projects/ai/docs/afterstate_and_macro_dynamics.md): Design exploration of round-based macro-dynamics, Afterstate nodes (MuZero style), and pluggable opponent policies.
 - [Algorithms & Mathematics](file:///home/pankaj/Projects/ai/docs/algorithms.md): Exact mathematical formulations of UCT, PUCT, Gumbel AlphaZero, Vector Backup, and batched schedulers.
 - [Reference Environments](file:///home/pankaj/Projects/ai/docs/environments.md): Rules, board representations, action spaces, and imperfect-information dynamics.
