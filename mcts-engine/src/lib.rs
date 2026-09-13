@@ -27,7 +27,9 @@ pub mod dirichlet;
 pub mod opponent;
 pub mod scheduler;
 pub mod search;
+/// Tree traversal and child selection policies.
 pub mod selection;
+/// Contiguous Structure-of-Arrays (SoA) search tree storage.
 pub mod tree_store;
 
 #[cfg(test)]

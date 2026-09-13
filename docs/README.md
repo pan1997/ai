@@ -48,7 +48,7 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
   - `SequentialScheduler`: Standard single-thread root-to-leaf sweep.
   - `BatchedScheduler`: Virtual-loss-guided batching with leaf deduplication to saturate GPU tensor cores during neural net inference.
   - `MultiGameScheduler`: Vectorized self-play across multiple parallel trees using SIMD/batch-friendly steps.
-  - `mcts_engine::arena`: Game-agnostic round-robin and multi-player tournament harnesses with seat-bias balancing and head-to-head metrics.
+  - `MatchDriver` (`mcts_engine::arena`): Game-agnostic tournament orchestration across 2-player, multi-player, and single-player matches with transition history buffering, seat-bias balancing, and head-to-head metrics.
 - **Imperfect Information & Referee Separation**:
   - Strict distinction between `World` (impartial referee, hidden state, simultaneous turns) and `AgentDynamics` (agent-internal hypothetical reasoning and belief states).
   - Universal `TurnBasedDynamics<W>` adapter for perfect-information turn-based games (`TurnBasedWorld`).
@@ -59,8 +59,8 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 
 | Crate | Path | Description |
 |---|---|---|
-| [`mcts-traits`](file:///home/pankaj/Projects/ai/mcts-traits) | `mcts-traits/` | Core abstractions: `AgentDynamics`, `BatchedAgentDynamics`, `Model`, `BatchedModel`, `World`, `TurnBasedWorld`, `TurnBasedDynamics`, `Evaluation`, `AgentId`. |
-| [`mcts-engine`](file:///home/pankaj/Projects/ai/mcts-engine) | `mcts-engine/` | SoA `TreeStore`, `UctSelection`, `NormalizedUctSelection`, `MultiAgentPuctSelection`, `NormalizedPuctSelection`, `GumbelPuctSelection`, `VectorBackup`, schedulers, and tournament arenas. |
+| [`mcts-traits`](file:///home/pankaj/Projects/ai/mcts-traits) | `mcts-traits/` | Core abstractions: `Agent`, `AgentDynamics`, `BatchedAgentDynamics`, `Model`, `BatchedModel`, `World`, `TurnBasedWorld`, `TurnBasedDynamics`, `Evaluation`, `AgentId`. |
+| [`mcts-engine`](file:///home/pankaj/Projects/ai/mcts-engine) | `mcts-engine/` | SoA `TreeStore`, `MatchDriver`, `UctSelection`, `NormalizedUctSelection`, `MultiAgentPuctSelection`, `NormalizedPuctSelection`, `GumbelPuctSelection`, `VectorBackup`, schedulers, and tournament arenas. |
 | [`connect4`](file:///home/pankaj/Projects/ai/connect4) | `connect4/` | Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players (`connect4-play`, `connect4-tournament`). |
 | [`blokus`](file:///home/pankaj/Projects/ai/blokus) | `blokus/` | Dedicated Blokus (Classic & Duo) engine, polyomino registry, heuristic models, and CLI players (`blokus-play`, `blokus-tournament`). |
 | [`tzf8`](file:///home/pankaj/Projects/ai/tzf8) | `tzf8/` | Dedicated 2048 Expectimax engine, chance-node agents, and arena tournament runner (`tzf8-play`, `tzf8-tournament`). |

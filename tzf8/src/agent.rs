@@ -405,15 +405,40 @@ pub enum Tzf8AgentSpec {
     /// 1-ply greedy corner heuristic.
     Heuristic,
     /// MCTS with corner heuristic model: `mcts[:iters[:c_puct]]`.
-    Mcts { iters: usize, c_puct: f32 },
+    Mcts {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Exploration constant scaling the prior policy influence.
+        c_puct: f32,
+    },
     /// MCTS with Min-Max normalized UCT: `mcts-norm[:iters[:c_puct]]`.
-    MctsNorm { iters: usize, c_puct: f32 },
+    MctsNorm {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Exploration constant scaling the prior policy influence.
+        c_puct: f32,
+    },
     /// MCTS with Min-Max normalized PUCT: `mcts-puct[:iters[:c_puct]]`.
-    MctsPuct { iters: usize, c_puct: f32 },
+    MctsPuct {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Exploration constant scaling the prior policy influence.
+        c_puct: f32,
+    },
     /// MCTS with random rollout evaluation: `mcts-rollout[:iters[:rollouts]]`.
-    MctsRollout { iters: usize, rollouts: usize },
+    MctsRollout {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Number of random simulation playouts per leaf node.
+        rollouts: usize,
+    },
     /// MCTS with uniform zero model: `mcts-uniform[:iters[:c_puct]]`.
-    MctsUniform { iters: usize, c_puct: f32 },
+    MctsUniform {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Exploration constant scaling the prior policy influence.
+        c_puct: f32,
+    },
 }
 
 impl Tzf8AgentSpec {

@@ -200,6 +200,14 @@ In iterative game play (self-play or tournament matches), discarding the entire 
 - Automatically prunes all unreachable sibling branches, compacting memory vectors.
 - Retains visit counts, running means, policy priors, and transition rewards.
 
+### 5.3 Unified Match Arbitration & Transition History Protocol (`MatchDriver` & `Agent`)
+To execute matches between arbitrary agents without duplicating game loops across tournament binaries, `mcts-engine::arena` provides [`MatchDriver`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs):
+- **Turn Arbitration**: Queries [`TurnBasedWorld::current_player`](file:///home/pankaj/Projects/ai/mcts-traits/src/world.rs) to determine the acting seat and dispatches actions.
+- **Inter-Turn History Buffering**: Maintains per-agent transition history queues `(Action, Delta)` recording moves made by opponents or chance events between an agent's successive decisions.
+- **Subtree Promotion Hooks**: Delivers transition history via [`Agent::select_action_with_history`](file:///home/pankaj/Projects/ai/mcts-traits/src/agent.rs), enabling stateful agents to advance tree roots and invoke `TreeStore::promote_subtree` without storing game state internally.
+- **Lifecycle Management**: Invokes [`Agent::reset`](file:///home/pankaj/Projects/ai/mcts-traits/src/agent.rs) before each game to flush search trees or reset caches between tournament matches.
+- **Game-Agnostic Execution**: Offers zero-allocation `play_2p`, `play_multi`, and `play_single` drivers generating comprehensive [`MatchResult`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs) telemetry.
+
 ---
 
 ## 6. Future Roadmap: Directed Acyclic Graphs (DAG) vs Trees

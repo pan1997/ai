@@ -164,7 +164,7 @@ The repository provides ready-to-run interactive CLI players and tournament aren
 cargo run --release -p connect4 --bin connect4-play
 
 # Run a round-robin tournament
-cargo run --release -p connect4 --bin connect4-tournament -- --players mcts:1000,mcts:5000,random --games 20
+cargo run --release -p connect4 --bin connect4-tournament -- --agents mcts:1000,mcts:5000,random --games 20
 ```
 
 ### Blokus
@@ -173,7 +173,7 @@ cargo run --release -p connect4 --bin connect4-tournament -- --players mcts:1000
 cargo run --release -p blokus --bin blokus-play
 
 # Run a 4-player Blokus Classic tournament
-cargo run --release -p blokus --bin blokus-tournament -- --players heuristic,mcts-hr:500:2:15,mcts-hu:2500,mcts:5000 --games 20
+cargo run --release -p blokus --bin blokus-tournament -- --agents heuristic,mcts-hr:500:2:15,mcts-hu:2500,mcts:5000 --games 20
 ```
 
 ### 2048 / Tzf8

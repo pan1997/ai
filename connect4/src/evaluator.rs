@@ -28,11 +28,14 @@ impl<const R: usize, const C: usize> Model<Connect4State<R, C>> for UniformEvalu
 /// Rollout evaluator estimating state value via random simulation playouts.
 #[derive(Debug, Clone, Copy)]
 pub struct RolloutEvaluator<const R: usize = 6, const C: usize = 7> {
+    /// Number of random simulation playouts per leaf node evaluation.
     pub num_rollouts: usize,
+    /// Maximum search depth before truncating the rollout.
     pub max_depth: usize,
 }
 
 impl<const R: usize, const C: usize> RolloutEvaluator<R, C> {
+    /// Constructs a new `RolloutEvaluator` with the specified rollout count and maximum depth.
     pub fn new(num_rollouts: usize, max_depth: usize) -> Self {
         Self {
             num_rollouts,

@@ -811,27 +811,36 @@ mod tests {
         }
     }
 
-    struct HistoryTrackingAgent {
+    struct HistoryTrackingAgent<S = (usize, usize)> {
         name: String,
         action_to_play: usize,
         history_seen: Vec<(usize, ())>,
         resets: usize,
+        _marker: std::marker::PhantomData<fn(&S)>,
     }
 
-    impl Agent<(usize, usize), usize> for HistoryTrackingAgent {
+    impl<S> HistoryTrackingAgent<S> {
+        fn new(name: &str, action: usize) -> Self {
+            Self {
+                name: name.to_string(),
+                action_to_play: action,
+                history_seen: Vec::new(),
+                resets: 0,
+                _marker: std::marker::PhantomData,
+            }
+        }
+    }
+
+    impl<S> Agent<S, usize> for HistoryTrackingAgent<S> {
         fn name(&self) -> &str {
             &self.name
         }
 
-        fn select_action(&mut self, _state: &(usize, usize)) -> usize {
+        fn select_action(&mut self, _state: &S) -> usize {
             self.action_to_play
         }
 
-        fn select_action_with_history(
-            &mut self,
-            state: &(usize, usize),
-            history: &[(usize, ())],
-        ) -> usize {
+        fn select_action_with_history(&mut self, state: &S, history: &[(usize, ())]) -> usize {
             self.history_seen.extend_from_slice(history);
             self.select_action(state)
         }
@@ -845,18 +854,8 @@ mod tests {
     #[test]
     fn test_match_driver_2p() {
         let world = Mock2PWorld;
-        let mut p0 = HistoryTrackingAgent {
-            name: "P0".to_string(),
-            action_to_play: 2,
-            history_seen: Vec::new(),
-            resets: 0,
-        };
-        let mut p1 = HistoryTrackingAgent {
-            name: "P1".to_string(),
-            action_to_play: 1,
-            history_seen: Vec::new(),
-            resets: 0,
-        };
+        let mut p0 = HistoryTrackingAgent::new("P0", 2);
+        let mut p1 = HistoryTrackingAgent::new("P1", 1);
 
         let driver = MatchDriver::new();
         let result = driver.play_2p(&world, &mut p0, &mut p1, None);
@@ -881,18 +880,8 @@ mod tests {
     #[test]
     fn test_match_driver_max_moves() {
         let world = Mock2PWorld;
-        let mut p0 = HistoryTrackingAgent {
-            name: "P0".to_string(),
-            action_to_play: 1,
-            history_seen: Vec::new(),
-            resets: 0,
-        };
-        let mut p1 = HistoryTrackingAgent {
-            name: "P1".to_string(),
-            action_to_play: 1,
-            history_seen: Vec::new(),
-            resets: 0,
-        };
+        let mut p0 = HistoryTrackingAgent::new("P0", 1);
+        let mut p1 = HistoryTrackingAgent::new("P1", 1);
 
         // Terminate early after 2 moves
         let driver = MatchDriver::new().with_max_moves(2);
@@ -900,5 +889,93 @@ mod tests {
 
         assert_eq!(result.total_moves, 2);
         assert_eq!(result.outcome_2p, Some(GameOutcome::Draw));
+    }
+
+    struct Mock1PWorld;
+
+    impl mcts_traits::World for Mock1PWorld {
+        type WorldState = usize;
+        type Action = usize;
+        type Observation = usize;
+
+        fn n_players(&self) -> usize {
+            1
+        }
+
+        fn initial(&self) -> Self::WorldState {
+            0
+        }
+
+        fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
+            *ws
+        }
+
+        fn actions(&self, _ws: &Self::WorldState, _player: usize, out: &mut Vec<Self::Action>) {
+            out.clear();
+            out.push(1);
+        }
+
+        fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
+            *ws += joint.first().copied().unwrap_or(0);
+            let term = *ws >= 5;
+            (vec![if term { 10.0 } else { 1.0 }], term)
+        }
+
+        fn terminal(&self, ws: &Self::WorldState) -> bool {
+            *ws >= 5
+        }
+    }
+
+    impl TurnBasedWorld for Mock1PWorld {
+        type StepReward = [f32; 1];
+
+        fn current_player(&self, _ws: &Self::WorldState) -> usize {
+            0
+        }
+
+        fn step_action(
+            &self,
+            ws: &mut Self::WorldState,
+            action: &Self::Action,
+        ) -> mcts_traits::StepOutcome<Self::StepReward> {
+            *ws += action;
+            let term = *ws >= 5;
+            mcts_traits::StepOutcome::new([if term { 10.0 } else { 1.0 }], term)
+        }
+    }
+
+    #[test]
+    fn test_match_driver_single() {
+        let world = Mock1PWorld;
+        let mut agent = HistoryTrackingAgent::<usize>::new("Single", 1);
+
+        let driver = MatchDriver::new();
+        let result = driver.play_single(&world, &mut agent, None);
+
+        assert_eq!(result.total_moves, 5);
+        assert_eq!(result.final_state, 5);
+        assert_eq!(result.final_reward, [10.0]);
+        assert_eq!(result.winner_seat, Some(0));
+        assert_eq!(agent.resets, 1);
+    }
+
+    #[test]
+    fn test_match_driver_multi() {
+        let world = Mock2PWorld;
+        let mut p0 = HistoryTrackingAgent::new("P0", 2);
+        let mut p1 = HistoryTrackingAgent::new("P1", 2);
+
+        let driver = MatchDriver::new();
+        let mut agents: [&mut dyn Agent<(usize, usize), usize>; 2] = [&mut p0, &mut p1];
+        let result = driver.play_multi::<Mock2PWorld, usize, 2>(&world, &mut agents, None);
+
+        // Turn 1 (P0): +2 -> total 2
+        // Turn 2 (P1): +2 -> total 4
+        // Turn 3 (P0): +2 -> total 6 -> terminal! P0 wins
+        assert_eq!(result.total_moves, 3);
+        assert_eq!(result.moves_per_seat, vec![2, 1]);
+        assert_eq!(result.winner_seat, Some(0));
+        assert_eq!(p0.resets, 1);
+        assert_eq!(p1.resets, 1);
     }
 }

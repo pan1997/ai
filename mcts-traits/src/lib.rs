@@ -28,10 +28,15 @@
 //! - [`world`]: Ground-truth referee arbitration ([`World`]).
 //! - [`graph`]: Unit testing environment harness ([`GraphEnv`]).
 
+/// Agent identity representation and player trait.
 pub mod agent;
+/// State transition dynamics and multi-agent adapters.
 pub mod dynamics;
+/// Deterministic state-machine graph for exact verification testing.
 pub mod graph;
+/// Policy prior and state value evaluation interfaces.
 pub mod model;
+/// Impartial environment referee and tournament driver abstractions.
 pub mod world;
 
 #[cfg(test)]

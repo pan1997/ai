@@ -25,6 +25,7 @@
 
 pub mod evaluators;
 pub mod hex;
+/// Kuhn Poker imperfect-information game theory benchmark.
 pub mod kuhn_poker;
 pub mod tzf8;
 

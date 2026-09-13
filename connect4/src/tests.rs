@@ -205,6 +205,22 @@ fn test_macro_dynamics_full_round() {
 }
 
 #[test]
+fn test_macro_dynamics_random_opponent() {
+    use crate::dynamics::RandomOpponent;
+
+    let macro_env =
+        MacroConnect4Dynamics::<RandomOpponent, 6, 7>::new(RandomOpponent::new(), Player::Red);
+    let mut state = AgentDynamics::initial(&macro_env);
+
+    assert_eq!(state.current_player, Player::Red);
+    let outcome = AgentDynamics::step(&macro_env, &mut state, &3);
+    assert!(!outcome.terminated);
+    assert_eq!(state.current_player, Player::Red);
+    let piece_count: usize = state.board.iter().flatten().filter(|c| c.is_some()).count();
+    assert_eq!(piece_count, 2);
+}
+
+#[test]
 fn test_evaluators() {
     let state = Connect4State::<6, 7>::new();
 

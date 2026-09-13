@@ -65,6 +65,9 @@ Implemented in [`tzf8`](file:///home/pankaj/Projects/ai/tzf8) (with a lightweigh
   - After each valid slide, a random tile spawns (value 2 with $90\%$ probability, value 4 with $10\%$ probability) in an empty cell.
   - The stochastic spawn is emitted via `StepDelta = TileSpawn { pos: u8, val: u16 }`.
   - Enables exact sample-mean Expectimax search down flat `TreeStore` arrays without dummy chance nodes.
+- **Traits Implemented**:
+  - `World` & `TurnBasedWorld`: Ground-truth single-player referee integrated directly into `MatchDriver::play_single`.
+  - `AgentDynamics`: Internal stochastic Expectimax planning dynamics emitting `StepDelta = Option<TileSpawn>`.
 - **Evaluators**:
   - `CornerHeuristicEvaluator`: Snake monotonicity (rewarding high tiles anchored in a corner), empty cell bonus, and edge smoothness.
   - `RolloutEvaluator`: Monte Carlo random rollouts to terminal states.

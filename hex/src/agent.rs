@@ -362,14 +362,27 @@ impl<const N: usize> Agent<HexState<N>, usize> for MctsAgent<N> {
 pub enum HexAgentSpec {
     /// MCTS agent using random rollouts: `mcts[:iters[:rollouts]]`.
     MctsRollout {
+        /// Number of MCTS simulation sweeps per move decision.
         iters: usize,
+        /// Number of random simulation playouts per leaf node.
         rollouts: usize,
+        /// Exploration constant scaling the prior policy influence.
         c_puct: f32,
     },
     /// MCTS agent using the shortest path heuristic: `mcts-h[:iters]`.
-    MctsHeuristic { iters: usize, c_puct: f32 },
+    MctsHeuristic {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Exploration constant scaling the prior policy influence.
+        c_puct: f32,
+    },
     /// MCTS agent using uniform priors: `mcts-u[:iters]`.
-    MctsUniform { iters: usize, c_puct: f32 },
+    MctsUniform {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Exploration constant scaling the prior policy influence.
+        c_puct: f32,
+    },
     /// 1-ply greedy lookahead heuristic agent: `heuristic`.
     Heuristic,
     /// Uniform random player: `random`.

@@ -164,3 +164,33 @@ fn test_mcts_agent_eval() {
     let action = agent.select_action(&state);
     assert!(Direction::ALL.contains(&action));
 }
+
+#[test]
+fn test_agent_spec_parse_and_instantiate() {
+    use crate::agent::Tzf8AgentSpec;
+
+    let specs = [
+        "human",
+        "random",
+        "heuristic",
+        "mcts:50:1.4",
+        "mcts-norm:50:1.4",
+        "mcts-puct:50:1.4",
+        "mcts-rollout:50:2",
+        "mcts-uniform:50:1.4",
+    ];
+
+    let world = Tzf8World::with_seed(42);
+    let state = world.initial();
+
+    for spec_str in specs {
+        let spec = Tzf8AgentSpec::parse(spec_str)
+            .unwrap_or_else(|e| panic!("Failed to parse {spec_str}: {e}"));
+        let mut agent = spec.build_agent();
+        assert!(!agent.name().is_empty());
+        if spec_str != "human" {
+            let act = agent.select_action(&state);
+            assert!(Direction::ALL.contains(&act));
+        }
+    }
+}

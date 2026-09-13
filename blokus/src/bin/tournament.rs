@@ -15,23 +15,38 @@ use std::time::Instant;
 #[derive(Debug, Clone)]
 pub enum AgentSpec {
     /// Monte Carlo Tree Search agent with static area heuristic.
-    Mcts { iters: usize },
+    Mcts {
+        /// Number of MCTS simulation sweeps.
+        iters: usize,
+    },
     /// MCTS agent with heuristic utility priors and static territory values (MCTS-HU).
-    MctsHeuristicUtility { iters: usize },
+    MctsHeuristicUtility {
+        /// Number of MCTS simulation sweeps.
+        iters: usize,
+    },
     /// MCTS agent with informed heuristic simulation rollouts (MCTS-HR).
     MctsHeuristicRollout {
+        /// Number of MCTS simulation sweeps.
         iters: usize,
+        /// Number of rollout simulations per leaf.
         num_rollouts: usize,
+        /// Maximum depth per rollout.
         max_depth: usize,
     },
     /// MCTS agent with random rollout simulation playouts.
     MctsRollout {
+        /// Number of MCTS simulation sweeps.
         iters: usize,
+        /// Number of rollout simulations per leaf.
         num_rollouts: usize,
+        /// Maximum depth per rollout.
         max_depth: usize,
     },
     /// MCTS agent with uniform priors and zero values.
-    MctsUniform { iters: usize },
+    MctsUniform {
+        /// Number of MCTS simulation sweeps.
+        iters: usize,
+    },
     /// Greedy heuristic agent prioritizing pentominoes and corner expansion.
     Heuristic,
     /// Random agent selecting legal moves uniformly at random.
@@ -127,7 +142,7 @@ impl AgentSpec {
                     max_depth,
                 })
             }
-            "mcts-uniform" | "uniform" => {
+            "mcts-uniform" | "uniform" | "mcts-u" => {
                 let iters = if parts.len() > 1 {
                     parts[1]
                         .trim()
@@ -457,5 +472,57 @@ fn main() {
             );
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_blokus_specs() {
+        assert!(matches!(
+            AgentSpec::parse("random", 100).unwrap(),
+            AgentSpec::Random
+        ));
+        assert!(matches!(
+            AgentSpec::parse("heuristic", 100).unwrap(),
+            AgentSpec::Heuristic
+        ));
+        assert!(matches!(
+            AgentSpec::parse("mcts:50", 100).unwrap(),
+            AgentSpec::Mcts { iters: 50 }
+        ));
+        assert!(matches!(
+            AgentSpec::parse("mcts-hu:80", 100).unwrap(),
+            AgentSpec::MctsHeuristicUtility { iters: 80 }
+        ));
+        assert!(matches!(
+            AgentSpec::parse("mcts-hr:100:2:15", 100).unwrap(),
+            AgentSpec::MctsHeuristicRollout {
+                iters: 100,
+                num_rollouts: 2,
+                max_depth: 15
+            }
+        ));
+        assert!(matches!(
+            AgentSpec::parse("mcts-rollout:120:3:20", 100).unwrap(),
+            AgentSpec::MctsRollout {
+                iters: 120,
+                num_rollouts: 3,
+                max_depth: 20
+            }
+        ));
+        assert!(matches!(
+            AgentSpec::parse("mcts-u:40", 100).unwrap(),
+            AgentSpec::MctsUniform { iters: 40 }
+        ));
+    }
+
+    #[test]
+    fn test_generate_unique_names() {
+        let specs = vec![AgentSpec::Random, AgentSpec::Random, AgentSpec::Heuristic];
+        let names = generate_unique_names(&specs);
+        assert_eq!(names, vec!["Random-1", "Random-2", "Heuristic"]);
     }
 }

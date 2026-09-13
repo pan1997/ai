@@ -153,7 +153,7 @@ impl<const R: usize, const C: usize> mcts_traits::Agent<Connect4State<R, C>, usi
     }
 }
 
-///// Opponent modeling mode for Connect 4 MCTS planning.
+/// Opponent modeling mode for Connect 4 MCTS planning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MctsMode {
     /// Full-tree 1-ply alternating adversarial MCTS (standard zero-sum minimax tree).
@@ -492,11 +492,26 @@ pub enum Connect4AgentSpec {
     /// Greedy tactical heuristic (immediate win, block 1-ply win, center preference).
     Tactical,
     /// Standard zero-sum adversarial MCTS.
-    Mcts { iters: usize, rollouts: usize },
+    Mcts {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Number of leaf rollouts (0 for uniform prior evaluation).
+        rollouts: usize,
+    },
     /// Macro-action MCTS assuming opponent follows a tactical heuristic.
-    MacroTactical { iters: usize, rollouts: usize },
+    MacroTactical {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Number of leaf rollouts (0 for uniform prior evaluation).
+        rollouts: usize,
+    },
     /// Macro-action MCTS assuming opponent chooses uniform random moves.
-    MacroRandom { iters: usize, rollouts: usize },
+    MacroRandom {
+        /// Number of MCTS simulation sweeps per move decision.
+        iters: usize,
+        /// Number of leaf rollouts (0 for uniform prior evaluation).
+        rollouts: usize,
+    },
 }
 
 impl Connect4AgentSpec {

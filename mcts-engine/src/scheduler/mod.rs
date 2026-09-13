@@ -5,8 +5,11 @@
 //! - [`BatchedScheduler`]: Parallel simulation within a single tree using virtual loss and leaf deduplication.
 //! - [`MultiGameScheduler`]: Vectorized search across multiple disjoint game trees for batched self-play.
 
+/// Virtual-loss-guided batched leaf evaluation scheduler.
 pub mod batched;
+/// Vectorized search across multiple disjoint game trees.
 pub mod multi_game;
+/// Single-threaded depth-first sequential scheduler.
 pub mod sequential;
 
 pub use batched::BatchedScheduler;

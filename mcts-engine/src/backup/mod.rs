@@ -3,7 +3,9 @@
 //! After a leaf state is evaluated or identified as terminal, a backup policy propagates returns
 //! backward along the traversed root-to-leaf path, updating visit counts and running value estimates.
 
+/// Single-agent discounted reward backup.
 pub mod single;
+/// Multi-agent element-wise vector backup.
 pub mod vector;
 
 pub use single::SingleAgentBackup;

@@ -8,10 +8,15 @@ use std::collections::{HashMap, HashSet};
 /// on hand-calculable graphs where ground truth is known precisely.
 #[derive(Debug, Clone)]
 pub struct GraphEnv<const N: usize = 1> {
+    /// Initial root state ID.
     pub initial_state: u32,
+    /// Explicit mapping from `(state, action)` to destination state, reward vector, and terminal status.
     pub transitions: HashMap<(u32, u32), Transition<u32, [f32; N]>>,
+    /// Available legal action indices per state ID.
     pub legal_actions: HashMap<u32, Vec<u32>>,
+    /// Active agent ID assigned to each state ID.
     pub state_agents: HashMap<u32, AgentId>,
+    /// Set of terminal state IDs.
     pub terminal_states: HashSet<u32>,
 }
 

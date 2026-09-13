@@ -202,16 +202,25 @@ Executes concurrent MCTS searches across $M$ disjoint trees simultaneously:
 
 Implemented in [`mcts_engine::arena`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs).
 
-To rigorously measure agent performance and verify algorithmic improvements without hand-crafted testing scripts, the engine provides standardized tournament infrastructure.
+To rigorously measure agent performance and verify algorithmic improvements without hand-crafted testing scripts, the engine provides standardized tournament infrastructure driven by [`MatchDriver`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs).
 
-### 4.1 Head-to-Head Matrices & Seat-Fairness Accounting
+### 4.1 Orchestration Engine (`MatchDriver`)
+
+[`MatchDriver`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs) provides unified match simulation loops across three primary operational modes:
+- `play_2p(&world, &mut p0, &mut p1, state)`: Automatically derives 2-player game outcomes (`Seat0Wins`, `Seat1Wins`, `Draw`) by inspecting final terminal rewards.
+- `play_multi::<_, _, P>(&world, &mut agents, state)`: Arbitrates arbitrary $N$-player turn-based matches across $P$ agents.
+- `play_single(&world, &mut agent, state)`: Arbitrates single-player MDPs (such as 2048) through completion.
+
+The driver maintains transition history buffers for [`Agent::select_action_with_history`](file:///home/pankaj/Projects/ai/mcts-traits/src/agent.rs), triggers [`Agent::reset`](file:///home/pankaj/Projects/ai/mcts-traits/src/agent.rs) on match boundaries, and tracks execution telemetry ([`MatchResult`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs)) without allocating heap memory on the move loop.
+
+### 4.2 Head-to-Head Matrices & Seat-Fairness Accounting
 
 In asymmetric 2-player games (like Connect 4 or Hex, where Player 1 enjoys first-mover advantage) and 4-player games (like Blokus Classic), seating order induces strong win-rate bias. The arena mitigates this via:
 - **Balanced Paired Matches**: Alternating seat assignments $(A, B)$ and $(B, A)$ across identical board seeds.
 - **Uniform Seating Permutations**: Randomizing seat permutations across matches while tracking per-seat win rates.
 - **Head-to-Head Cross-Table ([`H2HMatrix`](file:///home/pankaj/Projects/ai/mcts-engine/src/arena.rs))**: Tracks pairwise wins, losses, draws, and net score differentials for all $(i, j)$ agent pairs.
 
-### 4.2 Standardized Reporting
+### 4.3 Standardized Reporting
 
 The arena formats ANSI terminal leaderboards reporting:
 - Win rate percentage ($W\%$) and total / solo / tied wins.
