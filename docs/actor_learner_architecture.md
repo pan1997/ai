@@ -633,3 +633,150 @@ pub trait TensorRepresentable {
    - Benchmark throughput curves (evals/sec, moves/sec, GPU utilization).
 5. **Phase 5: MuZero 2-Session Partitioning**:
    - Implement `initial.onnx` and `recurrent.onnx` bindings integrated with `AgentDynamics`.
+6. **Phase 6: Distributed Network Transport & Object Store Integration**:
+   - Implement gRPC / HTTP streaming spool sink and remote weight polling client for multi-machine scaling.
+
+---
+
+## 11. Distributed Scale-Out Architecture (Multi-Machine Networking & Storage)
+
+While the local filesystem spooling design specified in §§5–6 provides a zero-dependency, ultra-fast baseline for single-workstation or shared-NVMe setups (e.g. DGX multi-GPU nodes), scaling across a distributed cluster of heterogeneous machines requires decoupling the actors and learners from a shared local disk.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       Distributed Actor-Learner Topology                     │
+│                                                                              │
+│   ┌────────────────────────┐                   ┌─────────────────────────┐   │
+│   │   Worker Node 1 (CPU)  │                   │   Worker Node M (GPU)   │   │
+│   │  [MCTS Actors 1..K]    │                   │  [MCTS Actors 1..K]     │   │
+│   │            │           │                   │            │            │   │
+│   │  [Inference Dispatcher]│                   │  [Inference Dispatcher] │   │
+│   │            │           │                   │            │            │   │
+│   │  [Weight Sync Client]  │                   │  [Weight Sync Client]   │   │
+│   └──────┬──────────▲──────┘                   └───────┬─────────▲───────┘   │
+│          │          │                                  │         │           │
+│          │ Trajectory Stream (gRPC / HTTP POST)        │ Trajectory Stream   │
+│          │          │                                  │         │           │
+│          │          │ Model Pull (HTTP GET / S3)       │         │           │
+│          ▼          └──────────────────┬───────────────┼─────────┘           │
+│   ┌──────────────────────────────┐     │               ▼                     │
+│   │  Ingest Gateway / Replay Svc │     │    ┌────────────────────────────┐   │
+│   │  (Reverb / Redis / S3 Sink)  │     │    │   Model Distribution Hub   │   │
+│   └──────────────┬───────────────┘     │    │  (HTTP CDN / S3 / Object)  │   │
+│                  │                     │    └────────────▲───────────────┘   │
+│                  │ Batch Sampling      │                 │ Atomic Upload     │
+│                  ▼                     │                 │ (latest.onnx)     │
+│   ┌────────────────────────────────────┴────────┐        │                   │
+│   │            Python Learner Node              │────────┘                   │
+│   │   - Consumes Replay Batches (Zero-Copy)     │                            │
+│   │   - Multi-GPU PyTorch Gradient Step         │                            │
+│   │   - Exports and Publishes New ONNX Weights  │                            │
+│   └─────────────────────────────────────────────┘                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 11.1 How Production Systems Store and Stream Trajectories
+
+#### Why Traditional Databases (Postgres, MongoDB, SQLite) Are an Anti-Pattern for RL
+Developers frequently ask whether game states, transitions, or trajectories should be written to a traditional database. In high-throughput reinforcement learning, **traditional relational and document databases are an anti-pattern**:
+1. **Write Amplification & Index Overhead**:
+   RL generates millions of transition frames per minute. Maintaining B-trees, primary keys, and secondary indices under heavy write load causes severe CPU lock contention and disk write amplification.
+2. **ACID Transactions Are Unnecessary**:
+   Experience replay buffers do not require atomic consistency or rollback semantics. Dropping or reordering a small percentage of trajectories during network hiccups has zero impact on policy convergence.
+3. **Serialization & Deserialization Penalties**:
+   Converting contiguous tensor arrays into JSON/BSON or SQL column rows incurs extreme CPU serialization overhead ($>50\times$ slower than binary memory copies).
+4. **Lack of Zero-Copy Sampling**:
+   PyTorch dataloaders require contiguous memory buffers (`float32` tensors). Databases cannot be memory-mapped (`mmap`) into numpy/PyTorch GPU tensors without intermediate allocations.
+
+---
+
+#### The 3 Production-Grade Storage & Streaming Patterns
+
+Modern RL engines (DeepMind AlphaZero/MuZero/SEED RL, KataGo, Leela Chess Zero, OpenAI Rapid) use three distinct architectures depending on hardware scale:
+
+| Architecture Pattern | Industry Examples | Throughput | Network Topology | Best Suited For |
+|---|---|---|---|---|
+| **1. In-Memory Streaming Service** | DeepMind Reverb, SEED RL, Ray Plasma | $>500,000$ steps/sec | gRPC / Apache Arrow Flight over high-speed LAN / InfiniBand | Dedicated private clusters, low trainer lag ($<1\text{ s}$) |
+| **2. Compressed Object Store Batches** | KataGo, Leela Chess Zero (Lc0) | Millions of games/day | HTTP POST / S3 / GCS buckets (zstd-compressed chunks) | Crowd-sourced computing, spot cloud instances, distributed internet workers |
+| **3. High-Throughput Log Streaming** | Redis Streams, Kafka, NATS JetStream | $>200,000$ steps/sec | Pub/Sub message broker | Multi-node Kubernetes clusters, decoupled worker scaling |
+
+##### Pattern 1: In-Memory Replay Services (DeepMind Reverb)
+DeepMind engineered **Reverb** specifically for AlphaStar, MuZero, and SEED RL.
+- Reverb runs as a standalone C++ service exposing gRPC endpoints.
+- Self-play workers stream trajectories in fixed-stride protocol buffers over gRPC streams directly into an in-memory ring buffer.
+- The Python learner samples mini-batches directly from Reverb over Unix Domain Sockets or shared memory (on the same machine) or gRPC (across network nodes).
+- When RAM capacity is reached, Reverb applies prioritized experience replay (PER) or FIFO eviction, optionally spilling older chunks to cold NVMe storage.
+
+##### Pattern 2: Cloud Object Storage + Compressed Chunks (KataGo / Lc0)
+For projects running across hundreds of disparate volunteer or cloud spot machines:
+- Workers buffer complete games into chunks of 100–500 games.
+- Chunks are compressed using **Zstandard (`zstd`)**, reducing raw board states by $80\text{–}90\%$.
+- Workers upload compressed chunks via standard HTTP `PUT` / `POST` to an S3/GCS bucket or a lightweight ingestion server.
+- The Python trainer downloads recent chunks, decompresses them into a local ring buffer in RAM, and discards them after training.
+
+---
+
+### 11.2 Multi-Machine Weight Distribution: Getting Models to Workers
+
+When workers run on separate physical nodes from the GPU learner, local filesystem `inotify` watching does not bridge the network boundary. Production systems solve this via **Asynchronous Pull or Push Distribution**:
+
+#### Option A: HTTP Polling with Version Headers (Pull Model — Recommended)
+This is the architecture used by **KataGo** and **Lc0** due to its extreme fault tolerance and scalability:
+1. **Model Registry Server**:
+   A lightweight HTTP endpoint (or S3/CloudFlare R2 bucket) serves the latest ONNX weights:
+   - `GET /model/latest.onnx`
+   - `GET /model/version` $\to$ returns JSON `{"version": 142, "sha256": "e3b0c442...", "url": "/model/model_142.onnx"}`
+2. **Client-Side Background Poller**:
+   Each Rust worker node runs an independent background thread querying `/model/version` every $K$ seconds (e.g. every 10–30 seconds):
+   ```
+   [Worker Search Threads] ──(Running uninterrupted with Version 141)──
+               ▲
+               │ Hot-Swap Signal
+   [Inference Dispatcher]
+               ▲
+               │ Compile & Validate ort::Session
+   [Background Model Sync Thread] ◄── GET /model/version (Version 142 detected!)
+                                  ◄── GET /model/model_142.onnx (Download)
+   ```
+3. **ETags & Conditional GETs**:
+   The poller sends `If-None-Match: "<etag>"` to the HTTP server. If the weights have not changed, the server returns `304 Not Modified` with zero network payload.
+
+---
+
+#### Option B: Pub/Sub Broadcast (Push Model)
+For high-performance private clusters with low-latency local interconnects (e.g. Slurm / 100GbE):
+1. The Python trainer completes an optimization step and publishes an event to a Redis / NATS topic:
+   ```json
+   {
+     "event": "NEW_WEIGHTS",
+     "version": 142,
+     "uri": "http://trainer-node:8080/weights/model_142.onnx",
+     "sha256": "a3f8c..."
+   }
+   ```
+2. Each worker node subscribes to the topic, receives the broadcast instantaneously, and initiates a background download.
+
+---
+
+### 11.3 Architectural Invariant: Zero-Stall Background Weight Synchronization
+
+> [!IMPORTANT]
+> **A worker node must NEVER pause or stall MCTS self-play simulations while downloading or compiling new neural network weights.**
+
+Network downloads can experience latency spikes, packet drops, or temporary server throttling. If workers blocked MCTS during network transfers, cluster throughput would collapse.
+
+#### The 5-Step Non-Blocking Hot-Swap Lifecycle:
+1. **Continuous Execution**: MCTS workers continue running self-play uninterrupted using the current `ort::Session` (Version $K$).
+2. **Background Download**: A separate network thread downloads the new binary payload to a temporary file (`model_next.onnx.tmp`).
+3. **Integrity Verification**: The background thread calculates the SHA256 checksum and compares it against the publisher's manifest, protecting against incomplete or corrupted transfers.
+4. **Offline Compilation**: The background thread instantiates and optimizes the new ONNX session:
+   ```rust
+   let new_session = ort::session::Session::builder()?
+       .with_optimization_level(ort::session::GraphOptimizationLevel::Level3)?
+       .with_intra_threads(4)?
+       .commit_from_file(&new_model_path)?;
+   ```
+   *Any CUDA compilation overhead or TensorRT engine building happens entirely off the hot search path.*
+5. **Atomic Pointer Replacement**: Once `new_session` is completely initialized and verified, the thread sends `new_session` through the lockless `reload_rx` channel to the `InferenceDispatcher`. Between micro-batches, the dispatcher swaps the active session reference in $O(1)$ time without dropping a single queued evaluation request.
