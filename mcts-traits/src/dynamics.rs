@@ -89,12 +89,12 @@ impl<S, R, D> Transition<S, R, D> {
 pub trait AgentDynamics {
     /// Internal representation of the environment or planning state.
     type State;
-    /// Action representation; must implement `Eq + Debug` for verification and hashing.
-    type Action: Eq + Debug;
+    /// Action representation.
+    type Action;
     /// Reward representation (typically a scalar `f32` or multi-agent array `[f32; N]`).
     type Reward;
     /// Transition delta or observation metadata (e.g. opponent action, chance outcome, or ()).
-    type StepDelta: Eq + Clone + Debug;
+    type StepDelta;
 
     /// Returns the initial or root state for planning.
     fn initial(&self) -> Self::State;
@@ -330,7 +330,8 @@ where
     type State = W::WorldState;
     type Action = W::Action;
     type Reward = W::StepReward;
-    type StepDelta = Option<W::Action>;
+    /// Sequence of all opponent actions that took place during this round.
+    type StepDelta = Vec<W::Action>;
 
     #[inline]
     fn initial(&self) -> Self::State {
@@ -350,25 +351,21 @@ where
         // 1. Apply primary agent's action
         let primary_outcome = self.world.step_action(s, action);
         if primary_outcome.terminated {
-            return StepOutcome::with_delta(primary_outcome.reward, None, true);
+            return StepOutcome::with_delta(primary_outcome.reward, Vec::new(), true);
         }
 
         // 2. Loop through all subsequent opponent turns until returning to primary player or terminal
-        let mut last_opp_action = None;
+        let mut opp_actions = Vec::new();
         while !self.world.terminal(s) && self.world.current_player(s) != self.primary_player {
             let opp_action = self.opponent_policy.select_action(s);
             let outcome = self.world.step_action(s, &opp_action);
-            last_opp_action = Some(opp_action);
+            opp_actions.push(opp_action);
             if outcome.terminated {
-                return StepOutcome::with_delta(outcome.reward, last_opp_action, true);
+                return StepOutcome::with_delta(outcome.reward, opp_actions, true);
             }
         }
 
-        StepOutcome::with_delta(
-            primary_outcome.reward,
-            last_opp_action,
-            self.world.terminal(s),
-        )
+        StepOutcome::with_delta(primary_outcome.reward, opp_actions, self.world.terminal(s))
     }
 
     #[inline]

@@ -11,13 +11,16 @@ The `mcts-envs` crate contains reference game environments and baseline heuristi
 Implemented in [`connect4`](file:///home/pankaj/Projects/ai/connect4).
 
 - **Type**: 2-Player Zero-Sum, Turn-Based, Perfect Information.
-- **Board**: Parametric grid of size $R \times C$ (default: $6 \times 7$).
+- **Board**: Parametric grid of size $R \times C$ (default: $6 \times 7$; CLI utilities support `--board <RxC>` with options `6x7`, `7x8`, `7x9`, `8x8`, `11x15`, `11x19`).
 - **Action Space**: Column index $c \in \{0, \dots, C-1\}$.
 - **Win Condition**: 4 identical tokens connected horizontally, vertically, or diagonally.
 - **Traits Implemented**:
   - `World` & `TurnBasedWorld`: Ground-truth 2-player match referee with simultaneous joint-action interface and single-action step.
   - `TurnBasedDynamics<Connect4World>`: Reusable ego-centric planning dynamics.
   - `MacroConnect4Dynamics`: Round-based lookahead absorbing opponent policies.
+- **CLI Utilities**:
+  - `connect4-play`: Interactive terminal game supporting human vs AI, AI vs AI, and custom board dimensions. Options: `--board <RxC>` (default: `6x7`, supported: `6x7`, `7x8`, `7x9`, `8x8`, `11x15`, `11x19`), `--mode`, `--iters`, `--rollouts`, `--c-puct`, `--quiet`.
+  - `connect4-tournament`: Round-robin tournament arena between arbitrary agent specifications (`random`, `tactical`, `mcts:<iters>:<rollouts>`, `macro-tactical:<iters>`, `macro-random:<iters>`). Options: `--board <RxC>` (default: `6x7`, supported: `6x7`, `7x8`, `7x9`, `8x8`, `11x15`, `11x19`), `--agents`, `--games`, `--c-puct`, `--verbose`.
 - **Reward Encoding**:
   - Red Win: `[+1.0, -1.0]`
   - Yellow Win: `[-1.0, +1.0]`

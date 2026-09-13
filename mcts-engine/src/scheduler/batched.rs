@@ -19,6 +19,26 @@ pub struct BatchedScheduler {
     pub virtual_loss_weight: f32,
 }
 
+/// RAII scope that ensures virtual loss applied to tree edges is reliably reverted on drop.
+struct VirtualLossScope<'a, Action, Reward, Stats: EdgeStatsStore + VirtualLossStore, StepDelta> {
+    tree: &'a mut TreeStore<Action, Reward, Stats, StepDelta>,
+    edges: Vec<crate::tree_store::EdgeId>,
+    weight: f32,
+    disarmed: bool,
+}
+
+impl<'a, Action, Reward, Stats: EdgeStatsStore + VirtualLossStore, StepDelta> Drop
+    for VirtualLossScope<'a, Action, Reward, Stats, StepDelta>
+{
+    fn drop(&mut self) {
+        if !self.disarmed && self.weight > 0.0 {
+            for &edge in &self.edges {
+                self.tree.stats.remove_virtual_loss(edge, self.weight);
+            }
+        }
+    }
+}
+
 impl BatchedScheduler {
     /// Creates a new `BatchedScheduler` with the specified batch size and virtual loss weight.
     pub fn new(batch_size: usize, virtual_loss_weight: f32) -> Self {
@@ -65,43 +85,64 @@ impl BatchedScheduler {
             backup.init_root(tree, root, &eval);
         }
 
-        // 2. Batched Iteration Loop
-        for _ in 0..num_iterations {
-            let mut paths: Vec<Vec<PathElement>> = Vec::with_capacity(self.batch_size);
-            let mut leaf_nodes: Vec<NodeId> = Vec::with_capacity(self.batch_size);
-            let mut leaf_states: Vec<D::State> = Vec::with_capacity(self.batch_size);
+        // 2. Preallocate reusable scratch buffers across all batch iterations
+        let mut paths: Vec<Vec<PathElement>> = (0..self.batch_size)
+            .map(|_| Vec::with_capacity(32))
+            .collect();
+        let mut leaf_nodes: Vec<NodeId> = Vec::with_capacity(self.batch_size);
+        let mut leaf_states: Vec<D::State> = Vec::with_capacity(self.batch_size);
+        let mut states_to_evaluate: Vec<D::State> = Vec::with_capacity(self.batch_size);
+        let mut unique_node_ids: Vec<NodeId> = Vec::with_capacity(self.batch_size);
+        let mut unique_actions: Vec<Vec<Action>> = Vec::with_capacity(self.batch_size);
+        let mut path_leaf_map: Vec<Option<usize>> = vec![None; self.batch_size];
 
-            for _ in 0..self.batch_size {
-                let mut path = Vec::new();
+        let mut scope = VirtualLossScope {
+            tree,
+            edges: Vec::with_capacity(self.batch_size * 16),
+            weight: self.virtual_loss_weight,
+            disarmed: false,
+        };
+
+        // 3. Batched Iteration Loop
+        for _ in 0..num_iterations {
+            leaf_nodes.clear();
+            leaf_states.clear();
+            states_to_evaluate.clear();
+            unique_node_ids.clear();
+            unique_actions.clear();
+            path_leaf_map.fill(None);
+
+            for path in paths.iter_mut().take(self.batch_size) {
+                path.clear();
                 let outcome = descend_trajectory(
-                    tree,
+                    scope.tree,
                     dynamics,
                     selection,
                     root,
                     root_state,
-                    &mut path,
+                    path,
                     self.virtual_loss_weight,
                 );
-                paths.push(path);
+                if self.virtual_loss_weight > 0.0 {
+                    for pe in path.iter() {
+                        scope.edges.push(pe.edge);
+                    }
+                }
                 leaf_nodes.push(outcome.leaf_node);
                 leaf_states.push(outcome.leaf_state);
             }
 
             // Deduplicate unique leaves for evaluation
-            let mut states_to_evaluate: Vec<D::State> = Vec::new();
-            let mut unique_node_ids: Vec<NodeId> = Vec::new();
-            let mut path_leaf_map: Vec<Option<usize>> = vec![None; self.batch_size];
-
             for b in 0..self.batch_size {
                 let leaf_node = leaf_nodes[b];
                 let state = &leaf_states[b];
 
-                if tree.node_status(leaf_node) == NodeStatus::Terminal {
+                if scope.tree.node_status(leaf_node) == NodeStatus::Terminal {
                     path_leaf_map[b] = None;
-                } else if tree.node_status(leaf_node) == NodeStatus::Unexpanded {
+                } else if scope.tree.node_status(leaf_node) == NodeStatus::Unexpanded {
                     dynamics.actions(state, &mut scratch_actions);
                     if scratch_actions.is_empty() {
-                        tree.mark_terminal(leaf_node);
+                        scope.tree.mark_terminal(leaf_node);
                         path_leaf_map[b] = None;
                     } else if let Some(pos) =
                         unique_node_ids.iter().position(|&nid| nid == leaf_node)
@@ -111,6 +152,7 @@ impl BatchedScheduler {
                         let pos = states_to_evaluate.len();
                         states_to_evaluate.push(state.clone());
                         unique_node_ids.push(leaf_node);
+                        unique_actions.push(scratch_actions.clone());
                         path_leaf_map[b] = Some(pos);
                     }
                 } else {
@@ -126,25 +168,30 @@ impl BatchedScheduler {
                 Vec::new()
             };
 
-            // Expand unique unexpanded leaves
+            // Expand unique unexpanded leaves using cached legal actions (no duplicate generation)
             for (i, &leaf_node) in unique_node_ids.iter().enumerate() {
-                let state = &states_to_evaluate[i];
-                dynamics.actions(state, &mut scratch_actions);
-                tree.expand_node(leaf_node, &scratch_actions);
+                scope.tree.expand_node(leaf_node, &unique_actions[i]);
             }
 
-            // Backpropagate all paths and clean up virtual loss
+            // Backpropagate all paths
             for b in 0..self.batch_size {
                 let path = &paths[b];
                 let eval_opt = path_leaf_map[b].map(|idx| &evals[idx]);
+                backup.backup(scope.tree, path, eval_opt);
+            }
 
-                backup.backup(tree, path, eval_opt);
-
-                for pe in path {
-                    tree.stats
-                        .remove_virtual_loss(pe.edge, self.virtual_loss_weight);
+            // Revert virtual loss for this completed batch
+            if self.virtual_loss_weight > 0.0 {
+                for &edge in &scope.edges {
+                    scope
+                        .tree
+                        .stats
+                        .remove_virtual_loss(edge, self.virtual_loss_weight);
                 }
+                scope.edges.clear();
             }
         }
+
+        scope.disarmed = true;
     }
 }

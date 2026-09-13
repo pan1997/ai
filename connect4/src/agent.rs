@@ -592,8 +592,13 @@ impl Connect4AgentSpec {
         }
     }
 
-    /// Instantiates an agent trait object ready for game execution.
-    pub fn instantiate(&self, name: &str, c_puct: f32, verbose: bool) -> BoxAgent<6, 7> {
+    /// Instantiates an agent trait object ready for game execution on an $R \times C$ board.
+    pub fn instantiate<const R: usize, const C: usize>(
+        &self,
+        name: &str,
+        c_puct: f32,
+        verbose: bool,
+    ) -> BoxAgent<R, C> {
         match self {
             Self::Random => Box::new(RandomAgent::new(name)),
             Self::Tactical => Box::new(TacticalAgent::new(name)),

@@ -219,8 +219,8 @@ pub trait Agent<State, Action, Delta = ()> {
 ```
 
 The tree descent loop is universal across all paradigms:
-- **Round-Based Macro (Route B)**: `history` has 1 item: `[(my_action, opp_delta)]`.
-- **Adversarial Afterstate (Route A) / Alternating**: `history` has 2 items: `[(my_action, ()), (opp_action, ())]` (or 4 in 4-player Blokus).
+- **Round-Based Macro (Route B)**: `history` has 1 item: `[(my_action, opp_delta)]`, where `opp_delta: Vec<W::Action>` contains the sequence of all opponent moves played during that round.
+- **Adversarial Afterstate (Route A) / Alternating**: `history` has 2 items: `[(my_action, ()), (opp_action, ())]` (or $N$ in $N$-player games).
 - **Stochastic 2048**: `history` has 1 item: `[(my_slide, tile_spawn_delta)]`.
 
 The agent descends through `history`, calls `tree.promote_subtree(new_root)`, and continues search seamlessly.
@@ -271,7 +271,7 @@ The agent descends through `history`, calls `tree.promote_subtree(new_root)`, an
    - `StepOutcome<Reward, StepDelta>`: Emits immediate rewards, transition deltas (`StepDelta`), and termination status.
    - `AgentDynamics`: Associated type `type StepDelta: Eq + Clone + Debug` allowing stochastic and opponent reaction branching.
    - `OpponentPolicy<State, Action>`: Generic trait for state-based opponent responses.
-   - `RoundBasedDynamics<W, P>`: Universal macro-action dynamics adapter emitting opponent reply in `StepDelta`.
+   - `RoundBasedDynamics<W, P>`: Universal macro-action dynamics adapter. Emits `StepDelta = Vec<W::Action>` recording all intermediate opponent replies in sequence until control returns to the primary player (preventing move collisions and ambiguity in $N > 2$ multi-player environments).
 2. **`mcts-engine`**:
    - Zero-allocation `StepDelta` branching in `TreeStore`: child nodes indexed by `(EdgeId, StepDelta)`.
    - Unified `SequentialScheduler`: single universal scheduler executing both standard 1-ply MCTS and multi-outcome macro dynamics, enforcing the Single-Perspective Decision Leaf Evaluation Invariant.

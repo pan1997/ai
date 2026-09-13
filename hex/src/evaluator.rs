@@ -181,34 +181,29 @@ impl<const N: usize> Model<HexState<N>> for ShortestPathHeuristicEvaluator<N> {
 
 /// Monte Carlo rollout evaluator performing fast batch-fill simulations to terminal states.
 ///
-/// In Hex, draws are impossible and the game outcome on a fully filled board is invariant to the
-/// move ordering of the remaining empty cells. Thus, instead of stepping one move at a time with
-/// repeated legal-action filtering and turn-by-turn win checks, this evaluator shuffles the
-/// remaining empty cells once, places all alternating stones in a single batch, and verifies
-/// Top-to-Bottom connectivity using Black's DSU. By the Hex Theorem, if Black does not connect,
-/// White is guaranteed to have connected, eliminating White DSU updates entirely and yielding
-/// a ~7.6x speedup over sequential rollouts.
+/// Fast random rollout evaluator estimating state win probabilities using union-find connectivity.
+///
+/// Under the Hex theorem, every fully completed board has exactly one winner (no draws).
+/// This evaluator randomly completes the remaining empty cells and queries the DSU to determine
+/// the winner in $O(|\text{empty}| \cdot \alpha(N^2))$ time.
 #[derive(Debug, Clone, Copy)]
 pub struct RolloutEvaluator<const N: usize = 11> {
-    /// Number of random rollouts averaged per evaluation.
+    /// Number of random simulation playouts per leaf node evaluation.
     pub num_rollouts: usize,
-    /// Maximum search depth before truncating rollout (kept for interface compatibility).
-    pub max_depth: usize,
 }
 
 impl<const N: usize> RolloutEvaluator<N> {
-    /// Creates a new rollout evaluator.
-    pub fn new(num_rollouts: usize, max_depth: usize) -> Self {
+    /// Creates a new rollout evaluator with `num_rollouts` playouts per evaluation.
+    pub fn new(num_rollouts: usize) -> Self {
         Self {
             num_rollouts: num_rollouts.max(1),
-            max_depth,
         }
     }
 }
 
 impl<const N: usize> Default for RolloutEvaluator<N> {
     fn default() -> Self {
-        Self::new(2, N * N)
+        Self::new(2)
     }
 }
 

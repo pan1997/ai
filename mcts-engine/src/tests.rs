@@ -842,8 +842,7 @@ fn test_sequential_scheduler_heuristic_opponent_and_evaluator_invariant() {
     let backup = VectorBackup::<2>::default();
 
     let stats = MultiAgentPuctStats::<2>::new();
-    let mut tree: TreeStore<u32, [f32; 2], _, Option<u32>> =
-        TreeStore::with_capacity(50, 50, stats);
+    let mut tree: TreeStore<u32, [f32; 2], _, Vec<u32>> = TreeStore::with_capacity(50, 50, stats);
     let root = tree.insert_root(AgentId(0));
 
     let scheduler = SequentialScheduler;
@@ -868,12 +867,12 @@ fn test_sequential_scheduler_heuristic_opponent_and_evaluator_invariant() {
 
     let edge1 = tree.first_child_edge(root);
     // Delta branch for action 10
-    let child10 = tree.get_child(edge1, &Some(10));
+    let child10 = tree.get_child(edge1, &vec![10]);
     assert!(child10.is_some());
 
     // Root edge 1 (action 2) leads to immediate win
     let edge2 = EdgeId(edge1.0 + 1);
-    let child_win = tree.get_child(edge2, &None);
+    let child_win = tree.get_child(edge2, &vec![]);
     if let Some(win_node) = child_win {
         assert_eq!(tree.node_status(win_node), NodeStatus::Terminal);
     }
@@ -891,8 +890,7 @@ fn test_sequential_scheduler_random_opponent_with_step_delta_branching() {
     let backup = VectorBackup::<2>::default();
 
     let stats = MultiAgentPuctStats::<2>::new();
-    let mut tree: TreeStore<u32, [f32; 2], _, Option<u32>> =
-        TreeStore::with_capacity(50, 50, stats);
+    let mut tree: TreeStore<u32, [f32; 2], _, Vec<u32>> = TreeStore::with_capacity(50, 50, stats);
     let root = tree.insert_root(AgentId(0));
 
     let scheduler = SequentialScheduler;
@@ -1003,4 +1001,204 @@ fn test_normalized_puct_selection_scale_invariance() {
     // edge1 score = 0.0 + 1.4142 * 0.3 * 3.16 / 1 ≈ 1.34 > 1.0!
     // edge0 score <= 1.0 + exploration (< 1.34).
     assert_eq!(selection.select_child(&tree, root), Some(edge1));
+}
+
+#[test]
+fn test_promote_subtree_preserves_capacity() {
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _> = TreeStore::with_capacity(100, 200, stats);
+    let r0 = tree.insert_root(AgentId(0));
+    tree.expand_node(r0, &[10, 20]);
+    let n1 = tree.insert_node(EdgeId(0), AgentId(1));
+    tree.expand_node(n1, &[30, 40]);
+
+    // Promote subtree starting at n1
+    tree.promote_subtree(n1);
+    assert_eq!(tree.num_nodes(), 1);
+
+    // Tree capacity should still be at least the initial preallocated capacity
+    assert!(tree.node_capacity() >= 100);
+    assert!(tree.edge_capacity() >= 200);
+}
+
+#[test]
+fn test_batched_scheduler_virtual_loss_guard_exception_safety() {
+    use crate::backup::SingleAgentBackup;
+    use crate::scheduler::BatchedScheduler;
+    use crate::selection::UctSelection;
+    use mcts_traits::{BatchedModel, Evaluation};
+
+    struct PanickingModel;
+    impl mcts_traits::Model<u32> for PanickingModel {
+        fn evaluate(&self, _s: &u32) -> Evaluation {
+            Evaluation::scalar(vec![0.5, 0.5], 0.0)
+        }
+    }
+    impl BatchedModel<u32> for PanickingModel {
+        fn evaluate_batch(&self, _states: &[&u32]) -> Vec<Evaluation> {
+            panic!("Simulated neural network runtime panic (e.g. CUDA OOM)");
+        }
+    }
+
+    struct Mock1PEnv;
+    impl mcts_traits::AgentDynamics for Mock1PEnv {
+        type State = u32;
+        type Action = u32;
+        type Reward = [f32; 1];
+        type StepDelta = ();
+
+        fn initial(&self) -> Self::State {
+            0
+        }
+        fn actions(&self, _s: &Self::State, out: &mut Vec<Self::Action>) {
+            out.clear();
+            out.extend([1, 2]);
+        }
+        fn step(
+            &self,
+            s: &mut Self::State,
+            _a: &Self::Action,
+        ) -> mcts_traits::StepOutcome<Self::Reward, ()> {
+            *s += 1;
+            mcts_traits::StepOutcome::new([1.0], *s >= 5)
+        }
+        fn current_agent(&self, _s: &Self::State) -> AgentId {
+            AgentId(0)
+        }
+    }
+
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _, ()> = TreeStore::with_capacity(50, 50, stats);
+    let root = tree.insert_root(AgentId(0));
+    tree.expand_node(root, &[1, 2]);
+
+    let env = Mock1PEnv;
+    let model = PanickingModel;
+    let selection = UctSelection::<1> { c_uct: 1.414 };
+    let backup = SingleAgentBackup::new(1.0);
+    let scheduler = BatchedScheduler::new(2, 1.0);
+
+    // Run scheduler and expect panic from model.evaluate_batch
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut t = tree;
+        scheduler.search(&mut t, &env, &model, &selection, &backup, root, &0, 1);
+        t
+    }));
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_match_driver_history_only_contains_opponent_moves() {
+    use crate::arena::MatchDriver;
+    use mcts_traits::{Agent, StepOutcome, TurnBasedWorld, World};
+
+    struct AlternatingWorld;
+
+    impl World for AlternatingWorld {
+        type WorldState = (usize, usize); // (turn_count, last_action)
+        type Action = usize;
+        type Observation = (usize, usize);
+
+        fn n_players(&self) -> usize {
+            2
+        }
+
+        fn initial(&self) -> Self::WorldState {
+            (0, 0)
+        }
+
+        fn observe(&self, ws: &Self::WorldState, _player: usize) -> Self::Observation {
+            *ws
+        }
+
+        fn actions(&self, _ws: &Self::WorldState, _player: usize, out: &mut Vec<Self::Action>) {
+            out.clear();
+            out.push(1);
+        }
+
+        fn step(&self, ws: &mut Self::WorldState, joint: &[Self::Action]) -> (Vec<f32>, bool) {
+            let action = &joint[ws.0 % 2];
+            let outcome = self.step_action(ws, action);
+            (outcome.reward.to_vec(), outcome.terminated)
+        }
+
+        fn terminal(&self, ws: &Self::WorldState) -> bool {
+            ws.0 >= 4
+        }
+    }
+
+    impl TurnBasedWorld for AlternatingWorld {
+        type StepReward = [f32; 2];
+
+        fn current_player(&self, ws: &Self::WorldState) -> usize {
+            ws.0 % 2
+        }
+
+        fn step_action(
+            &self,
+            ws: &mut Self::WorldState,
+            action: &Self::Action,
+        ) -> StepOutcome<Self::StepReward> {
+            ws.0 += 1;
+            ws.1 = *action;
+            let term = ws.0 >= 4;
+            StepOutcome::new([0.0, 0.0], term)
+        }
+    }
+
+    struct HistoryVerifyingAgent {
+        name: String,
+        action_to_play: usize,
+        observed_histories: Vec<Vec<usize>>,
+    }
+
+    impl HistoryVerifyingAgent {
+        fn new(name: &str, action: usize) -> Self {
+            Self {
+                name: name.to_string(),
+                action_to_play: action,
+                observed_histories: Vec::new(),
+            }
+        }
+    }
+
+    impl Agent<(usize, usize), usize> for HistoryVerifyingAgent {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn select_action(&mut self, _state: &(usize, usize)) -> usize {
+            self.action_to_play
+        }
+        fn select_action_with_history(
+            &mut self,
+            _state: &(usize, usize),
+            history: &[(usize, ())],
+        ) -> usize {
+            self.observed_histories
+                .push(history.iter().map(|(a, _)| *a).collect());
+            self.action_to_play
+        }
+    }
+
+    let world = AlternatingWorld;
+    let mut p0 = HistoryVerifyingAgent::new("P0", 100);
+    let mut p1 = HistoryVerifyingAgent::new("P1", 200);
+
+    let driver = MatchDriver::new();
+    let mut agents: [&mut dyn Agent<(usize, usize), usize>; 2] = [&mut p0, &mut p1];
+    let result = driver.play_multi::<AlternatingWorld, usize, 2>(&world, &mut agents, None);
+
+    assert_eq!(result.total_moves, 4);
+    // P0 acted on turns 0 and 2:
+    // Turn 0: game started, history is empty.
+    // Turn 2: P1 played 200 on turn 1, so P0 should observe ONLY [200], NOT [100, 200]!
+    assert_eq!(p0.observed_histories[0], Vec::<usize>::new());
+    assert_eq!(p0.observed_histories[1], vec![200]);
+
+    // P1 acted on turns 1 and 3:
+    // Turn 1: P0 played 100 on turn 0, so P1 observes [100].
+    // Turn 3: P0 played 100 on turn 2, so P1 observes [100].
+    assert_eq!(p1.observed_histories[0], vec![100]);
+    assert_eq!(p1.observed_histories[1], vec![100]);
 }

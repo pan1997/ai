@@ -7,6 +7,7 @@
 //! cargo run -p connect4 --bin connect4-play -- [OPTIONS]
 //!
 //! Options:
+//!   --board <RxC>       Board size: '6x7', '7x8', '7x9', '8x8', '11x15', '11x19' [default: 6x7]
 //!   --mode <MODE>       Game mode: 'human-ai', 'ai-human', 'ai-ai', 'human-human' [default: human-ai]
 //!   --iters <N>         MCTS search iterations per move [default: 800]
 //!   --rollouts <N>      Rollout evaluations per leaf (0 for uniform prior) [default: 5]
@@ -29,6 +30,7 @@ USAGE:
     connect4-play [OPTIONS]
 
 OPTIONS:
+    --board <RxC>     Board dimensions: '6x7', '7x8', '7x9', '8x8', '11x15', '11x19' [default: 6x7]
     --mode <MODE>     Game mode:
                         'human-ai'    Human (Red) vs MCTS (Yellow) [default]
                         'ai-human'    MCTS (Red) vs Human (Yellow)
@@ -45,13 +47,13 @@ OPTIONS:
     );
 }
 
-fn build_mcts_agent(
+fn build_mcts_agent<const R: usize, const C: usize>(
     name: &str,
     iters: usize,
     rollouts: usize,
     depth: usize,
     verbose: bool,
-) -> BoxAgent<6, 7> {
+) -> BoxAgent<R, C> {
     if rollouts == 0 {
         Box::new(MctsAgent::new_uniform(name, iters, verbose))
     } else {
@@ -61,9 +63,92 @@ fn build_mcts_agent(
     }
 }
 
+fn run_play<const R: usize, const C: usize>(
+    mode: &str,
+    iters: usize,
+    rollouts: usize,
+    depth: usize,
+    use_color: bool,
+    verbose: bool,
+) {
+    println!("==================================================");
+    println!("        🔴 CONNECT 4 - ZERO-ALLOCATION MCTS 🟡    ");
+    println!("==================================================");
+    println!("Board: {R}x{C} | Mode: {mode} | MCTS Iterations: {iters} | Rollouts: {rollouts}\n");
+
+    let (mut player_red, mut player_yellow): (BoxAgent<R, C>, BoxAgent<R, C>) = match mode {
+        "human-ai" => (
+            Box::new(HumanAgent::new("You (Red)")),
+            build_mcts_agent("MCTS Bot (Yellow)", iters, rollouts, depth, verbose),
+        ),
+        "ai-human" => (
+            build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
+            Box::new(HumanAgent::new("You (Yellow)")),
+        ),
+        "ai-ai" => (
+            build_mcts_agent("Alpha-MCTS (Red)", iters, rollouts, depth, verbose),
+            build_mcts_agent("Beta-MCTS (Yellow)", iters, rollouts, depth, verbose),
+        ),
+        "human-human" => (
+            Box::new(HumanAgent::new("Player 1 (Red)")),
+            Box::new(HumanAgent::new("Player 2 (Yellow)")),
+        ),
+        "ai-random" => (
+            build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
+            Box::new(RandomAgent::new("Random Bot (Yellow)")),
+        ),
+        other => {
+            eprintln!(
+                "Invalid mode '{other}'. Supported: human-ai, ai-human, ai-ai, human-human, ai-random"
+            );
+            return;
+        }
+    };
+
+    let mut state = Connect4State::<R, C>::new();
+
+    loop {
+        println!("{}", render_board_styled(&state, use_color));
+
+        let (active_name, active_agent) = match state.current_player {
+            Player::Red => (player_red.name().to_string(), &mut player_red),
+            Player::Yellow => (player_yellow.name().to_string(), &mut player_yellow),
+        };
+
+        println!("Turn: {active_name} [{:?}]", state.current_player);
+
+        let chosen_col = active_agent.select_action(&state);
+        let current_player = state.current_player;
+
+        let placed_row = state.drop_piece(chosen_col).unwrap_or_else(|err| {
+            panic!("Agent {active_name} selected invalid column {chosen_col}: {err}")
+        });
+
+        println!("{active_name} dropped checker into column {chosen_col}.\n");
+
+        if state.check_win_at(placed_row, chosen_col, current_player) {
+            println!("{}", render_board_styled(&state, use_color));
+            println!(
+                "🎉🎉 Game Over! {active_name} [{:?}] wins! 🎉🎉\n",
+                current_player
+            );
+            break;
+        }
+
+        if state.is_board_full() {
+            println!("{}", render_board_styled(&state, use_color));
+            println!("🤝 Game Over! The board is full — it's a draw! 🤝\n");
+            break;
+        }
+
+        state.current_player = current_player.other();
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    let mut board = "6x7".to_string();
     let mut mode = "human-ai".to_string();
     let mut iters = 800;
     let mut rollouts = 5;
@@ -77,6 +162,12 @@ fn main() {
             "-h" | "--help" => {
                 print_help();
                 return;
+            }
+            "--board" => {
+                i += 1;
+                if i < args.len() {
+                    board = args[i].clone();
+                }
             }
             "--mode" => {
                 i += 1;
@@ -116,77 +207,17 @@ fn main() {
         i += 1;
     }
 
-    println!("==================================================");
-    println!("        🔴 CONNECT 4 - ZERO-ALLOCATION MCTS 🟡    ");
-    println!("==================================================");
-    println!("Mode: {mode} | MCTS Iterations: {iters} | Rollouts: {rollouts}\n");
-
-    let (mut player_red, mut player_yellow): (BoxAgent<6, 7>, BoxAgent<6, 7>) = match mode.as_str()
-    {
-        "human-ai" => (
-            Box::new(HumanAgent::new("You (Red)")),
-            build_mcts_agent("MCTS Bot (Yellow)", iters, rollouts, depth, verbose),
-        ),
-        "ai-human" => (
-            build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
-            Box::new(HumanAgent::new("You (Yellow)")),
-        ),
-        "ai-ai" => (
-            build_mcts_agent("Alpha-MCTS (Red)", iters, rollouts, depth, verbose),
-            build_mcts_agent("Beta-MCTS (Yellow)", iters, rollouts, depth, verbose),
-        ),
-        "human-human" => (
-            Box::new(HumanAgent::new("Player 1 (Red)")),
-            Box::new(HumanAgent::new("Player 2 (Yellow)")),
-        ),
-        "ai-random" => (
-            build_mcts_agent("MCTS Bot (Red)", iters, rollouts, depth, verbose),
-            Box::new(RandomAgent::new("Random Bot (Yellow)")),
-        ),
+    match board.as_str() {
+        "6x7" => run_play::<6, 7>(&mode, iters, rollouts, depth, use_color, verbose),
+        "7x8" => run_play::<7, 8>(&mode, iters, rollouts, depth, use_color, verbose),
+        "7x9" => run_play::<7, 9>(&mode, iters, rollouts, depth, use_color, verbose),
+        "8x8" => run_play::<8, 8>(&mode, iters, rollouts, depth, use_color, verbose),
+        "11x15" => run_play::<11, 15>(&mode, iters, rollouts, depth, use_color, verbose),
+        "11x19" => run_play::<11, 19>(&mode, iters, rollouts, depth, use_color, verbose),
         other => {
             eprintln!(
-                "Invalid mode '{other}'. Supported: human-ai, ai-human, ai-ai, human-human, ai-random"
+                "Invalid board size '{other}'. Supported sizes: 6x7, 7x8, 7x9, 8x8, 11x15, 11x19"
             );
-            return;
         }
-    };
-
-    let mut state = Connect4State::<6, 7>::new();
-
-    loop {
-        println!("{}", render_board_styled(&state, use_color));
-
-        let (active_name, active_agent) = match state.current_player {
-            Player::Red => (player_red.name().to_string(), &mut player_red),
-            Player::Yellow => (player_yellow.name().to_string(), &mut player_yellow),
-        };
-
-        println!("Turn: {active_name} [{:?}]", state.current_player);
-
-        let chosen_col = active_agent.select_action(&state);
-        let current_player = state.current_player;
-
-        let placed_row = state.drop_piece(chosen_col).unwrap_or_else(|err| {
-            panic!("Agent {active_name} selected invalid column {chosen_col}: {err}")
-        });
-
-        println!("{active_name} dropped checker into column {chosen_col}.\n");
-
-        if state.check_win_at(placed_row, chosen_col, current_player) {
-            println!("{}", render_board_styled(&state, use_color));
-            println!(
-                "🎉🎉 Game Over! {active_name} [{:?}] wins! 🎉🎉\n",
-                current_player
-            );
-            break;
-        }
-
-        if state.is_board_full() {
-            println!("{}", render_board_styled(&state, use_color));
-            println!("🤝 Game Over! The board is full — it's a draw! 🤝\n");
-            break;
-        }
-
-        state.current_player = current_player.other();
     }
 }

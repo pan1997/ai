@@ -136,6 +136,18 @@ impl<Action, Reward, Stats: EdgeStatsStore, StepDelta> TreeStore<Action, Reward,
         self.edges.action.len()
     }
 
+    /// Returns the current capacity of allocated node storage.
+    #[inline]
+    pub fn node_capacity(&self) -> usize {
+        self.nodes.parent_edge.capacity()
+    }
+
+    /// Returns the current capacity of allocated edge storage.
+    #[inline]
+    pub fn edge_capacity(&self) -> usize {
+        self.edges.action.capacity()
+    }
+
     /// Returns the lifecycle expansion status of `node`.
     #[inline]
     pub fn node_status(&self, node: NodeId) -> NodeStatus {
@@ -511,11 +523,12 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore, StepDelta: Clone>
         }
 
         let new_num_nodes = reachable_nodes.len();
-        let mut new_parent_edge = Vec::with_capacity(new_num_nodes);
-        let mut new_first_child_edge = Vec::with_capacity(new_num_nodes);
-        let mut new_num_children = Vec::with_capacity(new_num_nodes);
-        let mut new_agent = Vec::with_capacity(new_num_nodes);
-        let mut new_status = Vec::with_capacity(new_num_nodes);
+        let node_cap = self.nodes.parent_edge.capacity().max(new_num_nodes);
+        let mut new_parent_edge = Vec::with_capacity(node_cap);
+        let mut new_first_child_edge = Vec::with_capacity(node_cap);
+        let mut new_num_children = Vec::with_capacity(node_cap);
+        let mut new_agent = Vec::with_capacity(node_cap);
+        let mut new_status = Vec::with_capacity(node_cap);
 
         for &old_u in &reachable_nodes {
             if old_u == new_root {
@@ -538,14 +551,24 @@ impl<Action: Clone, Reward: Clone, Stats: EdgeStatsStore, StepDelta: Clone>
         }
 
         let new_num_edges = kept_edges.len();
-        let mut new_action = Vec::with_capacity(new_num_edges);
-        let mut new_child_node = Vec::with_capacity(new_num_edges);
-        let mut new_first_branch = Vec::with_capacity(new_num_edges);
-        let mut new_reward = Vec::with_capacity(new_num_edges);
+        let edge_cap = if std::mem::size_of::<Action>() == 0 {
+            new_num_edges
+        } else {
+            self.edges.action.capacity().max(new_num_edges)
+        };
+        let mut new_action = Vec::with_capacity(edge_cap);
+        let mut new_child_node = Vec::with_capacity(edge_cap);
+        let mut new_first_branch = Vec::with_capacity(edge_cap);
+        let mut new_reward = Vec::with_capacity(edge_cap);
 
-        let mut new_branches_delta = Vec::new();
-        let mut new_branches_child = Vec::new();
-        let mut new_branches_next = Vec::new();
+        let branch_cap = self.branches.child_node.capacity();
+        let mut new_branches_delta = if std::mem::size_of::<StepDelta>() == 0 {
+            Vec::new()
+        } else {
+            Vec::with_capacity(branch_cap)
+        };
+        let mut new_branches_child = Vec::with_capacity(branch_cap);
+        let mut new_branches_next = Vec::with_capacity(branch_cap);
 
         for &old_e in &kept_edges {
             new_action.push(self.edges.action[old_e].clone());

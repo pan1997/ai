@@ -45,15 +45,16 @@ impl Tzf8Dynamics {
 
     /// Samples a stochastic tile spawn on `state` (90% probability 2, 10% probability 4).
     pub fn sample_spawn(&self, state: &Tzf8State) -> Option<TileSpawn> {
-        let empty = state.empty_cells();
-        if empty.is_empty() {
+        let mut empty = [(0u8, 0u8); 16];
+        let count = state.empty_cells_buf(&mut empty);
+        if count == 0 {
             return None;
         }
         let mut rng = self.rng.lock().unwrap();
-        let idx = rng.gen_range(0..empty.len());
+        let idx = rng.gen_range(0..count);
         let (row, col) = empty[idx];
         let value = if rng.gen_bool(0.10) { 4 } else { 2 };
-        Some(TileSpawn::new(row as u8, col as u8, value))
+        Some(TileSpawn::new(row, col, value))
     }
 }
 

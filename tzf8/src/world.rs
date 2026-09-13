@@ -38,15 +38,16 @@ impl Tzf8World {
     ///
     /// 90% probability for tile value 2, 10% probability for tile value 4.
     pub fn sample_spawn(&self, state: &Tzf8State) -> Option<TileSpawn> {
-        let empty = state.empty_cells();
-        if empty.is_empty() {
+        let mut empty = [(0u8, 0u8); 16];
+        let count = state.empty_cells_buf(&mut empty);
+        if count == 0 {
             return None;
         }
         let mut rng = self.rng.borrow_mut();
-        let idx = rng.gen_range(0..empty.len());
+        let idx = rng.gen_range(0..count);
         let (row, col) = empty[idx];
         let value = if rng.gen_bool(0.10) { 4 } else { 2 };
-        Some(TileSpawn::new(row as u8, col as u8, value))
+        Some(TileSpawn::new(row, col, value))
     }
 
     /// Generates a standardized initial board with 2 randomly spawned tiles using a specific seed.
@@ -54,13 +55,14 @@ impl Tzf8World {
         let mut rng = StdRng::seed_from_u64(seed);
         let mut state = Tzf8State::new_empty();
 
+        let mut empty = [(0u8, 0u8); 16];
         for _ in 0..2 {
-            let empty = state.empty_cells();
-            if !empty.is_empty() {
-                let idx = rng.gen_range(0..empty.len());
+            let count = state.empty_cells_buf(&mut empty);
+            if count > 0 {
+                let idx = rng.gen_range(0..count);
                 let (r, c) = empty[idx];
                 let val = if rng.gen_bool(0.10) { 4 } else { 2 };
-                state.apply_spawn(TileSpawn::new(r as u8, c as u8, val));
+                state.apply_spawn(TileSpawn::new(r, c, val));
             }
         }
 

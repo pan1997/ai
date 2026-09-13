@@ -611,8 +611,10 @@ impl MatchDriver {
 
             on_step(active_seat, &action, &state);
 
-            for buf in &mut history_buffers {
-                buf.push((action.clone(), ()));
+            for (seat, buf) in history_buffers.iter_mut().enumerate() {
+                if seat != active_seat {
+                    buf.push((action.clone(), ()));
+                }
             }
 
             if outcome.terminated {

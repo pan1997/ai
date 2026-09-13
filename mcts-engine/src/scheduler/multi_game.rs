@@ -85,21 +85,43 @@ impl MultiGameScheduler {
             return;
         }
 
-        // 2. Iteration Loop
+        // 2. Preallocate scratch buffers across iterations
+        let mut paths: Vec<Vec<PathElement>> = (0..self.batch_size)
+            .map(|_| Vec::with_capacity(32))
+            .collect();
+        let mut current_node = roots.to_vec();
+        let mut current_state: Vec<D::State> = root_states.iter().map(|&s| s.clone()).collect();
+        let mut is_traversing = vec![false; self.batch_size];
+
+        let mut step_tree_indices = Vec::with_capacity(self.batch_size);
+        let mut active_states = Vec::with_capacity(self.batch_size);
+        let mut selected_actions = Vec::with_capacity(self.batch_size);
+        let mut selected_edges = Vec::with_capacity(self.batch_size);
+        let mut outcomes = Vec::with_capacity(self.batch_size);
+
+        let mut unique_states: Vec<D::State> = Vec::with_capacity(self.batch_size);
+        let mut unique_actions: Vec<Vec<Action>> = Vec::with_capacity(self.batch_size);
+        let mut consumers_list: Vec<Vec<(usize, NodeId)>> = Vec::with_capacity(self.batch_size);
+        let mut terminal_trees: Vec<usize> = Vec::with_capacity(self.batch_size);
+
+        // 3. Iteration Loop
         for _ in 0..num_iterations {
-            let mut paths: Vec<Vec<PathElement>> = vec![Vec::new(); self.batch_size];
-            let mut current_node = roots.to_vec();
-            let mut current_state: Vec<D::State> = root_states.iter().map(|&s| s.clone()).collect();
-            let mut is_traversing = vec![false; self.batch_size];
+            for b in 0..self.batch_size {
+                paths[b].clear();
+                current_node[b] = roots[b];
+                current_state[b].clone_from(root_states[b]);
+                is_traversing[b] = false;
+            }
             for &b in &iteration_trees {
                 is_traversing[b] = true;
             }
 
             while is_traversing.iter().any(|&t| t) {
-                let mut step_tree_indices = Vec::new();
-                let mut active_states = Vec::new();
-                let mut selected_actions = Vec::new();
-                let mut selected_edges = Vec::new();
+                step_tree_indices.clear();
+                active_states.clear();
+                selected_actions.clear();
+                selected_edges.clear();
+                outcomes.clear();
 
                 for b in 0..self.batch_size {
                     if is_traversing[b] {
@@ -129,7 +151,6 @@ impl MultiGameScheduler {
                     break;
                 }
 
-                let mut outcomes = Vec::new();
                 dynamics.step_batch(&mut active_states, &selected_actions, &mut outcomes);
                 assert_eq!(outcomes.len(), step_tree_indices.len());
 
@@ -166,29 +187,31 @@ impl MultiGameScheduler {
             }
 
             // Deduplicate unique states
-            let mut unique_states: Vec<D::State> = Vec::new();
-            let mut consumers_list: Vec<Vec<(usize, NodeId)>> = Vec::new();
-            let mut terminal_paths: Vec<(usize, Vec<PathElement>)> = Vec::new();
+            unique_states.clear();
+            unique_actions.clear();
+            consumers_list.clear();
+            terminal_trees.clear();
 
             for &b in &iteration_trees {
                 let leaf_node = current_node[b];
                 let state = &current_state[b];
 
                 if trees[b].node_status(leaf_node) == NodeStatus::Terminal {
-                    terminal_paths.push((b, paths[b].clone()));
+                    terminal_trees.push(b);
                 } else if trees[b].node_status(leaf_node) == NodeStatus::Unexpanded {
                     dynamics.actions(state, &mut scratch_actions);
                     if scratch_actions.is_empty() {
                         trees[b].mark_terminal(leaf_node);
-                        terminal_paths.push((b, paths[b].clone()));
+                        terminal_trees.push(b);
                     } else if let Some(pos) = unique_states.iter().position(|s| s == state) {
                         consumers_list[pos].push((b, leaf_node));
                     } else {
                         unique_states.push(state.clone());
+                        unique_actions.push(scratch_actions.clone());
                         consumers_list.push(vec![(b, leaf_node)]);
                     }
                 } else {
-                    terminal_paths.push((b, paths[b].clone()));
+                    terminal_trees.push(b);
                 }
             }
 
@@ -200,20 +223,17 @@ impl MultiGameScheduler {
                 Vec::new()
             };
 
-            // Expand unique leaves and backup
+            // Expand unique leaves using cached legal actions (no duplicate generation)
             for (u, eval) in evals.iter().enumerate() {
-                let state = &unique_states[u];
-                dynamics.actions(state, &mut scratch_actions);
-
                 for &(tree_idx, leaf_node) in &consumers_list[u] {
-                    trees[tree_idx].expand_node(leaf_node, &scratch_actions);
+                    trees[tree_idx].expand_node(leaf_node, &unique_actions[u]);
                     let path = &paths[tree_idx];
                     backup.backup(&mut trees[tree_idx], path, Some(eval));
                 }
             }
 
-            for (tree_idx, path) in terminal_paths {
-                backup.backup(&mut trees[tree_idx], &path, None);
+            for &tree_idx in &terminal_trees {
+                backup.backup(&mut trees[tree_idx], &paths[tree_idx], None);
             }
         }
     }

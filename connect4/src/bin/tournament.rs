@@ -30,6 +30,7 @@ USAGE:
     connect4-tournament [OPTIONS]
 
 OPTIONS:
+    --board <RxC>            Board dimensions: '6x7', '7x8', '7x9', '8x8', '11x15', '11x19' [default: 6x7]
     --agents <SPECS> (or --players)
                              Comma-separated list of agent specifications.
                              Examples:
@@ -73,6 +74,7 @@ BACKWARD-COMPATIBILITY ALIASES:
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    let mut board = "6x7".to_string();
     let mut games_per_pair = 10;
     let mut default_iters = 200;
     let mut default_rollouts = 3;
@@ -96,6 +98,12 @@ fn main() {
             "-h" | "--help" => {
                 print_help();
                 return;
+            }
+            "--board" => {
+                i += 1;
+                if i < args.len() {
+                    board = args[i].clone();
+                }
             }
             "--games" | "--rounds" => {
                 i += 1;
@@ -234,6 +242,41 @@ fn main() {
     }
 
     let unique_names = generate_unique_names(&agent_specs);
+    match board.as_str() {
+        "6x7" => {
+            run_tournament::<6, 7>(&agent_specs, &unique_names, games_per_pair, c_puct, verbose)
+        }
+        "7x8" => {
+            run_tournament::<7, 8>(&agent_specs, &unique_names, games_per_pair, c_puct, verbose)
+        }
+        "7x9" => {
+            run_tournament::<7, 9>(&agent_specs, &unique_names, games_per_pair, c_puct, verbose)
+        }
+        "8x8" => {
+            run_tournament::<8, 8>(&agent_specs, &unique_names, games_per_pair, c_puct, verbose)
+        }
+        "11x15" => {
+            run_tournament::<11, 15>(&agent_specs, &unique_names, games_per_pair, c_puct, verbose)
+        }
+        "11x19" => {
+            run_tournament::<11, 19>(&agent_specs, &unique_names, games_per_pair, c_puct, verbose)
+        }
+        other => {
+            eprintln!(
+                "Invalid board size '{other}'. Supported sizes: 6x7, 7x8, 7x9, 8x8, 11x15, 11x19"
+            );
+        }
+    }
+}
+
+fn run_tournament<const R: usize, const C: usize>(
+    agent_specs: &[Connect4AgentSpec],
+    unique_names: &[String],
+    games_per_pair: usize,
+    c_puct: f32,
+    verbose: bool,
+) {
+    let num_agents = agent_specs.len();
     let num_pairs = num_agents * (num_agents - 1) / 2;
     let total_tournament_games = num_pairs * games_per_pair;
 
@@ -241,11 +284,12 @@ fn main() {
         "=========================================================================================="
     );
     println!(
-        "                         ⚔️  CONNECT 4 TOURNAMENT ARENA ⚔️                               "
+        "                         ⚔️  CONNECT 4 TOURNAMENT ARENA ({R}x{C}) ⚔️                       "
     );
     println!(
         "=========================================================================================="
     );
+    println!("Board:        {R} rows x {C} columns");
     println!("Agents competing ({num_agents}):");
     for (idx, name) in unique_names.iter().enumerate() {
         println!("  [{}] {name}", idx + 1);
@@ -289,11 +333,12 @@ fn main() {
                 let red_name = format!("{} (Red)", unique_names[red_idx]);
                 let yellow_name = format!("{} (Yellow)", unique_names[yellow_idx]);
 
-                let mut red_agent = agent_specs[red_idx].instantiate(&red_name, c_puct, verbose);
+                let mut red_agent =
+                    agent_specs[red_idx].instantiate::<R, C>(&red_name, c_puct, verbose);
                 let mut yellow_agent =
-                    agent_specs[yellow_idx].instantiate(&yellow_name, c_puct, verbose);
+                    agent_specs[yellow_idx].instantiate::<R, C>(&yellow_name, c_puct, verbose);
 
-                let world = Connect4World::<6, 7>::new();
+                let world = Connect4World::<R, C>::new();
                 let driver = MatchDriver::new();
                 let result = driver.play_2p(&world, &mut *red_agent, &mut *yellow_agent, None);
 
@@ -352,10 +397,10 @@ fn main() {
     let moves_per_sec = total_all_moves as f64 / elapsed.as_secs_f64().max(0.001);
 
     // Print Head-to-Head Cross Table
-    h2h.print_table(&unique_names);
+    h2h.print_table(unique_names);
 
     // Print Final Leaderboard Standings sorted by Win Rate
-    TwoPlayerTournamentStats::print_standings(&stats, &unique_names, "Red", "Yel");
+    TwoPlayerTournamentStats::print_standings(&stats, unique_names, "Red", "Yel");
 
     println!("Total Matchups:   {num_pairs}");
     println!("Total Games:      {total_tournament_games}");
@@ -455,7 +500,7 @@ mod tests {
 
         let state = Connect4State::<6, 7>::new();
         for spec in &specs {
-            let mut agent = spec.instantiate("Test", 1.414, false);
+            let mut agent = spec.instantiate::<6, 7>("Test", 1.414, false);
             let action = agent.select_action(&state);
             assert!(action < 7);
         }

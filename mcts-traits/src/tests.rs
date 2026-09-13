@@ -278,7 +278,7 @@ fn test_round_based_dynamics_adapter() {
     // Now ws.0 = 2 (player 0's turn again!). Round completes!
     let outcome = dyns.step(&mut state, &2);
     assert!(!outcome.terminated);
-    assert_eq!(outcome.delta, Some(10));
+    assert_eq!(outcome.delta, vec![10]);
     assert_eq!(state, (2, 12));
     assert_eq!(dyns.current_agent(&state), AgentId(0));
 
@@ -287,7 +287,7 @@ fn test_round_based_dynamics_adapter() {
     // Terminal condition ws.0 >= 4 reached!
     let outcome2 = dyns.step(&mut state, &3);
     assert!(outcome2.terminated);
-    assert_eq!(outcome2.delta, Some(10));
+    assert_eq!(outcome2.delta, vec![10]);
     assert_eq!(outcome2.reward, [1.0, -1.0]);
 }
 

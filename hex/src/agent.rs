@@ -253,7 +253,7 @@ impl<const N: usize> MctsAgent<N> {
             name,
             num_iterations,
             1.414,
-            HexEvaluator::Rollout(RolloutEvaluator::new(num_rollouts, N * N)),
+            HexEvaluator::Rollout(RolloutEvaluator::new(num_rollouts)),
             verbose,
         )
     }
@@ -480,7 +480,7 @@ impl HexAgentSpec {
                 name,
                 *iters,
                 *c_puct,
-                HexEvaluator::Rollout(RolloutEvaluator::new(*rollouts, N * N)),
+                HexEvaluator::Rollout(RolloutEvaluator::new(*rollouts)),
                 verbose,
             )),
             Self::MctsHeuristic { iters, c_puct } => Box::new(MctsAgent::new(

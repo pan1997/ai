@@ -89,15 +89,44 @@ impl Tzf8State {
 
     /// Returns all coordinates `(row, col)` that currently contain 0 (empty).
     pub fn empty_cells(&self) -> Vec<(usize, usize)> {
-        let mut cells = Vec::with_capacity(16);
+        let mut buf = [(0u8, 0u8); 16];
+        let count = self.empty_cells_buf(&mut buf);
+        let mut cells = Vec::with_capacity(count);
+        for &(r, c) in &buf[..count] {
+            cells.push((r as usize, c as usize));
+        }
+        cells
+    }
+
+    /// Fills `out` with all coordinates `(row, col)` that currently contain 0 (empty) without heap allocation.
+    ///
+    /// Returns the number of empty cells written into `out`.
+    #[inline]
+    pub fn empty_cells_buf(&self, out: &mut [(u8, u8); 16]) -> usize {
+        let mut count = 0;
         for r in 0..4 {
             for c in 0..4 {
                 if self.board[r][c] == 0 {
-                    cells.push((r, c));
+                    out[count] = (r as u8, c as u8);
+                    count += 1;
                 }
             }
         }
-        cells
+        count
+    }
+
+    /// Returns the number of empty cells currently on the board without allocating memory.
+    #[inline]
+    pub fn count_empty_cells(&self) -> usize {
+        let mut count = 0;
+        for r in 0..4 {
+            for c in 0..4 {
+                if self.board[r][c] == 0 {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
     /// Returns the value of the highest tile on the board (e.g. 2048, 1024, 512).

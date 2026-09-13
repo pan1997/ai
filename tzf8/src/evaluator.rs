@@ -132,7 +132,7 @@ impl CornerHeuristicEvaluator {
         }
 
         // 2. Empty cell count
-        let empty_count = state.empty_cells().len() as f32;
+        let empty_count = state.count_empty_cells() as f32;
         let empty_score = empty_count * self.empty_weight;
 
         // 3. Smoothness and merge bonus
