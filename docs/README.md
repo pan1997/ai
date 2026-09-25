@@ -82,6 +82,7 @@ Explore the detailed topic guides:
 - [Reference Environments](file:///home/pankaj/Projects/ai/docs/environments.md): Rules, board representations, action spaces, and imperfect-information dynamics.
 - [Getting Started & Tutorials](file:///home/pankaj/Projects/ai/docs/getting_started.md): Practical code walkthrough for setting up an environment, configuring MCTS, and running search sweeps.
 - [Single-Tree ISMCTS Task Specification](file:///home/pankaj/Projects/ai/docs/tasks/task_single_tree_ismcts.md): Architectural roadmap and mathematical specification for implementing true single-tree Information Set MCTS with availability counts and per-trajectory belief sampling.
+- [Actor-Learner Pipeline Task Specification](file:///home/pankaj/Projects/ai/docs/tasks/task_actor_learner_pipeline.md): Actionable implementation plan for the asynchronous Rust MCTS self-play $\leftrightarrow$ PyTorch training daemon, `mcts-onnx` dynamic micro-batcher, and binary trajectory spooling.
 - [Agent & Contributor Guide (`AGENTS.md`)](file:///home/pankaj/Projects/ai/AGENTS.md): Conventions, developer workflows, and guidance for autonomous coding agents.
 
 ---
