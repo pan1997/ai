@@ -19,6 +19,7 @@ connect4    = { path = "path/to/connect4" }
 blokus      = { path = "path/to/blokus" }
 tzf8        = { path = "path/to/tzf8" }
 hex         = { path = "path/to/hex" }
+sequence    = { path = "path/to/sequence" }
 mcts-envs   = { path = "path/to/mcts-envs" }
 ```
 
@@ -192,5 +193,14 @@ cargo run --release -p hex --bin hex-play -- --board-size 11 --pie-rule
 
 # Multi-agent round-robin tournament (balanced first-mover advantage)
 cargo run --release -p hex --bin hex-tournament -- --board-size 11 --agents heuristic,mcts-h:500,mcts:500,random --games 10 --pie-rule
+```
+
+### Sequence
+```bash
+# Interactive terminal Sequence player (2-6 players, team play, card & board rendering)
+cargo run --release -p sequence --bin sequence-play -- --players 2 --mode human-ai
+
+# Multi-agent round-robin tournament arena (ISMCTS vs Opponent-Model MCTS vs Heuristics)
+cargo run --release -p sequence --bin sequence-tournament -- --agents is-mcts:200:4,macro-heuristic:200:4,heuristic,random --games 10
 ```
 

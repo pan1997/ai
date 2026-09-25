@@ -89,6 +89,7 @@ environments/connect4/  --> Dedicated Connect 4 game engine, MCTS agents, and in
 environments/blokus/    --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents
 environments/tzf8/      --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents
 environments/hex/       --> Dedicated Hex game engine, DSU connectivity tracking, MCTS agents
+environments/sequence/  --> Dedicated Sequence game engine, ISMCTS agents, and interactive CLI players
 mcts-onnx/              --> [NEW] ONNX Runtime (ort) inference client, dynamic micro-batcher,
                         --> model sync watcher, and binary trajectory spooler
 ```

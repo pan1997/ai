@@ -10,7 +10,7 @@ In 2-player turn-based games such as Connect 4 and Hex, the standard convention 
 - State explicitly tracks `current_player`.
 - Each transition steps 1 half-move (ply), toggling `current_player = current_player.other()`.
 - The search tree alternates between nodes where Player 1 acts and nodes where Player 2 acts.
-- Returns are tracked as vectors $\mathbf{Q} \in \mathbb{R}^2$ via [`VectorBackup<2>`](../mcts-engine/src/backup/vector.rs), with selection maximizing the active player's component.
+- Returns are tracked as vectors $\mathbf{Q} \in \mathbb{R}^2$ via [`VectorBackup<2>`](file:///home/pankaj/Projects/ai/mcts-engine/src/backup/vector.rs), with selection maximizing the active player's component.
 
 While this approach unifies cleanly with $N$-player games (like 4-player Blokus) and guarantees worst-case adversarial robustness (Minimax equilibrium), it introduces specific friction points:
 1. **Evaluator Dilution**: Neural networks or heuristic evaluation models must learn to evaluate positions from *both* players' perspectives (or invert inputs/outputs).
@@ -166,7 +166,7 @@ A central challenge in MCTS engineering is bridging the gap between **subtree re
 ### 5.1 The Subtree Promotion Dilemma in Absorbed Macro-Dynamics (Route B)
 In Route B, the search tree contains nodes only for the primary player. When the agent plays $a_0$, and the opponent replies with $o_0$ in the real game:
 - The opponent's move was absorbed inside `step()` and stored in `StepDelta`.
-- Because $o_0$ did not have an explicit outgoing edge or child node in the tree, promoting the subtree via [`TreeStore::promote_subtree`](../mcts-engine/src/tree_store.rs) is obstructed: the tree has no intermediate node for the opponent's ply to preserve the child subtree under $o_0$.
+- Because $o_0$ did not have an explicit outgoing edge or child node in the tree, promoting the subtree via [`TreeStore::promote_subtree`](file:///home/pankaj/Projects/ai/mcts-engine/src/tree_store.rs) is obstructed: the tree has no intermediate node for the opponent's ply to preserve the child subtree under $o_0$.
 
 ### 5.2 How Adversarial Afterstate MCTS (Route A) Resolves the Dilemma
 In Route A, the search tree maintains explicit nodes for **both** players, but coordinates the search so that:
@@ -285,5 +285,8 @@ The agent descends through `history`, calls `tree.promote_subtree(new_root)`, an
    - Stochastic 2048 game dynamics using `StepDelta = TileSpawn { pos: u8, val: u16 }` for sample-mean Expectimax search down flat `TreeStore` arrays.
    - Dynamic Min-Max normalization (`NormalizedUctSelection`, `NormalizedPuctSelection`) scaling arbitrary score values into $[0, 1]$ exploration balance.
    - Multi-agent tournament benchmark arena comparing heuristics, rollouts, pure UCT, normalized UCT, and PUCT.
+5. **`sequence`**:
+   - Macro round planning dynamics (`SequenceRoundDynamics`) absorbing opponent moves via `RoundBasedDynamics<SequenceWorld<P>, Pol>`.
+   - `OpponentModelMctsAgent` integrating root determinizations with explicit opponent policy models (`macro-heuristic`, `macro-random`).
 
 
