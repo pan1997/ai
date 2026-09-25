@@ -355,3 +355,101 @@ fn test_agent_trait_history_and_lifecycle() {
     ref_agent.select_action_with_history(&(0, 0), &[(1, 2)]);
     ref_agent.reset();
 }
+
+#[test]
+fn test_observation_sequence_lifecycle() {
+    use crate::belief::ObservationSequence;
+
+    let mut seq = ObservationSequence::new();
+    assert!(seq.is_empty());
+    assert_eq!(seq.len(), 0);
+    assert_eq!(seq.latest(), None);
+
+    seq.push(10);
+    seq.push(20);
+    assert!(!seq.is_empty());
+    assert_eq!(seq.len(), 2);
+    assert_eq!(seq.latest(), Some(&20));
+    assert_eq!(seq.as_slice(), &[10, 20]);
+
+    seq.extend([30, 40]);
+    assert_eq!(seq.len(), 4);
+    assert_eq!(seq.latest(), Some(&40));
+    assert_eq!(seq.as_slice(), &[10, 20, 30, 40]);
+
+    seq.clear();
+    assert!(seq.is_empty());
+    assert_eq!(seq.len(), 0);
+    assert_eq!(seq.latest(), None);
+
+    let with_cap: ObservationSequence<String> = ObservationSequence::with_capacity(16);
+    assert!(with_cap.is_empty());
+}
+
+struct MockSnapshot {
+    pub hidden_seed: u32,
+}
+
+struct MockSnapshotSampler {
+    pub multiplier: u32,
+}
+
+impl crate::belief::BeliefSampler for MockSnapshotSampler {
+    type State = u32;
+    type Context = MockSnapshot;
+
+    fn sample(&mut self, context: &Self::Context) -> Self::State {
+        context.hidden_seed * self.multiplier
+    }
+}
+
+struct MockIncrementalSampler {
+    pub state: u32,
+}
+
+impl crate::belief::BeliefSampler for MockIncrementalSampler {
+    type State = u32;
+    type Context = crate::belief::ObservationSequence<u32>;
+
+    fn sample(&mut self, context: &Self::Context) -> Self::State {
+        context.as_slice().iter().sum::<u32>() + self.state
+    }
+}
+
+impl crate::belief::IncrementalBeliefSampler for MockIncrementalSampler {
+    type Delta = u32;
+
+    fn update(&mut self, context: &mut Self::Context, delta: &Self::Delta) {
+        context.push(*delta);
+        self.state += 1;
+    }
+}
+
+#[test]
+fn test_belief_sampler_snapshot_and_incremental() {
+    use crate::belief::{BeliefSampler, IncrementalBeliefSampler, ObservationSequence};
+
+    // 1. Test snapshot sampler
+    let mut snapshot_sampler = MockSnapshotSampler { multiplier: 3 };
+    let snap = MockSnapshot { hidden_seed: 42 };
+    assert_eq!(snapshot_sampler.sample(&snap), 126);
+
+    // Test &mut forwarding
+    let ref_sampler = &mut snapshot_sampler;
+    assert_eq!(ref_sampler.sample(&snap), 126);
+
+    // Test Box forwarding
+    let mut boxed: Box<dyn BeliefSampler<State = u32, Context = MockSnapshot>> =
+        Box::new(MockSnapshotSampler { multiplier: 2 });
+    assert_eq!(boxed.sample(&snap), 84);
+
+    // 2. Test incremental sequence sampler
+    let mut inc_sampler = MockIncrementalSampler { state: 10 };
+    let mut history = ObservationSequence::new();
+
+    inc_sampler.update(&mut history, &5);
+    inc_sampler.update(&mut history, &15);
+    // history = [5, 15], state = 12
+    assert_eq!(inc_sampler.sample(&history), 5 + 15 + 12);
+}
+

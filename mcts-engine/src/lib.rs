@@ -42,11 +42,11 @@ pub use arena::{
 pub use backup::{BackupPolicy, MultiAgentReward, PathElement, SingleAgentBackup, VectorBackup};
 pub use dirichlet::{add_dirichlet_noise, add_root_dirichlet_noise};
 pub use opponent::{AdversarialOpponent, HeuristicOpponent, RandomOpponent, TreeOpponentPolicy};
-pub use scheduler::{BatchedScheduler, MultiGameScheduler, SequentialScheduler};
+pub use scheduler::{BatchedScheduler, IsmctsScheduler, MultiGameScheduler, SequentialScheduler};
 pub use search::{TrajectoryOutcome, descend_trajectory};
 pub use selection::{
-    GumbelPuctSelection, MultiAgentPuctSelection, MultiAgentPuctStats, NormalizedPuctSelection,
-    NormalizedUctSelection, SelectionPolicy, UctSelection,
+    GumbelPuctSelection, IsmctsSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats,
+    NormalizedPuctSelection, NormalizedUctSelection, SelectionPolicy, UctSelection,
 };
 pub use tree_store::{
     EdgeId, EdgeStatsStore, NodeId, NodeStatus, PriorStore, TreeStore, VirtualLossStore,

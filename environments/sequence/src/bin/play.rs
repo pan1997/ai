@@ -30,6 +30,7 @@ OPTIONS:
                           'heuristic'
                           'mcts:<iters>'
                           'is-mcts:<iters>:<dets>'
+                          'is-mcts-single:<iters>'
                           'macro-heuristic:<iters>:<dets>'
                           'macro-random:<iters>:<dets>'
     --iters <N>         Default MCTS iterations [default: 300]

@@ -7,11 +7,14 @@
 
 /// Virtual-loss-guided batched leaf evaluation scheduler.
 pub mod batched;
+/// Single-Tree Information Set MCTS (Single-Tree ISMCTS) scheduler.
+pub mod ismcts;
 /// Vectorized search across multiple disjoint game trees.
 pub mod multi_game;
 /// Single-threaded depth-first sequential scheduler.
 pub mod sequential;
 
 pub use batched::BatchedScheduler;
+pub use ismcts::IsmctsScheduler;
 pub use multi_game::MultiGameScheduler;
 pub use sequential::SequentialScheduler;

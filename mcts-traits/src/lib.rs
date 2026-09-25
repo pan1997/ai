@@ -30,6 +30,8 @@
 
 /// Agent identity representation and player trait.
 pub mod agent;
+/// Belief-state sampling and observation sequence abstractions.
+pub mod belief;
 /// State transition dynamics and multi-agent adapters.
 pub mod dynamics;
 /// Deterministic state-machine graph for exact verification testing.
@@ -43,10 +45,11 @@ pub mod world;
 mod tests;
 
 pub use agent::{Agent, AgentId};
+pub use belief::{BeliefSampler, IncrementalBeliefSampler, ObservationSequence};
 pub use dynamics::{
     AgentDynamics, BatchedAgentDynamics, OpponentPolicy, RoundBasedDynamics, StepOutcome,
     Transition, TurnBasedDynamics, default_step_batch,
 };
 pub use graph::GraphEnv;
-pub use model::{BatchedModel, Evaluation, HasPolicy, HasValue, Model};
+pub use model::{ActionModel, BatchedModel, DefaultActionModel, Evaluation, HasPolicy, HasValue, Model};
 pub use world::{TurnBasedWorld, World};

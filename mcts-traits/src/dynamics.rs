@@ -104,6 +104,17 @@ pub trait AgentDynamics {
     /// Clears or appends to `out` to guarantee zero heap allocations during search tree expansion.
     fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>);
 
+    /// Generates candidate actions to allocate as outgoing edges when expanding node `s`.
+    ///
+    /// For perfect-information games, this defaults to calling [`AgentDynamics::actions`].
+    /// In imperfect-information games (e.g. Single-Tree ISMCTS), this can populate all plausible
+    /// actions across candidate hidden states at information set `s` (e.g. moves from any unseen card),
+    /// while [`AgentDynamics::actions`] generates the subset legal under a specific sampled state.
+    #[inline]
+    fn expand_actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        self.actions(s, out);
+    }
+
     /// Transitions state `s` forward in-place given `action`.
     ///
     /// Modifies `s` directly without heap allocation or intermediate cloning, returning the

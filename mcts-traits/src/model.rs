@@ -102,3 +102,38 @@ pub trait BatchedModel<S>: Model<S> {
     /// The returned vector contains evaluations matching the order of input states.
     fn evaluate_batch(&self, states: &[&S]) -> Vec<Evaluation>;
 }
+
+/// Evaluation interface for models capable of evaluating candidate action lists directly.
+///
+/// In Information Set MCTS (ISMCTS), an interior or opponent node can expand candidate actions
+/// spanning plausible moves across unseen states. This trait allows evaluators to assign
+/// heuristic or neural policy priors specifically tailored to the expanded candidate actions.
+pub trait ActionModel<S, A>: Model<S> {
+    /// Evaluates candidate actions for state `s`, returning value estimates and matching policy priors.
+    fn evaluate_actions(&self, s: &S, actions: &[A]) -> Evaluation;
+}
+
+impl<S, A, M: ActionModel<S, A> + ?Sized> ActionModel<S, A> for &M {
+    #[inline]
+    fn evaluate_actions(&self, s: &S, actions: &[A]) -> Evaluation {
+        (**self).evaluate_actions(s, actions)
+    }
+}
+
+/// Wrapper providing a default [`ActionModel`] implementation for any standard [`Model`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefaultActionModel<M>(pub M);
+
+impl<S, M: Model<S>> Model<S> for DefaultActionModel<M> {
+    #[inline]
+    fn evaluate(&self, s: &S) -> Evaluation {
+        self.0.evaluate(s)
+    }
+}
+
+impl<S, A, M: Model<S>> ActionModel<S, A> for DefaultActionModel<M> {
+    #[inline]
+    fn evaluate_actions(&self, s: &S, _actions: &[A]) -> Evaluation {
+        self.0.evaluate(s)
+    }
+}

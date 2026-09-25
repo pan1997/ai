@@ -1202,3 +1202,258 @@ fn test_match_driver_history_only_contains_opponent_moves() {
     assert_eq!(p1.observed_histories[0], vec![100]);
     assert_eq!(p1.observed_histories[1], vec![100]);
 }
+
+#[test]
+fn test_ismcts_stats_lifecycle() {
+    use crate::selection::ismcts::IsmctsStats;
+    use crate::tree_store::{EdgeId, EdgeStatsStore, PriorStore, VirtualLossStore};
+
+    let mut stats = IsmctsStats::<2>::new();
+    assert_eq!(stats.visits.len(), 0);
+
+    stats.resize(4);
+    assert_eq!(stats.visits.len(), 4);
+    assert_eq!(stats.avail_visits.len(), 4);
+    assert_eq!(stats.priors.len(), 4);
+    assert_eq!(stats.mean_value.len(), 4);
+    assert_eq!(stats.virtual_loss.len(), 4);
+
+    let edge1 = EdgeId(1);
+    stats.inc_avail_visits(edge1);
+    stats.inc_avail_visits(edge1);
+    assert_eq!(stats.avail_visits(edge1), 2);
+    stats.set_avail_visits(edge1, 5);
+    assert_eq!(stats.avail_visits(edge1), 5);
+
+    stats.set_prior(edge1, 0.75);
+    assert_eq!(stats.prior(edge1), 0.75);
+
+    stats.add_virtual_loss(edge1, 1.0);
+    assert_eq!(stats.virtual_loss[1], 1.0);
+    stats.remove_virtual_loss(edge1, 0.5);
+    assert_eq!(stats.virtual_loss[1], 0.5);
+
+    stats.retain_edges(&[1, 3]);
+    assert_eq!(stats.visits.len(), 2);
+    assert_eq!(stats.avail_visits(EdgeId(0)), 5);
+    assert_eq!(stats.prior(EdgeId(0)), 0.75);
+
+    stats.clear();
+    assert_eq!(stats.visits.len(), 0);
+    assert_eq!(stats.avail_visits.len(), 0);
+}
+
+#[test]
+fn test_ismcts_selection_compatible() {
+    use crate::selection::ismcts::{IsmctsSelection, IsmctsStats};
+    use crate::tree_store::{EdgeId, EdgeStatsStore, TreeStore};
+
+    let mut stats = IsmctsStats::<2>::new();
+    stats.resize(3);
+    // Edge 0: Action 100, Visits: 10, Avail: 15, Prior: 0.5, Mean: [0.5, -0.5]
+    stats.visits[0] = 10;
+    stats.avail_visits[0] = 15;
+    stats.priors[0] = 0.5;
+    stats.mean_value[0] = [0.5, -0.5];
+
+    // Edge 1: Action 200, Visits: 1, Avail: 20, Prior: 0.5, Mean: [0.9, -0.9] (High mean, but illegal in some states)
+    stats.visits[1] = 1;
+    stats.avail_visits[1] = 20;
+    stats.priors[1] = 0.5;
+    stats.mean_value[1] = [0.9, -0.9];
+
+    // Edge 2: Action 300, Visits: 5, Avail: 10, Prior: 0.5, Mean: [0.2, -0.2]
+    stats.visits[2] = 5;
+    stats.avail_visits[2] = 10;
+    stats.priors[2] = 0.5;
+    stats.mean_value[2] = [0.2, -0.2];
+
+    let mut tree: TreeStore<u32, [f32; 2], _> = TreeStore::with_capacity(5, 5, stats);
+    let root = tree.insert_root(AgentId(0));
+    tree.expand_node(root, &[100, 200, 300]);
+
+    let selection = IsmctsSelection::<2>::new(1.414);
+
+    // 1. If all edges are compatible, edge 1 should win because of high Q + explore bonus
+    let selected_all = selection.select_compatible_child(&tree, root, |_, _| true);
+    assert_eq!(selected_all, Some(EdgeId(1)));
+
+    // 2. If edge 1 (action 200) is NOT compatible in the current determinization:
+    let selected_filtered = selection.select_compatible_child(&tree, root, |_edge, &action| action != 200);
+    // Compatible are Edge 0 and Edge 2.
+    // Total avail = 15 + 10 = 25. sqrt(25) = 5.0
+    // Edge 0 score = 0.5 + 1.414 * 0.5 * 5.0 / 11 = 0.5 + 0.3213 = 0.8213
+    // Edge 2 score = 0.2 + 1.414 * 0.5 * 5.0 / 6 = 0.2 + 0.5891 = 0.7891
+    // Edge 0 wins!
+    assert_eq!(selected_filtered, Some(EdgeId(0)));
+
+    // 3. If none are compatible:
+    let selected_none = selection.select_compatible_child(&tree, root, |_, _| false);
+    assert_eq!(selected_none, None);
+}
+
+#[test]
+fn test_ismcts_scheduler_execution() {
+    use crate::backup::VectorBackup;
+    use crate::scheduler::IsmctsScheduler;
+    use crate::selection::ismcts::{IsmctsSelection, IsmctsStats};
+    use crate::tree_store::TreeStore;
+    use mcts_traits::belief::BeliefSampler;
+    use mcts_traits::{ActionModel, AgentDynamics, AgentId, Evaluation, Model, StepOutcome};
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct MockState {
+        pub turn: usize,
+        pub active_agent: AgentId,
+        pub allowed_actions: Vec<u32>,
+    }
+
+    struct MockDynamics;
+    impl AgentDynamics for MockDynamics {
+        type State = MockState;
+        type Action = u32;
+        type Reward = [f32; 2];
+        type StepDelta = ();
+
+        fn initial(&self) -> Self::State {
+            MockState {
+                turn: 0,
+                active_agent: AgentId(0),
+                allowed_actions: vec![10, 20],
+            }
+        }
+
+        fn actions(&self, state: &Self::State, out: &mut Vec<Self::Action>) {
+            out.clear();
+            out.extend_from_slice(&state.allowed_actions);
+        }
+
+        fn expand_actions(&self, _state: &Self::State, out: &mut Vec<Self::Action>) {
+            out.clear();
+            // All possible information-set actions
+            out.extend_from_slice(&[10, 20, 30]);
+        }
+
+        fn current_agent(&self, state: &Self::State) -> AgentId {
+            state.active_agent
+        }
+
+        fn step(&self, state: &mut Self::State, _action: &Self::Action) -> StepOutcome<Self::Reward, Self::StepDelta> {
+            state.turn += 1;
+            let terminated = state.turn >= 2;
+            let next_agent = if state.active_agent == AgentId(0) {
+                AgentId(1)
+            } else {
+                AgentId(0)
+            };
+            state.active_agent = next_agent;
+            // For turn 1, allow action 100
+            state.allowed_actions = vec![100];
+
+            StepOutcome {
+                reward: if terminated { [1.0, -1.0] } else { [0.0, 0.0] },
+                delta: (),
+                terminated,
+            }
+        }
+    }
+
+    struct MockSampler {
+        counter: usize,
+    }
+
+    impl BeliefSampler for MockSampler {
+        type State = MockState;
+        type Context = ();
+
+        fn sample(&mut self, _context: &Self::Context) -> Self::State {
+            self.counter += 1;
+            if self.counter % 2 == 1 {
+                // Determinization A: actions 10 and 20 are legal
+                MockState {
+                    turn: 0,
+                    active_agent: AgentId(0),
+                    allowed_actions: vec![10, 20],
+                }
+            } else {
+                // Determinization B: actions 20 and 30 are legal
+                MockState {
+                    turn: 0,
+                    active_agent: AgentId(0),
+                    allowed_actions: vec![20, 30],
+                }
+            }
+        }
+    }
+
+    struct MockModel;
+    impl Model<MockState> for MockModel {
+        fn evaluate(&self, _state: &MockState) -> Evaluation {
+            Evaluation {
+                priors: vec![0.33, 0.33, 0.34],
+                values: vec![0.0, 0.0],
+            }
+        }
+    }
+
+    impl ActionModel<MockState, u32> for MockModel {
+        fn evaluate_actions(&self, state: &MockState, actions: &[u32]) -> Evaluation {
+            let n = actions.len();
+            let priors = if n > 0 {
+                vec![1.0 / n as f32; n]
+            } else {
+                Vec::new()
+            };
+            let mut eval = self.evaluate(state);
+            eval.priors = priors;
+            eval
+        }
+    }
+
+    let dynamics = MockDynamics;
+    let mut sampler = MockSampler { counter: 0 };
+    let model = MockModel;
+    let selection = IsmctsSelection::<2>::new(1.414);
+    let backup = VectorBackup::<2>::default();
+    let stats = IsmctsStats::<2>::new();
+    let mut tree: TreeStore<u32, [f32; 2], IsmctsStats<2>, ()> = TreeStore::with_capacity(20, 20, stats);
+    let root = tree.insert_root(AgentId(0));
+
+    let scheduler = IsmctsScheduler;
+    scheduler.search(
+        &mut tree,
+        &dynamics,
+        &model,
+        &selection,
+        &backup,
+        &mut sampler,
+        &(),
+        root,
+        50,
+    );
+
+    // Root should be expanded with all 3 actions from expand_actions
+    assert_eq!(tree.num_children(root), 3);
+    let first = tree.first_child_edge(root);
+    assert_eq!(*tree.edge_action(first), 10);
+    assert_eq!(*tree.edge_action(EdgeId(first.0 + 1)), 20);
+    assert_eq!(*tree.edge_action(EdgeId(first.0 + 2)), 30);
+
+    // Check availability visits:
+    // Action 20 is present in both determinizations A and B, so its avail_visits should be roughly 50.
+    // Action 10 is present in A (half), action 30 is present in B (half).
+    let avail0 = tree.stats.avail_visits(first);
+    let avail1 = tree.stats.avail_visits(EdgeId(first.0 + 1));
+    let avail2 = tree.stats.avail_visits(EdgeId(first.0 + 2));
+
+    assert!(avail1 > avail0, "Action 20 should have higher availability visits than action 10");
+    assert!(avail1 > avail2, "Action 20 should have higher availability visits than action 30");
+    assert_eq!(avail0 + avail2, avail1, "avail(10) + avail(30) should equal avail(20)");
+
+    // Traversed visits must sum to total search passes
+    let v0 = tree.stats.visits[first.as_usize()];
+    let v1 = tree.stats.visits[first.as_usize() + 1];
+    let v2 = tree.stats.visits[first.as_usize() + 2];
+    assert_eq!(v0 + v1 + v2, 50);
+}
+

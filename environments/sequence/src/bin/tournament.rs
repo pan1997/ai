@@ -30,7 +30,8 @@ OPTIONS:
     -h, --help          Print help information
 
 AGENT SPECIFICATIONS:
-    is-mcts[:iters[:dets]]             Information Set MCTS (e.g. is-mcts:300:5)
+    is-mcts[:iters[:dets]]             Multi-Tree ISMCTS (e.g. is-mcts:300:5)
+    is-mcts-single[:iters]             Single-Tree ISMCTS (e.g. is-mcts-single:300)
     macro-heuristic[:iters[:dets]]     Opponent-Model MCTS with heuristic opponent policy
     macro-random[:iters[:dets]]        Opponent-Model MCTS with random opponent policy
     mcts[:iters]                       Standard perfect-information MCTS

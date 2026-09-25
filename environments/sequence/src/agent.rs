@@ -1,18 +1,21 @@
 //! Agent implementations for Sequence: Human CLI, Random, Heuristic, ISMCTS, Opponent-Model MCTS.
 
 use crate::dynamics::{
-    determinize_state, RandomOpponentPolicy, SequenceRoundDynamics, SequenceTurnDynamics,
+    determinize_state, RandomOpponentPolicy, SequenceBeliefSampler, SequenceIsmctsDynamics,
+    SequenceRoundDynamics, SequenceTurnDynamics,
 };
 use crate::evaluator::{SequenceHeuristicEvaluator, UniformEvaluator};
 use crate::game::{SequenceAction, SequenceState};
 use crate::render::{format_action, render_state};
 use crate::world::SequenceWorld;
 use mcts_engine::backup::VectorBackup;
-use mcts_engine::scheduler::SequentialScheduler;
-use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
-use mcts_engine::tree_store::TreeStore;
+use mcts_engine::scheduler::{IsmctsScheduler, SequentialScheduler};
+use mcts_engine::selection::{
+    IsmctsSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats,
+};
+use mcts_engine::tree_store::{EdgeId, TreeStore};
 use mcts_traits::dynamics::OpponentPolicy;
-use mcts_traits::{Agent, AgentId, Model, World};
+use mcts_traits::{ActionModel, Agent, AgentId, Model, World};
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
@@ -282,6 +285,113 @@ where
     }
 }
 
+/// Single-Tree Information Set MCTS (Single-Tree ISMCTS) agent.
+///
+/// Unlike Multi-Tree ISMCTS (which fragments the iteration budget across multiple separate trees),
+/// Single-Tree ISMCTS concentrates all simulation iterations into a single unified search tree.
+/// On each iteration, a fresh state determinization is sampled, and selection descends only through
+/// compatible legal branches with availability-weighted PUCT scoring.
+pub struct SingleTreeIsMctsAgent<M, const P: usize = 2> {
+    name: String,
+    num_iterations: usize,
+    c_puct: f32,
+    model: M,
+}
+
+impl<const P: usize> SingleTreeIsMctsAgent<SequenceHeuristicEvaluator, P> {
+    /// Creates a new Single-Tree ISMCTS agent guided by the heuristic evaluator.
+    #[must_use]
+    pub fn new_heuristic(name: impl Into<String>, num_iterations: usize) -> Self {
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct: 1.414,
+            model: SequenceHeuristicEvaluator::new(),
+        }
+    }
+}
+
+impl<const P: usize> SingleTreeIsMctsAgent<UniformEvaluator, P> {
+    /// Creates a new Single-Tree ISMCTS agent with uniform evaluation.
+    #[must_use]
+    pub fn new_uniform(name: impl Into<String>, num_iterations: usize) -> Self {
+        Self {
+            name: name.into(),
+            num_iterations,
+            c_puct: 1.414,
+            model: UniformEvaluator,
+        }
+    }
+}
+
+impl<M, const P: usize> Agent<SequenceState, SequenceAction> for SingleTreeIsMctsAgent<M, P>
+where
+    M: ActionModel<SequenceState, SequenceAction> + Clone,
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn select_action(&mut self, state: &SequenceState) -> SequenceAction {
+        let mut legal = Vec::new();
+        state.legal_actions(&mut legal);
+        if legal.is_empty() {
+            panic!("SingleTreeIsMctsAgent: no legal actions available");
+        }
+        if legal.len() == 1 {
+            return legal[0];
+        }
+
+        let world = SequenceWorld::<P>::new(state.config);
+        let obs = world.observe(state, state.current_player);
+
+        let dynamics = SequenceIsmctsDynamics::new(world, state.current_player, state.total_moves);
+        let selection = IsmctsSelection::<P>::new(self.c_puct);
+        let backup = VectorBackup::<P>::default();
+        let stats = IsmctsStats::<P>::new();
+
+        let node_cap = self.num_iterations + 16;
+        let edge_cap = node_cap * 32;
+        let mut tree = TreeStore::with_capacity(node_cap, edge_cap, stats);
+        let root = tree.insert_root(AgentId(state.current_player as u32));
+
+        let mut sampler = SequenceBeliefSampler::new();
+        let scheduler = IsmctsScheduler;
+
+        scheduler.search(
+            &mut tree,
+            &dynamics,
+            &self.model,
+            &selection,
+            &backup,
+            &mut sampler,
+            &obs,
+            root,
+            self.num_iterations,
+        );
+
+        let num_children = tree.num_children(root);
+        let first_edge = tree.first_child_edge(root);
+        let mut best_action = legal[0];
+        let mut max_visits = 0;
+        let mut best_q = f32::NEG_INFINITY;
+        let my_agent = state.current_player;
+
+        for i in 0..num_children {
+            let edge = EdgeId(first_edge.0 + i);
+            let visits = tree.stats.visits[edge.as_usize()];
+            let q = tree.stats.mean_value[edge.as_usize()][my_agent];
+            if visits > max_visits || (visits == max_visits && q > best_q) {
+                max_visits = visits;
+                best_q = q;
+                best_action = *tree.edge_action(edge);
+            }
+        }
+
+        best_action
+    }
+}
+
 /// Standard MCTS agent running search on the ground-truth state (perfect-information oracle).
 pub struct MctsAgent<M, const P: usize = 2> {
     name: String,
@@ -533,6 +643,7 @@ where
 /// - `"heuristic"`
 /// - `"mcts:<iters>"` (e.g. `"mcts:200"`)
 /// - `"is-mcts:<iters>:<dets>"` (e.g. `"is-mcts:300:5"`)
+/// - `"is-mcts-single:<iters>"` (e.g. `"is-mcts-single:300"`)
 /// - `"macro-heuristic:<iters>:<dets>"` (e.g. `"macro-heuristic:300:5"`)
 /// - `"macro-random:<iters>:<dets>"` (e.g. `"macro-random:300:5"`)
 pub fn parse_agent<const P: usize>(spec: &str, default_name: &str) -> BoxAgent<P> {
@@ -550,6 +661,10 @@ pub fn parse_agent<const P: usize>(spec: &str, default_name: &str) -> BoxAgent<P
             let dets = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(5);
             Box::new(IsMctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(default_name, iters, dets))
         }
+        "is-mcts-single" | "single-tree-is-mcts" => {
+            let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
+            Box::new(SingleTreeIsMctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(default_name, iters))
+        }
         "macro-heuristic" => {
             let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
             let dets = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(5);
@@ -560,6 +675,6 @@ pub fn parse_agent<const P: usize>(spec: &str, default_name: &str) -> BoxAgent<P
             let dets = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(5);
             Box::new(OpponentModelMctsAgent::<RandomOpponentPolicy, P>::new_random(default_name, iters, dets))
         }
-        other => panic!("Unknown agent specification: '{other}'. Expected human, random, heuristic, mcts:<iters>, is-mcts:<iters>:<dets>, macro-heuristic:<iters>:<dets>, or macro-random:<iters>:<dets>"),
+        other => panic!("Unknown agent specification: '{other}'. Expected human, random, heuristic, mcts:<iters>, is-mcts:<iters>:<dets>, is-mcts-single:<iters>, macro-heuristic:<iters>:<dets>, or macro-random:<iters>:<dets>"),
     }
 }

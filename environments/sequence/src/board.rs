@@ -1,8 +1,7 @@
 //! Board layout, coordinate mapping, and sequence detection for the game of Sequence.
 
-use cardpack::prelude::{FrenchBasicCard, Standard52};
-
 pub use cardpack::prelude::BasicCard as Card;
+pub use cardpack::prelude::{FrenchBasicCard, Standard52};
 
 /// The width and height of the Sequence board ($10 \times 10$).
 pub const BOARD_DIM: usize = 10;

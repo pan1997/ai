@@ -12,6 +12,8 @@
 
 /// Danihelka et al. (2022) Gumbel AlphaZero policy improvement selection.
 pub mod gumbel;
+/// Information Set MCTS (Single-Tree ISMCTS) selection and statistics storage.
+pub mod ismcts;
 /// Dynamic Min-Max sibling score normalization selection policies (MuZero-style).
 pub mod normalized;
 /// AlphaZero-style Predictor Upper Confidence Bounds for Trees (PUCT) selection.
@@ -20,6 +22,7 @@ pub mod puct;
 pub mod uct;
 
 pub use gumbel::GumbelPuctSelection;
+pub use ismcts::{IsmctsSelection, IsmctsStats};
 pub use normalized::{NormalizedPuctSelection, NormalizedUctSelection};
 pub use puct::{MultiAgentPuctSelection, MultiAgentPuctStats};
 pub use uct::UctSelection;

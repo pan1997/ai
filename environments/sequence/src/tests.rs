@@ -351,3 +351,181 @@ fn test_ismcts_and_opponent_model_mcts_step() {
     assert!(legal.contains(&action_ismcts), "ISMCTS chosen action must be legal");
     assert!(legal.contains(&action_opp), "OpponentModel MCTS chosen action must be legal");
 }
+
+#[test]
+fn test_sequence_belief_sampler() {
+    use crate::dynamics::SequenceBeliefSampler;
+    use mcts_traits::belief::BeliefSampler;
+
+    let world = Sequence2PWorld::default();
+    let state = world.initial();
+    let obs = world.observe(&state, 0);
+
+    let mut sampler = SequenceBeliefSampler::new();
+    let s1 = sampler.sample(&obs);
+    let s2 = sampler.sample(&obs);
+
+    // Observer hand must be strictly preserved
+    assert_eq!(s1.hands[0], obs.my_hand);
+    assert_eq!(s2.hands[0], obs.my_hand);
+
+    // Total cards must equal 104
+    let total1: usize = s1.hands.iter().map(|h| h.len()).sum::<usize>() + s1.deck.len() + s1.discards.len();
+    let total2: usize = s2.hands.iter().map(|h| h.len()).sum::<usize>() + s2.deck.len() + s2.discards.len();
+    assert_eq!(total1, 104);
+    assert_eq!(total2, 104);
+}
+
+#[test]
+fn test_sequence_ismcts_dynamics_expand_actions() {
+    use crate::dynamics::SequenceIsmctsDynamics;
+    use mcts_traits::AgentDynamics;
+
+    let world = Sequence2PWorld::default();
+    let state = world.initial();
+    let dynamics = SequenceIsmctsDynamics::new(world, 0, state.total_moves);
+
+    // Root expansion: must match actions() for observer exactly
+    let mut root_expanded = Vec::new();
+    let mut root_actions = Vec::new();
+    dynamics.expand_actions(&state, &mut root_expanded);
+    dynamics.actions(&state, &mut root_actions);
+    assert_eq!(root_expanded, root_actions);
+
+    // Step to Player 1 (opponent)
+    let action = root_actions[0];
+    let mut next_state = state.clone();
+    let _ = dynamics.step(&mut next_state, &action);
+    assert_eq!(next_state.current_player, 1);
+
+    // Interior opponent expansion: must expand candidate moves covering unseen cards
+    let mut opp_expanded = Vec::new();
+    let mut opp_legal = Vec::new();
+    dynamics.expand_actions(&next_state, &mut opp_expanded);
+    dynamics.actions(&next_state, &mut opp_legal);
+
+    // opp_expanded must contain all of opp_legal, plus extra plausible cards
+    for legal_act in &opp_legal {
+        assert!(
+            opp_expanded.contains(legal_act),
+            "opp_expanded must contain actual legal action {:?}",
+            legal_act
+        );
+    }
+    assert!(
+        opp_expanded.len() >= opp_legal.len(),
+        "opp_expanded must be at least as large as opp_legal"
+    );
+}
+
+#[test]
+fn test_single_tree_ismcts_agent_step_and_parse() {
+    use crate::agent::{parse_agent, SingleTreeIsMctsAgent};
+
+    let world = Sequence2PWorld::default();
+    let state = world.initial();
+
+    let mut agent = SingleTreeIsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic(
+        "SingleTreeBot",
+        30,
+    );
+    let chosen = agent.select_action(&state);
+
+    let mut legal = Vec::new();
+    state.legal_actions(&mut legal);
+    assert!(legal.contains(&chosen), "SingleTreeIsMctsAgent chosen action must be legal");
+
+    // Verify parse_agent
+    let mut parsed = parse_agent::<2>("is-mcts-single:50", "ParsedBot");
+    assert_eq!(parsed.name(), "ParsedBot");
+    let chosen_parsed = parsed.select_action(&state);
+    assert!(legal.contains(&chosen_parsed));
+}
+
+#[test]
+fn test_single_tree_ismcts_vs_heuristic_match() {
+    let world = Sequence2PWorld::default();
+    let driver = MatchDriver::new();
+
+    let mut a0 = crate::agent::SingleTreeIsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic(
+        "SingleTreeBot",
+        20,
+    );
+    let mut a1 = crate::agent::HeuristicAgent::new("HeuristicBot");
+
+    let result = driver.play_2p(&world, &mut a0, &mut a1, None);
+    assert!(result.total_moves > 0);
+    assert!(result.final_state.terminated);
+}
+
+#[test]
+fn test_single_tree_ismcts_search_depth_vs_multi_tree() {
+    use crate::dynamics::{SequenceBeliefSampler, SequenceIsmctsDynamics, SequenceTurnDynamics, determinize_state};
+    use crate::evaluator::SequenceHeuristicEvaluator;
+    use mcts_engine::backup::VectorBackup;
+    use mcts_engine::scheduler::{IsmctsScheduler, SequentialScheduler};
+    use mcts_engine::selection::{IsmctsSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats};
+    use mcts_engine::tree_store::{EdgeId, NodeId, NodeStatus, TreeStore};
+    use mcts_traits::AgentId;
+
+    fn depth_distribution<A, R, S: mcts_engine::tree_store::EdgeStatsStore, D>(
+        tree: &TreeStore<A, R, S, D>,
+        node: NodeId,
+        current_depth: usize,
+        counts: &mut [usize; 10],
+    ) {
+        counts[current_depth] += 1;
+        let first = tree.first_child_edge(node);
+        let count = tree.num_children(node);
+        for i in 0..count {
+            let edge = EdgeId(first.0 + i);
+            let child = tree.edge_child(edge);
+            if child.is_valid() && tree.node_status(child) == NodeStatus::Expanded {
+                depth_distribution(tree, child, current_depth + 1, counts);
+            }
+        }
+    }
+
+    let world = Sequence2PWorld::default();
+    let state = world.initial();
+    let obs = world.observe(&state, 0);
+    let model = SequenceHeuristicEvaluator::new();
+
+    // 1. Multi-tree ISMCTS: 500 iters across 10 trees (50 iters per tree)
+    let mut rng = rand::thread_rng();
+    let mut multi_counts = [0usize; 10];
+    for _ in 0..10 {
+        let hyp_state = determinize_state(&obs, &mut rng);
+        let dynamics = SequenceTurnDynamics::new(world);
+        let selection = MultiAgentPuctSelection::<2> { c_puct: 1.414 };
+        let backup = VectorBackup::<2>::default();
+        let stats = MultiAgentPuctStats::<2>::new();
+        let mut tree = TreeStore::with_capacity(100, 3000, stats);
+        let root = tree.insert_root(AgentId(0));
+        let scheduler = SequentialScheduler;
+        scheduler.search(&mut tree, &dynamics, &model, &selection, &backup, root, &hyp_state, 50);
+        depth_distribution(&tree, root, 0, &mut multi_counts);
+    }
+
+    // 2. Single-tree ISMCTS: 500 iters in 1 single tree
+    let dynamics = SequenceIsmctsDynamics::new(world, 0, state.total_moves);
+    let selection = IsmctsSelection::<2>::new(1.414);
+    let backup = VectorBackup::<2>::default();
+    let stats = IsmctsStats::<2>::new();
+    let mut single_tree = TreeStore::with_capacity(600, 30000, stats);
+    let root = single_tree.insert_root(AgentId(0));
+    let mut sampler = SequenceBeliefSampler::new();
+    let scheduler = IsmctsScheduler;
+    scheduler.search(&mut single_tree, &dynamics, &model, &selection, &backup, &mut sampler, &obs, root, 500);
+
+    let mut single_counts = [0usize; 10];
+    depth_distribution(&single_tree, root, 0, &mut single_counts);
+
+    // Single-tree ISMCTS concentrates all 500 iterations into a rich, deep tree:
+    assert!(single_tree.num_nodes() >= 250, "Single-tree should expand >= 250 nodes");
+    assert!(single_counts[3] > 0, "Single-tree should explore deep ply 3+ expansions");
+    // Deep node concentration at depth 2 & 3 must vastly exceed any individual 50-iter multi-tree:
+    assert!(single_counts[2] > 100, "Single-tree should have > 100 expanded nodes at depth 2");
+}
+
+

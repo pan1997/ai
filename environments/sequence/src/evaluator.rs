@@ -2,17 +2,15 @@
 
 use crate::board::{coord_to_index, is_corner_index, is_one_eyed_jack, is_two_eyed_jack};
 use crate::game::{SequenceAction, SequenceState};
-use mcts_traits::{Evaluation, Model};
+use mcts_traits::{ActionModel, Evaluation, Model};
 
 /// Evaluator assigning uniform priors and zero values.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UniformEvaluator;
 
-impl Model<SequenceState> for UniformEvaluator {
-    fn evaluate(&self, s: &SequenceState) -> Evaluation {
-        let mut legal = Vec::new();
-        s.legal_actions(&mut legal);
-        let n = legal.len();
+impl ActionModel<SequenceState, SequenceAction> for UniformEvaluator {
+    fn evaluate_actions(&self, s: &SequenceState, actions: &[SequenceAction]) -> Evaluation {
+        let n = actions.len();
         let priors = if n > 0 {
             vec![1.0 / (n as f32); n]
         } else {
@@ -23,6 +21,14 @@ impl Model<SequenceState> for UniformEvaluator {
             priors,
             values: vec![0.0; p],
         }
+    }
+}
+
+impl Model<SequenceState> for UniformEvaluator {
+    fn evaluate(&self, s: &SequenceState) -> Evaluation {
+        let mut legal = Vec::new();
+        s.legal_actions(&mut legal);
+        self.evaluate_actions(s, &legal)
     }
 }
 
@@ -212,7 +218,7 @@ impl SequenceHeuristicEvaluator {
                 let threat_reduced = opp_score_before - opp_score_after;
                 50.0 + threat_reduced * 2.0
             }
-            SequenceAction::PlayCard { pos, .. } => {
+            SequenceAction::PlayCard { card, pos } => {
                 let my_score_before = self.team_score(state, team);
                 let my_score_after = self.team_score(&sim, team);
                 let progress = my_score_after - my_score_before;
@@ -224,7 +230,11 @@ impl SequenceHeuristicEvaluator {
                     0.0
                 };
 
-                progress + corner_bonus
+                if is_two_eyed_jack(*card) && progress <= 0.0 && corner_bonus == 0.0 {
+                    -20.0
+                } else {
+                    progress + corner_bonus
+                }
             }
             SequenceAction::DiscardDeadCard { .. } => 2.0,
         }
@@ -245,19 +255,16 @@ fn is_corner_adjacent(r: u8, c: u8) -> bool {
     false
 }
 
-impl Model<SequenceState> for SequenceHeuristicEvaluator {
-    fn evaluate(&self, s: &SequenceState) -> Evaluation {
-        let mut legal = Vec::new();
-        s.legal_actions(&mut legal);
-        let n = legal.len();
-
+impl ActionModel<SequenceState, SequenceAction> for SequenceHeuristicEvaluator {
+    fn evaluate_actions(&self, s: &SequenceState, actions: &[SequenceAction]) -> Evaluation {
+        let n = actions.len();
         let priors = if n > 0 {
-            // Score actions and softmax / normalize priors
-            let mut scores: Vec<f32> = legal.iter().map(|a| self.score_action(s, a)).collect();
+            // Score actions and softmax / normalize priors with sharper temperature
+            let mut scores: Vec<f32> = actions.iter().map(|a| self.score_action(s, a)).collect();
             let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
             let mut sum_exp = 0.0f32;
             for sc in scores.iter_mut() {
-                *sc = ((*sc - max_score) / 10.0).exp();
+                *sc = ((*sc - max_score) / 3.0).exp();
                 sum_exp += *sc;
             }
             if sum_exp > 0.0 {
@@ -301,5 +308,13 @@ impl Model<SequenceState> for SequenceHeuristicEvaluator {
         }
 
         Evaluation { priors, values }
+    }
+}
+
+impl Model<SequenceState> for SequenceHeuristicEvaluator {
+    fn evaluate(&self, s: &SequenceState) -> Evaluation {
+        let mut legal = Vec::new();
+        s.legal_actions(&mut legal);
+        self.evaluate_actions(s, &legal)
     }
 }
