@@ -1,3 +1,4 @@
+use super::dedup::LeafDeduplicator;
 use crate::backup::{BackupPolicy, PathElement};
 use crate::search::descend_trajectory;
 use crate::selection::SelectionPolicy;
@@ -91,10 +92,7 @@ impl BatchedScheduler {
             .collect();
         let mut leaf_nodes: Vec<NodeId> = Vec::with_capacity(self.batch_size);
         let mut leaf_states: Vec<D::State> = Vec::with_capacity(self.batch_size);
-        let mut states_to_evaluate: Vec<D::State> = Vec::with_capacity(self.batch_size);
-        let mut unique_node_ids: Vec<NodeId> = Vec::with_capacity(self.batch_size);
-        let mut unique_actions: Vec<Vec<Action>> = Vec::with_capacity(self.batch_size);
-        let mut path_leaf_map: Vec<Option<usize>> = vec![None; self.batch_size];
+        let mut dedup = LeafDeduplicator::with_capacity(self.batch_size);
 
         let mut scope = VirtualLossScope {
             tree,
@@ -107,10 +105,7 @@ impl BatchedScheduler {
         for _ in 0..num_iterations {
             leaf_nodes.clear();
             leaf_states.clear();
-            states_to_evaluate.clear();
-            unique_node_ids.clear();
-            unique_actions.clear();
-            path_leaf_map.fill(None);
+            dedup.clear(self.batch_size);
 
             for path in paths.iter_mut().take(self.batch_size) {
                 path.clear();
@@ -134,57 +129,35 @@ impl BatchedScheduler {
 
             // Deduplicate unique leaves for evaluation
             for b in 0..self.batch_size {
-                let leaf_node = leaf_nodes[b];
-                let state = &leaf_states[b];
-
-                if scope.tree.node_status(leaf_node) == NodeStatus::Terminal {
-                    path_leaf_map[b] = None;
-                } else if scope.tree.node_status(leaf_node) == NodeStatus::Unexpanded {
-                    dynamics.actions(state, &mut scratch_actions);
-                    if scratch_actions.is_empty() {
-                        scope.tree.mark_terminal(leaf_node);
-                        path_leaf_map[b] = None;
-                    } else if let Some(pos) =
-                        unique_node_ids.iter().position(|&nid| nid == leaf_node)
-                    {
-                        path_leaf_map[b] = Some(pos);
-                    } else {
-                        let pos = states_to_evaluate.len();
-                        states_to_evaluate.push(state.clone());
-                        unique_node_ids.push(leaf_node);
-                        unique_actions.push(scratch_actions.clone());
-                        path_leaf_map[b] = Some(pos);
-                    }
-                } else {
-                    // NodeStatus::Expanded: Selection terminated at an already expanded leaf.
-                    // Evaluate the leaf state instead of falsely treating it as terminal (None).
-                    if let Some(pos) = states_to_evaluate.iter().position(|s| s == state) {
-                        path_leaf_map[b] = Some(pos);
-                    } else {
-                        let pos = states_to_evaluate.len();
-                        states_to_evaluate.push(state.clone());
-                        path_leaf_map[b] = Some(pos);
-                    }
-                }
+                dedup.register_leaf(
+                    b,
+                    0,
+                    scope.tree,
+                    dynamics,
+                    leaf_nodes[b],
+                    &leaf_states[b],
+                    &mut scratch_actions,
+                );
             }
 
             // Batched Evaluation
-            let evals: Vec<Evaluation> = if !states_to_evaluate.is_empty() {
-                let refs: Vec<&D::State> = states_to_evaluate.iter().collect();
+            let evals: Vec<Evaluation> = if !dedup.unique_states.is_empty() {
+                let refs: Vec<&D::State> = dedup.unique_states.iter().collect();
                 model.evaluate_batch(&refs)
             } else {
                 Vec::new()
             };
 
             // Expand unique unexpanded leaves using cached legal actions (no duplicate generation)
-            for (i, &leaf_node) in unique_node_ids.iter().enumerate() {
-                scope.tree.expand_node(leaf_node, &unique_actions[i]);
+            for req in &dedup.nodes_to_expand {
+                scope
+                    .tree
+                    .expand_node(req.node, &dedup.unique_actions[req.action_idx]);
             }
 
             // Backpropagate all paths
-            for b in 0..self.batch_size {
-                let path = &paths[b];
-                let eval_opt = path_leaf_map[b].map(|idx| &evals[idx]);
+            for (b, path) in paths.iter().enumerate().take(self.batch_size) {
+                let eval_opt = dedup.path_eval_map[b].map(|idx| &evals[idx]);
                 backup.backup(scope.tree, path, eval_opt);
             }
 
