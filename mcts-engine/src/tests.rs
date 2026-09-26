@@ -1,8 +1,8 @@
 use crate::backup::{BackupPolicy, PathElement, SingleAgentBackup, VectorBackup};
 use crate::scheduler::{BatchedScheduler, MultiGameScheduler, SequentialScheduler};
 use crate::selection::{
-    GumbelPuctSelection, MultiAgentPuctSelection, MultiAgentPuctStats, SelectionPolicy,
-    UctSelection,
+    GumbelPuctSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats,
+    SelectionPolicy, UctSelection,
 };
 use crate::tree_store::{EdgeId, NodeId, NodeStatus, PriorStore, TreeStore, VirtualLossStore};
 use mcts_traits::{AgentId, BatchedModel, Evaluation, GraphEnv, Model, TurnBasedWorld, World};
@@ -1566,4 +1566,105 @@ fn test_stochastic_node_parent_visits_not_inflated() {
     let uct = UctSelection::<1> { c_uct: 1.0 };
     let chosen = uct.select_child(&tree, child_a);
     assert!(chosen.is_some());
+}
+
+#[test]
+fn test_tree_store_clear_reuse() {
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _> = TreeStore::with_capacity(10, 20, stats);
+    let r0 = tree.insert_root(AgentId(0));
+    tree.expand_node(r0, &[1, 2, 3]);
+    assert_eq!(tree.num_nodes(), 1);
+    assert_eq!(tree.num_edges(), 3);
+    let initial_node_cap = tree.node_capacity();
+    let initial_edge_cap = tree.edge_capacity();
+
+    tree.clear();
+    assert_eq!(tree.num_nodes(), 0);
+    assert_eq!(tree.num_edges(), 0);
+    assert_eq!(tree.node_capacity(), initial_node_cap);
+    assert_eq!(tree.edge_capacity(), initial_edge_cap);
+
+    // Reuse without reallocating
+    let r1 = tree.insert_root(AgentId(0));
+    assert_eq!(r1, NodeId(0));
+    tree.expand_node(r1, &[10, 20]);
+    assert_eq!(tree.num_nodes(), 1);
+    assert_eq!(tree.num_edges(), 2);
+}
+
+#[test]
+fn test_multi_game_scheduler_expanded_leaf_eval() {
+    // Construct a tree where root has child 1, and child 1 is already expanded with no children (num_children = 0).
+    // Selection descent at child 1 will halt at NodeStatus::Expanded.
+    // The scheduler must evaluate the leaf state with model.evaluate_batch and backup Some(eval),
+    // rather than treating it as terminal (None) with 0.0 value.
+    let mut env = GraphEnv::<1>::new(0);
+    env.add_transition(0, 10, 1, [0.0], false);
+    env.set_actions(0, vec![10]); // Root has action 10 leading to state 1
+    env.set_actions(1, vec![]);
+    env.set_agent(0, AgentId(0));
+    env.set_agent(1, AgentId(0));
+
+    let mut model = MockModel::default();
+    model.priors.insert(0, vec![1.0]);
+    model.values.insert(0, vec![0.0]);
+    model.values.insert(1, vec![5.0]); // State 1 evaluation is 5.0!
+
+    let selection = MultiAgentPuctSelection::<1> { c_puct: 1.0 };
+    let backup = VectorBackup::<1>::default();
+
+    let mut tree = TreeStore::with_capacity(5, 5, MultiAgentPuctStats::<1>::new());
+    let root = tree.insert_root(AgentId(0));
+    let edge0 = tree.expand_node(root, &[10]);
+    let (child1, _) = tree.get_or_insert_child(edge0, &(), AgentId(0));
+    tree.expand_node(child1, &[]); // Child 1 is Expanded with 0 children
+
+    let scheduler = MultiGameScheduler::new(1);
+    let mut trees = [tree];
+    let roots = [root];
+    let root_states = [&0];
+
+    // Search 1 iteration:
+    // Selection traverses edge 0 -> child 1.
+    // At child 1, select_child returns None.
+    // Descent halts at child 1 (NodeStatus::Expanded).
+    // Scheduler must evaluate state 1 (value 5.0) and back it up!
+    scheduler.search(
+        &mut trees,
+        &roots,
+        &root_states,
+        &env,
+        &model,
+        &selection,
+        &backup,
+        1,
+    );
+
+    // Edge 0 should have 1 visit and mean value 5.0.
+    assert_eq!(trees[0].stats.visits[edge0.as_usize()], 1);
+    assert_eq!(trees[0].stats.mean_value[edge0.as_usize()][0], 5.0);
+}
+
+#[test]
+fn test_single_agent_backup_with_ismcts_stats() {
+    let stats = IsmctsStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], IsmctsStats<1>> = TreeStore::with_capacity(5, 5, stats);
+    let root = tree.insert_root(AgentId(0));
+    let edge = tree.expand_node(root, &[10]);
+    let child = tree.insert_node(edge, AgentId(0));
+
+    let backup = SingleAgentBackup::new(1.0);
+    let eval = Evaluation::scalar(vec![1.0], 3.0);
+    let path = [PathElement {
+        node: root,
+        edge,
+        next_node: child,
+        reward: [1.0],
+    }];
+
+    backup.backup(&mut tree, &path, Some(&eval));
+    assert_eq!(tree.stats.visits[edge.as_usize()], 1);
+    // Return = reward (1.0) + eval (3.0) = 4.0
+    assert_eq!(tree.stats.mean_value[edge.as_usize()][0], 4.0);
 }

@@ -5,12 +5,13 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 ```
        +-------------------------------------------------------------+
        |             Game Environments & Benchmark Arenas            |
-       |  - connect4:  Dedicated Connect 4 game engine, agents & CLI |
-       |  - blokus:    Blokus Classic & Duo multi-agent engine & CLI |
-       |  - tzf8:      Dedicated 2048 Expectimax engine & tournament |
-       |  - hex:       Dedicated Hex engine, DSU tracking & arena    |
-       |  - sequence:  Dedicated Sequence board/card engine & ISMCTS |
-       |  - mcts-envs: Reference environments, baseline evaluators   |
+       |  - connect4:   Dedicated Connect 4 game engine, agents & CLI|
+       |  - blokus:     Blokus Classic & Duo multi-agent engine & CLI|
+       |  - tzf8:       Dedicated 2048 Expectimax engine & tournament|
+       |  - hex:        Dedicated Hex engine, DSU tracking & arena   |
+       |  - sequence:   Dedicated Sequence board/card engine & ISMCTS|
+       |  - mcts-envs:  Reference environments, baseline evaluators  |
+       |  - mcts-utils: Graphviz DOT/SVG/PNG rendering & MDP/POMDP   |
        +------------------------------+------------------------------+
                                       |
                                       v
@@ -38,10 +39,12 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
   - `mcts-engine`: High-throughput selection, backup, and scheduling engines.
   - `connect4`, `blokus`, `tzf8`, `hex`, & `sequence`: Dedicated production-grade game engines, Expectimax/ISMCTS planners, and tournament CLI players.
   - `mcts-envs`: Reference environments and baseline rollout models for rapid benchmarking and verification.
+  - `mcts-utils`: Graphviz DOT/SVG/PNG tree visualization, sub-tree pruning, and bipartite MDP/POMDP validation tools.
 - **Modern Search Algorithms**:
   - **UCT**: Classic exploration/exploitation formula with configurable constant.
   - **Dynamic Min-Max Normalization**: Dynamically rescales arbitrary $Q$-value scales to $[0, 1]$ (`NormalizedUctSelection`, `NormalizedPuctSelection`), essential for games with unbounded score metrics (such as 2048) or non-standard heuristics.
   - **PUCT & Virtual Loss**: AlphaZero-style predictor-directed selection with lockless/virtual-loss parallelism.
+  - **Single-Tree ISMCTS**: Availability-weighted PUCT (`IsmctsSelection`, `IsmctsStats`) tracking availability mass $N_{\text{avail}}(s, a)$ across sampled belief-state determinizations.
   - **Gumbel AlphaZero**: Danihelka et al. (2022) policy improvement via Gumbel perturbation at the root node.
   - **Multi-Agent Vector Backup**: $Q \in \mathbb{R}^N$ element-wise returns, naturally handling general-sum games and eliminating the classic negation bug class in zero-sum games.
   - **Stochastic Expectimax Search**: Zero-overhead delta-branching (`StepDelta`) enabling unbiased Expectimax search in stochastic MDPs (such as 2048 tile spawns) without explicit chance nodes.
@@ -49,6 +52,7 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
   - `SequentialScheduler`: Standard single-thread root-to-leaf sweep.
   - `BatchedScheduler`: Virtual-loss-guided batching with leaf deduplication to saturate GPU tensor cores during neural net inference.
   - `MultiGameScheduler`: Vectorized self-play across multiple parallel trees using SIMD/batch-friendly steps.
+  - `IsmctsScheduler`: Single-tree Information Set MCTS with belief-state determinization sampling.
   - `MatchDriver` (`mcts_engine::arena`): Game-agnostic tournament orchestration across 2-player, multi-player, and single-player matches with transition history buffering, seat-bias balancing, and head-to-head metrics.
 - **Imperfect Information & Referee Separation**:
   - Strict distinction between `World` (impartial referee, hidden state, simultaneous turns) and `AgentDynamics` (agent-internal hypothetical reasoning and belief states).
@@ -61,13 +65,14 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 | Crate | Path | Description |
 |---|---|---|
 | [`mcts-traits`](file:///home/pankaj/Projects/ai/mcts-traits) | `mcts-traits/` | Core abstractions: `Agent`, `AgentDynamics`, `BatchedAgentDynamics`, `Model`, `BatchedModel`, `World`, `TurnBasedWorld`, `TurnBasedDynamics`, `Evaluation`, `AgentId`. |
-| [`mcts-engine`](file:///home/pankaj/Projects/ai/mcts-engine) | `mcts-engine/` | SoA `TreeStore`, `MatchDriver`, `UctSelection`, `NormalizedUctSelection`, `MultiAgentPuctSelection`, `NormalizedPuctSelection`, `GumbelPuctSelection`, `VectorBackup`, schedulers, and tournament arenas. |
+| [`mcts-engine`](file:///home/pankaj/Projects/ai/mcts-engine) | `mcts-engine/` | SoA `TreeStore`, `MatchDriver`, `UctSelection`, `NormalizedUctSelection`, `MultiAgentPuctSelection`, `NormalizedPuctSelection`, `IsmctsSelection`, `GumbelPuctSelection`, `VectorBackup`, `SingleAgentBackup`, schedulers (`SequentialScheduler`, `BatchedScheduler`, `MultiGameScheduler`, `IsmctsScheduler`), and tournament arenas. |
 | [`connect4`](file:///home/pankaj/Projects/ai/environments/connect4) | `environments/connect4/` | Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players (`connect4-play`, `connect4-tournament`). |
 | [`blokus`](file:///home/pankaj/Projects/ai/environments/blokus) | `environments/blokus/` | Dedicated Blokus (Classic & Duo) engine, polyomino registry, heuristic models, and CLI players (`blokus-play`, `blokus-tournament`). |
 | [`tzf8`](file:///home/pankaj/Projects/ai/environments/tzf8) | `environments/tzf8/` | Dedicated 2048 Expectimax engine, chance-node agents, and arena tournament runner (`tzf8-play`, `tzf8-tournament`). |
 | [`hex`](file:///home/pankaj/Projects/ai/environments/hex) | `environments/hex/` | Dedicated Hex game engine, DSU connectivity tracking, shortest-path heuristic, and tournament arena (`hex-play`, `hex-tournament`). |
 | [`sequence`](file:///home/pankaj/Projects/ai/environments/sequence) | `environments/sequence/` | Dedicated Sequence game engine, 2-6 players, team coordination, ISMCTS & opponent-modeled agents, CLI players (`sequence-play`, `sequence-tournament`). |
 | [`mcts-envs`](file:///home/pankaj/Projects/ai/mcts-envs) | `mcts-envs/` | Reference environments (Kuhn Poker, Hex/2048 re-exports), plus rollout and baseline uniform evaluators. |
+| [`mcts-utils`](file:///home/pankaj/Projects/ai/mcts-utils) | `mcts-utils/` | Graphviz DOT/SVG/PNG rendering, tree pruning, visit filters, and POMDP/MDP validation examples. |
 
 ---
 

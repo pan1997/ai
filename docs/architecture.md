@@ -6,17 +6,18 @@ This document details the architectural principles, memory layouts, and design c
 
 ## 1. Tripartite Crate Hierarchy
 
-The workspace is organized into eight decoupled crates:
+The workspace is organized into nine decoupled crates:
 
 ```
 +-------------------------------------------------------------+
 |              Dedicated Game & Benchmark Crates              |
-|  - connect4: Connect 4 game engine, MCTS & CLI agents       |
-|  - blokus:   Blokus Classic (4P) & Duo (2P), polyomino reg. |
-|  - tzf8:     Dedicated 2048 Expectimax engine & tournament  |
-|  - hex:      Dedicated Hex engine, DSU tracking & arena     |
-|  - sequence: Dedicated Sequence board/card engine & ISMCTS  |
-|  - mcts-envs: Reference environments, baseline evaluators   |
+|  - connect4:   Connect 4 game engine, MCTS & CLI agents     |
+|  - blokus:     Blokus Classic (4P) & Duo (2P), polyomino reg|
+|  - tzf8:       Dedicated 2048 Expectimax engine & tournament|
+|  - hex:        Dedicated Hex engine, DSU tracking & arena   |
+|  - sequence:   Dedicated Sequence board/card engine & ISMCTS|
+|  - mcts-envs:  Reference environments, baseline evaluators  |
+|  - mcts-utils: Graphviz DOT/SVG/PNG rendering & MDP/POMDP   |
 +------------------------------+------------------------------+
                                |
                                v
@@ -24,9 +25,9 @@ The workspace is organized into eight decoupled crates:
 |                        mcts-engine                          |
 |  - TreeStore (Structure-of-Arrays contiguous memory)         |
 |  - Selection: UCT, Normalized UCT/PUCT, MultiAgentPUCT,      |
-|              GumbelAlphaZero                                |
+|              IsmctsSelection, GumbelAlphaZero               |
 |  - Backup: SingleAgentBackup, VectorBackup                  |
-|  - Schedulers: Sequential, Batched, MultiGame               |
+|  - Schedulers: Sequential, Batched, MultiGame, Ismcts       |
 |  - Arena: Round-robin & multi-player tournament engines     |
 +------------------------------+------------------------------+
                                |
@@ -42,7 +43,7 @@ The workspace is organized into eight decoupled crates:
 ### Decoupling Rationale
 - **Zero Heavy Dependencies in Traits**: `mcts-traits` compiles in milliseconds and has zero mandatory runtime dependencies. This allows external libraries, neural network backends (e.g. PyTorch / ONNX / Candle / Burn), or game simulators to integrate without pulling in search engine implementation details.
 - **Engine Agnostic to Game Details**: `mcts-engine` knows nothing about grids, cards, or board games. It operates strictly on generic types `Action`, `Reward`, `Stats`, and optional `StepDelta`.
-- **Decoupled Game Environments**: Reference environments and benchmark games (`connect4`, `blokus`, `tzf8`, `hex`, `sequence`, `mcts-envs`) depend on traits and engine interfaces, without introducing cyclic coupling.
+- **Decoupled Game Environments & Utilities**: Reference environments, benchmark games (`connect4`, `blokus`, `tzf8`, `hex`, `sequence`, `mcts-envs`), and visualization utilities (`mcts-utils`) depend on traits and engine interfaces, without introducing cyclic coupling.
 
 ---
 

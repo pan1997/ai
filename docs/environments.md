@@ -257,5 +257,15 @@ let world = MyGameWorld;
 let dynamics = TurnBasedDynamics::new(world);
 ```
 
-Your custom dynamics can immediately plug into any scheduler (`SequentialScheduler`, `BatchedScheduler`, `MultiGameScheduler`) and selection/backup policy without any handwritten wrapper boilerplate!
+Your custom dynamics can immediately plug into any scheduler (`SequentialScheduler`, `BatchedScheduler`, `MultiGameScheduler`, `IsmctsScheduler`) and selection/backup policy without any handwritten wrapper boilerplate!
+
+### Step 4: Visualizing Trees and Validating Dynamics with `mcts-utils`
+Use the `mcts-utils` crate to inspect generated search trees as Graphviz DOT, SVG, or PNG files, or to run analytical MDP/POMDP validation tests:
+
+```rust
+use mcts_utils::{render_tree_svg, MctsDotConfig};
+
+// Export search tree directly to SVG
+render_tree_svg(&tree, root, "search_tree.svg", &MctsDotConfig::default())?;
+```
 

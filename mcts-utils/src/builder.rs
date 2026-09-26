@@ -37,7 +37,7 @@ where
     let mut node_visits = vec![0u32; tree.num_nodes()];
     node_visits[root.as_usize()] = tree.child_edges(root).map(|e| tree.stats.visits(e)).sum();
 
-    for n in 0..tree.num_nodes() {
+    for (n, slot) in node_visits.iter_mut().enumerate() {
         let node = MctsNodeId(n as u32);
         if node == root {
             continue;
@@ -48,21 +48,21 @@ where
         }
         let pe_visits = tree.stats.visits(pe);
         if pe_visits == 0 {
-            node_visits[n] = 0;
+            *slot = 0;
             continue;
         }
 
         match tree.node_status(node) {
             NodeStatus::Expanded => {
                 let child_sum: u32 = tree.child_edges(node).map(|e| tree.stats.visits(e)).sum();
-                node_visits[n] = (1 + child_sum).min(pe_visits);
+                *slot = (1 + child_sum).min(pe_visits);
             }
             NodeStatus::Terminal | NodeStatus::Unexpanded => {
                 let delta_count = tree.delta_children(pe).count();
                 if delta_count <= 1 {
-                    node_visits[n] = pe_visits;
+                    *slot = pe_visits;
                 } else {
-                    node_visits[n] = 1;
+                    *slot = 1;
                 }
             }
         }

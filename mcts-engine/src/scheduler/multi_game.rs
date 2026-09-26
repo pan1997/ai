@@ -101,8 +101,8 @@ impl MultiGameScheduler {
 
         let mut unique_states: Vec<D::State> = Vec::with_capacity(self.batch_size);
         let mut unique_actions: Vec<Vec<Action>> = Vec::with_capacity(self.batch_size);
-        let mut consumers_list: Vec<Vec<(usize, NodeId)>> = Vec::with_capacity(self.batch_size);
-        let mut terminal_trees: Vec<usize> = Vec::with_capacity(self.batch_size);
+        let mut nodes_to_expand: Vec<(usize, NodeId, usize)> = Vec::with_capacity(self.batch_size);
+        let mut path_eval_map: Vec<Option<usize>> = vec![None; self.batch_size];
 
         // 3. Iteration Loop
         for _ in 0..num_iterations {
@@ -190,29 +190,43 @@ impl MultiGameScheduler {
             // Deduplicate unique states
             unique_states.clear();
             unique_actions.clear();
-            consumers_list.clear();
-            terminal_trees.clear();
+            nodes_to_expand.clear();
+            for &b in &iteration_trees {
+                path_eval_map[b] = None;
+            }
 
             for &b in &iteration_trees {
                 let leaf_node = current_node[b];
                 let state = &current_state[b];
 
                 if trees[b].node_status(leaf_node) == NodeStatus::Terminal {
-                    terminal_trees.push(b);
+                    path_eval_map[b] = None;
                 } else if trees[b].node_status(leaf_node) == NodeStatus::Unexpanded {
                     dynamics.actions(state, &mut scratch_actions);
                     if scratch_actions.is_empty() {
                         trees[b].mark_terminal(leaf_node);
-                        terminal_trees.push(b);
+                        path_eval_map[b] = None;
                     } else if let Some(pos) = unique_states.iter().position(|s| s == state) {
-                        consumers_list[pos].push((b, leaf_node));
+                        nodes_to_expand.push((b, leaf_node, pos));
+                        path_eval_map[b] = Some(pos);
                     } else {
+                        let pos = unique_states.len();
                         unique_states.push(state.clone());
                         unique_actions.push(scratch_actions.clone());
-                        consumers_list.push(vec![(b, leaf_node)]);
+                        nodes_to_expand.push((b, leaf_node, pos));
+                        path_eval_map[b] = Some(pos);
                     }
                 } else {
-                    terminal_trees.push(b);
+                    // NodeStatus::Expanded: Selection terminated at an already expanded leaf.
+                    // Evaluate the leaf state instead of falsely treating it as terminal (None).
+                    if let Some(pos) = unique_states.iter().position(|s| s == state) {
+                        path_eval_map[b] = Some(pos);
+                    } else {
+                        let pos = unique_states.len();
+                        unique_states.push(state.clone());
+                        unique_actions.push(Vec::new());
+                        path_eval_map[b] = Some(pos);
+                    }
                 }
             }
 
@@ -224,17 +238,15 @@ impl MultiGameScheduler {
                 Vec::new()
             };
 
-            // Expand unique leaves using cached legal actions (no duplicate generation)
-            for (u, eval) in evals.iter().enumerate() {
-                for &(tree_idx, leaf_node) in &consumers_list[u] {
-                    trees[tree_idx].expand_node(leaf_node, &unique_actions[u]);
-                    let path = &paths[tree_idx];
-                    backup.backup(&mut trees[tree_idx], path, Some(eval));
-                }
+            // Expand unique unexpanded leaves using cached legal actions (no duplicate generation)
+            for &(tree_idx, leaf_node, act_idx) in &nodes_to_expand {
+                trees[tree_idx].expand_node(leaf_node, &unique_actions[act_idx]);
             }
 
-            for &tree_idx in &terminal_trees {
-                backup.backup(&mut trees[tree_idx], &paths[tree_idx], None);
+            // Backpropagate all iteration trees
+            for &b in &iteration_trees {
+                let eval_opt = path_eval_map[b].map(|idx| &evals[idx]);
+                backup.backup(&mut trees[b], &paths[b], eval_opt);
             }
         }
     }

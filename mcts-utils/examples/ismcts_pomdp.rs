@@ -623,6 +623,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_html_report(
     out_dir: &Path,
     t1_l_v: u32,

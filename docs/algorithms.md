@@ -102,6 +102,33 @@ This guarantees that policy priors $P(s, a) \in [0, 1]$ properly weigh against v
 
 ---
 
+### 1.6 Single-Tree Information Set MCTS (Availability-Weighted PUCT)
+
+Implemented in [`IsmctsSelection`](file:///home/pankaj/Projects/ai/mcts-engine/src/selection/ismcts.rs) and [`IsmctsStats`](file:///home/pankaj/Projects/ai/mcts-engine/src/selection/ismcts.rs).
+
+In games with imperfect information, hidden state, or stochastic deals (e.g. Sequence, Kuhn Poker, POMDPs), classical MCTS suffers from strategy fusion when determinizations are evaluated independently. Single-Tree ISMCTS (Cowling et al., 2012) builds a single shared search tree where decision nodes represent information sets (observable history) rather than concrete hidden world states.
+
+#### Availability Count Tracking
+Because an action $a$ may only be legally valid in a subset of sampled world states compatible with the agent's observation:
+- Whenever node $s$ is visited along a trajectory, every child edge $a$ that is legally valid in the sampled determinization has its availability count incremented:
+  $$N_{\text{avail}}(s, a) \leftarrow N_{\text{avail}}(s, a) + 1$$
+- Total compatible availability mass at node $s$ across candidate actions $\mathcal{A}_{\text{avail}}(s)$ is:
+  $$N_{\text{avail}}(s) = \sum_{a' \in \mathcal{A}_{\text{avail}}(s)} N_{\text{avail}}(s, a')$$
+
+#### Availability-Weighted PUCT Formula
+During selection at node $s$ for active agent $i$, candidate edges are filtered strictly to those compatible with the current simulation state, and scored via:
+
+$$\text{Score}(s, a) = Q_{\text{eff}}(s, a) + c_{\text{puct}} \cdot P(s, a) \cdot \frac{\sqrt{N_{\text{avail}}(s)}}{1 + N_{\text{eff}}(s, a)}$$
+
+Where:
+- $N_{\text{eff}}(s, a) = N(s, a) + v_{\text{loss}}(s, a)$.
+- $Q_{\text{eff}}(s, a) = \frac{Q_i(s, a) \cdot N(s, a) - v_{\text{loss}}(s, a)}{N_{\text{eff}}(s, a)}$ (if $N_{\text{eff}} > 0$), else $0.0$.
+- $P(s, a)$ is the prior policy probability.
+
+This formulation normalizes exploration by how frequently action $a$ was available, preventing rarely legal actions from being starved while avoiding over-exploration of universally legal actions.
+
+---
+
 ## 2. Backup Strategies
 
 Once a leaf node is evaluated (via rollout, heuristic, or neural network), the return must be backpropagated up the traversed trajectory $\tau = \{(s_0, a_0), (s_1, a_1), \dots, (s_{T-1}, a_{T-1})\}$.
@@ -195,6 +222,17 @@ Executes concurrent MCTS searches across $M$ disjoint trees simultaneously:
 - Steps environment dynamics across active trees in parallel (`BatchedAgentDynamics::step_batch`).
 - Feeds all pending leaf evaluations into a shared model batch (`BatchedModel::evaluate_batch`).
 - Completely eliminates CPU-GPU synchronization stalls.
+
+### 3.4 `IsmctsScheduler`
+Executes Single-Tree Information Set MCTS searches across sampled belief-state determinizations:
+- In each search iteration:
+  1. Samples a hypothetical world state determinization $s_{\text{sim}} \sim \mathcal{B}(o_t)$ from the agent's belief sampler.
+  2. Traverses the shared search tree from root using `IsmctsSelection::select_compatible_child`, evaluating availability-weighted PUCT scores strictly among actions legally available in $s_{\text{sim}}$.
+  3. Increments availability counts $N_{\text{avail}}(s, a)$ on all legal candidate edges at visited decision nodes.
+  4. Steps determinized dynamics forward with $s_{\text{sim}}$.
+  5. Expands unexpanded leaves with legal actions or evaluates leaves if no compatible edge exists.
+  6. Backpropagates returns using `VectorBackup` or `SingleAgentBackup` along the traversed trajectory.
+- Consolidates all search passes into a single tree, yielding much deeper planning horizons than multi-tree determinization averaging under identical compute budgets.
 
 ---
 

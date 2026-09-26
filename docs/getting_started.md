@@ -155,7 +155,59 @@ All 32 games advance their simulation sweeps in lockstep, amortizing neural eval
 
 ---
 
-## 5. Running Benchmark Arenas & CLI Games
+## 5. Single-Tree Information Set MCTS (POMDPs & Hidden Cards)
+
+For imperfect-information games (such as Sequence or Kuhn Poker), `IsmctsScheduler` maintains a single shared search tree across sampled world-state determinizations:
+
+```rust
+use mcts_engine::scheduler::IsmctsScheduler;
+use mcts_engine::selection::{IsmctsSelection, IsmctsStats};
+use mcts_engine::backup::VectorBackup;
+use mcts_engine::TreeStore;
+use mcts_traits::AgentId;
+
+let selection = IsmctsSelection::<2>::new(1.414);
+let backup = VectorBackup::<2>::default();
+let stats = IsmctsStats::<2>::new();
+
+let mut tree = TreeStore::with_capacity(1000, 5000, stats);
+let root = tree.insert_root(AgentId(0));
+
+let scheduler = IsmctsScheduler;
+scheduler.search(
+    &mut tree,
+    &belief_sampler, // Implements BeliefSampler yielding determinizations
+    &dynamics,       // Implements IsmctsDynamics
+    &model,          // Implements Model
+    &selection,
+    &backup,
+    root,
+    &observation,    // Filtered player observation
+    500,             // 500 simulations
+);
+```
+
+---
+
+## 6. Visualizing Search Trees (`mcts-utils`)
+
+Export MCTS trees to Graphviz DOT, SVG, or PNG for visual inspection, debugging, and analysis:
+
+```rust
+use mcts_utils::{render_tree_svg, MctsDotConfig};
+
+let config = MctsDotConfig {
+    max_depth: 4,
+    min_visits: 5,
+    ..Default::default()
+};
+
+render_tree_svg(&tree, root, "search_tree.svg", &config)?;
+```
+
+---
+
+## 7. Running Benchmark Arenas & CLI Games
 
 The repository provides ready-to-run interactive CLI players and tournament arenas across the game crates:
 
