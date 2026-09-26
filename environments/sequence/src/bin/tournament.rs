@@ -4,9 +4,9 @@
 //! (ISMCTS, Opponent-Model MCTS, Heuristic, Random) with balanced seat rotations.
 
 use mcts_engine::arena::{
-    disambiguate_names, GameOutcome, H2HMatrix, MatchDriver, TwoPlayerTournamentStats,
+    GameOutcome, H2HMatrix, MatchDriver, TwoPlayerTournamentStats, disambiguate_names,
 };
-use sequence::agent::{parse_agent, BoxAgent};
+use sequence::agent::{BoxAgent, parse_agent};
 use sequence::game::SequenceConfig;
 use sequence::world::SequenceWorld;
 use std::env;
@@ -194,6 +194,11 @@ fn main() {
     println!("\nTournament completed in {:.2?}!\n", elapsed);
 
     // Render standings and H2H table
-    TwoPlayerTournamentStats::print_standings(&stats, &names, "Seat 0 (Player 0)", "Seat 1 (Player 1)");
+    TwoPlayerTournamentStats::print_standings(
+        &stats,
+        &names,
+        "Seat 0 (Player 0)",
+        "Seat 1 (Player 1)",
+    );
     h2h.print_table(&names);
 }

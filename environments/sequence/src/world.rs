@@ -1,6 +1,6 @@
 //! Ground-truth World referee implementation for Sequence.
 
-use crate::board::{Card, SequenceRecord, BOARD_CELLS};
+use crate::board::{BOARD_CELLS, Card, SequenceRecord};
 use crate::game::{SequenceAction, SequenceConfig, SequenceState};
 use mcts_traits::{StepOutcome, TurnBasedWorld, World};
 

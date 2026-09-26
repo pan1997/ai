@@ -27,15 +27,15 @@ pub mod world;
 mod tests;
 
 pub use agent::{
-    parse_agent, BoxAgent, HeuristicAgent, HumanAgent, IsMctsAgent, MctsAgent,
-    OpponentModelMctsAgent, RandomAgent,
+    BoxAgent, HeuristicAgent, HumanAgent, IsMctsAgent, MctsAgent, OpponentModelMctsAgent,
+    RandomAgent, parse_agent,
 };
 pub use board::{
-    coord_to_index, create_double_deck, index_to_coord, is_corner, is_corner_index,
-    is_one_eyed_jack, is_two_eyed_jack, BoardCell, Card, SequenceRecord, BOARD_CELLS, BOARD_DIM,
+    BOARD_CELLS, BOARD_DIM, BoardCell, Card, SequenceRecord, coord_to_index, create_double_deck,
+    index_to_coord, is_corner, is_corner_index, is_one_eyed_jack, is_two_eyed_jack,
 };
 pub use dynamics::{
-    determinize_state, RandomOpponentPolicy, SequenceRoundDynamics, SequenceTurnDynamics,
+    RandomOpponentPolicy, SequenceRoundDynamics, SequenceTurnDynamics, determinize_state,
 };
 pub use evaluator::{SequenceHeuristicEvaluator, UniformEvaluator};
 pub use game::{SequenceAction, SequenceConfig, SequenceState};
@@ -44,4 +44,3 @@ pub use world::{
     Sequence2PWorld, Sequence3PWorld, Sequence4PWorld, Sequence6PWorld, SequenceObservation,
     SequenceWorld,
 };
-

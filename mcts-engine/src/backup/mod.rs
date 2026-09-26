@@ -15,13 +15,15 @@ use crate::tree_store::{EdgeId, EdgeStatsStore, NodeId, TreeStore};
 
 /// Represents an element in the search path traversed during selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PathElement {
+pub struct PathElement<Reward = ()> {
     /// The parent node traversed.
     pub node: NodeId,
     /// The child edge chosen from `node`.
     pub edge: EdgeId,
     /// The target child node reached by traversing `edge` and its step delta.
     pub next_node: NodeId,
+    /// The immediate transition reward emitted along this trajectory step.
+    pub reward: Reward,
 }
 
 /// Interface for extracting per-agent rewards for $N$ players.
@@ -53,7 +55,7 @@ pub trait BackupPolicy<Action, Reward, Stats: EdgeStatsStore, Evaluation, StepDe
     fn backup(
         &self,
         store: &mut TreeStore<Action, Reward, Stats, StepDelta>,
-        path: &[PathElement],
+        path: &[PathElement<Reward>],
         evaluation: Option<&Evaluation>,
     );
 }

@@ -3,9 +3,9 @@
 //! Play against AI agents (ISMCTS, Opponent-Model MCTS, Heuristic, Random) or watch AI vs AI
 //! matches across 2 to 6 players and 2 or 3 teams.
 
-use sequence::agent::{parse_agent, BoxAgent};
+use sequence::agent::{BoxAgent, parse_agent};
 use sequence::game::{SequenceConfig, SequenceState};
-use sequence::render::{format_action, render_state, TEAM_NAMES};
+use sequence::render::{TEAM_NAMES, format_action, render_state};
 use std::env;
 
 fn print_help() {
@@ -170,10 +170,15 @@ fn run_game<const P: usize>(
 
     let mut agents: Vec<BoxAgent<P>> = (0..P)
         .map(|p| {
-            let spec = seat_specs[p]
-                .as_deref()
-                .unwrap_or(if p == 0 { "human" } else { "heuristic" });
-            let name = format!("Player {} ({})", p, TEAM_NAMES[config.player_team(p) as usize]);
+            let spec =
+                seat_specs[p]
+                    .as_deref()
+                    .unwrap_or(if p == 0 { "human" } else { "heuristic" });
+            let name = format!(
+                "Player {} ({})",
+                p,
+                TEAM_NAMES[config.player_team(p) as usize]
+            );
             parse_agent::<P>(spec, &name)
         })
         .collect();
@@ -185,7 +190,10 @@ fn run_game<const P: usize>(
         let is_human = agents[active].name().contains("Human");
         if !is_human {
             println!("{}", render_state(&state, use_color));
-            println!("Thinking... ({} is selecting an action)", agents[active].name());
+            println!(
+                "Thinking... ({} is selecting an action)",
+                agents[active].name()
+            );
         }
 
         let action = agents[active].select_action(&state);
@@ -204,6 +212,9 @@ fn run_game<const P: usize>(
             "🎉 MATCH OVER! Team {} ({}) emerges victorious in {} total moves!",
             w, TEAM_NAMES[w as usize], state.total_moves
         ),
-        None => println!("🤝 MATCH OVER! Game ended in a DRAW in {} total moves!", state.total_moves),
+        None => println!(
+            "🤝 MATCH OVER! Game ended in a DRAW in {} total moves!",
+            state.total_moves
+        ),
     }
 }

@@ -72,7 +72,7 @@ where
     fn backup(
         &self,
         store: &mut TreeStore<A, R, MultiAgentPuctStats<1>, StepDelta>,
-        path: &[PathElement],
+        path: &[PathElement<R>],
         evaluation: Option<&Eval>,
     ) {
         if path.is_empty() {
@@ -107,10 +107,7 @@ where
 
         for i in (0..path.len()).rev() {
             let element = &path[i];
-            let reward = store
-                .edge_reward(element.edge)
-                .expect("SingleAgentBackup: transition reward must be set")
-                .agent_rewards()[0];
+            let reward = element.reward.agent_rewards()[0];
 
             g = reward + self.gamma * g;
 

@@ -45,8 +45,9 @@ pub use opponent::{AdversarialOpponent, HeuristicOpponent, RandomOpponent, TreeO
 pub use scheduler::{BatchedScheduler, IsmctsScheduler, MultiGameScheduler, SequentialScheduler};
 pub use search::{TrajectoryOutcome, descend_trajectory};
 pub use selection::{
-    GumbelPuctSelection, IsmctsSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats,
-    NormalizedPuctSelection, NormalizedUctSelection, SelectionPolicy, UctSelection,
+    GumbelPuctSelection, IsmctsSelection, IsmctsStats, MultiAgentPuctSelection,
+    MultiAgentPuctStats, NormalizedPuctSelection, NormalizedUctSelection, SelectionPolicy,
+    UctSelection,
 };
 pub use tree_store::{
     EdgeId, EdgeStatsStore, NodeId, NodeStatus, PriorStore, TreeStore, VirtualLossStore,

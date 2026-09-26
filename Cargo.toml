@@ -8,7 +8,7 @@ members = [
     "environments/blokus",
     "environments/tzf8",
     "environments/hex",
-    "environments/sequence",
+    "environments/sequence", "mcts-utils",
 ]
 
 [workspace.package]
@@ -21,6 +21,7 @@ license = "MIT OR Apache-2.0"
 mcts-traits = { path = "mcts-traits" }
 mcts-engine = { path = "mcts-engine" }
 mcts-envs = { path = "mcts-envs" }
+mcts-utils = { path = "mcts-utils" }
 connect4 = { path = "environments/connect4" }
 blokus = { path = "environments/blokus" }
 tzf8 = { path = "environments/tzf8" }

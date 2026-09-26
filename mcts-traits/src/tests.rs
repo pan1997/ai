@@ -452,4 +452,3 @@ fn test_belief_sampler_snapshot_and_incremental() {
     // history = [5, 15], state = 12
     assert_eq!(inc_sampler.sample(&history), 5 + 15 + 12);
 }
-

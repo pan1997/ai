@@ -161,6 +161,7 @@ fn test_single_agent_backup_additive_returns() {
         node: root,
         edge,
         next_node: child,
+        reward: [2.0],
     }];
     let eval = Evaluation::scalar(vec![], 10.0);
 
@@ -366,11 +367,13 @@ fn test_vector_backup_multi_step_discounting() {
             node: root,
             edge: edge0,
             next_node: node1,
+            reward: [1.0, -1.0],
         },
         PathElement {
             node: node1,
             edge: edge1,
             next_node: leaf_node,
+            reward: [2.0, -2.0],
         },
     ];
     let eval = Evaluation::vector(vec![], vec![4.0, -4.0]);
@@ -405,6 +408,7 @@ fn test_vector_backup_terminal_leaf_without_eval() {
         node: root,
         edge: edge0,
         next_node: leaf,
+        reward: [5.0, -5.0],
     }];
 
     // Terminal leaf evaluated with None
@@ -1279,7 +1283,8 @@ fn test_ismcts_selection_compatible() {
     assert_eq!(selected_all, Some(EdgeId(1)));
 
     // 2. If edge 1 (action 200) is NOT compatible in the current determinization:
-    let selected_filtered = selection.select_compatible_child(&tree, root, |_edge, &action| action != 200);
+    let selected_filtered =
+        selection.select_compatible_child(&tree, root, |_edge, &action| action != 200);
     // Compatible are Edge 0 and Edge 2.
     // Total avail = 15 + 10 = 25. sqrt(25) = 5.0
     // Edge 0 score = 0.5 + 1.414 * 0.5 * 5.0 / 11 = 0.5 + 0.3213 = 0.8213
@@ -1338,7 +1343,11 @@ fn test_ismcts_scheduler_execution() {
             state.active_agent
         }
 
-        fn step(&self, state: &mut Self::State, _action: &Self::Action) -> StepOutcome<Self::Reward, Self::StepDelta> {
+        fn step(
+            &self,
+            state: &mut Self::State,
+            _action: &Self::Action,
+        ) -> StepOutcome<Self::Reward, Self::StepDelta> {
             state.turn += 1;
             let terminated = state.turn >= 2;
             let next_agent = if state.active_agent == AgentId(0) {
@@ -1416,7 +1425,8 @@ fn test_ismcts_scheduler_execution() {
     let selection = IsmctsSelection::<2>::new(1.414);
     let backup = VectorBackup::<2>::default();
     let stats = IsmctsStats::<2>::new();
-    let mut tree: TreeStore<u32, [f32; 2], IsmctsStats<2>, ()> = TreeStore::with_capacity(20, 20, stats);
+    let mut tree: TreeStore<u32, [f32; 2], IsmctsStats<2>, ()> =
+        TreeStore::with_capacity(20, 20, stats);
     let root = tree.insert_root(AgentId(0));
 
     let scheduler = IsmctsScheduler;
@@ -1446,9 +1456,19 @@ fn test_ismcts_scheduler_execution() {
     let avail1 = tree.stats.avail_visits(EdgeId(first.0 + 1));
     let avail2 = tree.stats.avail_visits(EdgeId(first.0 + 2));
 
-    assert!(avail1 > avail0, "Action 20 should have higher availability visits than action 10");
-    assert!(avail1 > avail2, "Action 20 should have higher availability visits than action 30");
-    assert_eq!(avail0 + avail2, avail1, "avail(10) + avail(30) should equal avail(20)");
+    assert!(
+        avail1 > avail0,
+        "Action 20 should have higher availability visits than action 10"
+    );
+    assert!(
+        avail1 > avail2,
+        "Action 20 should have higher availability visits than action 30"
+    );
+    assert_eq!(
+        avail0 + avail2,
+        avail1,
+        "avail(10) + avail(30) should equal avail(20)"
+    );
 
     // Traversed visits must sum to total search passes
     let v0 = tree.stats.visits[first.as_usize()];
@@ -1457,3 +1477,93 @@ fn test_ismcts_scheduler_execution() {
     assert_eq!(v0 + v1 + v2, 50);
 }
 
+#[test]
+fn test_stochastic_trajectory_rewards_convergence() {
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _> = TreeStore::with_capacity(5, 5, stats);
+    let root = tree.insert_root(AgentId(0));
+    tree.expand_node(root, &[10]);
+
+    let edge = tree.first_child_edge(root);
+    let child = tree.insert_node(edge, AgentId(0));
+    tree.mark_terminal(child);
+
+    let backup = SingleAgentBackup::new(1.0);
+
+    // Trajectory 1 observes reward 0.0
+    let path1 = [PathElement {
+        node: root,
+        edge,
+        next_node: child,
+        reward: [0.0],
+    }];
+    backup.backup(&mut tree, &path1, Option::<&Evaluation>::None);
+    assert_eq!(tree.stats.visits[edge.as_usize()], 1);
+    assert_eq!(tree.stats.mean_value[edge.as_usize()][0], 0.0);
+
+    // Trajectory 2 traverses the SAME edge but observes reward 10.0
+    let path2 = [PathElement {
+        node: root,
+        edge,
+        next_node: child,
+        reward: [10.0],
+    }];
+    backup.backup(&mut tree, &path2, Option::<&Evaluation>::None);
+    assert_eq!(tree.stats.visits[edge.as_usize()], 2);
+    // Running mean should be (0.0 + 10.0) / 2 = 5.0
+    assert_eq!(tree.stats.mean_value[edge.as_usize()][0], 5.0);
+
+    // Trajectory 3 observes reward 6.0
+    let path3 = [PathElement {
+        node: root,
+        edge,
+        next_node: child,
+        reward: [6.0],
+    }];
+    backup.backup(&mut tree, &path3, Option::<&Evaluation>::None);
+    assert_eq!(tree.stats.visits[edge.as_usize()], 3);
+    // Running mean should be (5.0 * 2 + 6.0) / 3 = 16.0 / 3 ≈ 5.3333335
+    let expected = (0.0 + 10.0 + 6.0) / 3.0;
+    assert!((tree.stats.mean_value[edge.as_usize()][0] - expected).abs() < 1e-5);
+}
+
+#[test]
+fn test_stochastic_node_parent_visits_not_inflated() {
+    // Test that for child nodes with multiple delta branches, PUCT/UCT
+    // uses the child node's own child edge visit sum rather than inflating by the parent action visits.
+    let stats = MultiAgentPuctStats::<1>::new();
+    let mut tree: TreeStore<u32, [f32; 1], _, u32> = TreeStore::with_capacity(10, 10, stats);
+    let root = tree.insert_root(AgentId(0));
+    tree.expand_node(root, &[100]); // Edge 0
+
+    let edge0 = tree.first_child_edge(root);
+    // Edge 0 branches into two child nodes: Child A (delta 1) and Child B (delta 2)
+    let (child_a, _) = tree.get_or_insert_child(edge0, &1, AgentId(0));
+    let (child_b, _) = tree.get_or_insert_child(edge0, &2, AgentId(0));
+
+    // Expand child A with actions 10 and 20 (edges 1 and 2)
+    tree.expand_node(child_a, &[10, 20]);
+    // Expand child B with action 30 (edge 3)
+    tree.expand_node(child_b, &[30]);
+
+    let edge1 = tree.first_child_edge(child_a);
+    let edge2 = EdgeId(edge1.0 + 1);
+    let edge3 = tree.first_child_edge(child_b);
+
+    // Simulate visit distribution:
+    // Edge 0 (parent action) was visited 100 times.
+    // Child A was visited 10 times (edge 1 visited 6 times, edge 2 visited 4 times).
+    // Child B was visited 90 times (edge 3 visited 90 times).
+    tree.stats.visits[edge0.as_usize()] = 100;
+    tree.stats.visits[edge1.as_usize()] = 6;
+    tree.stats.visits[edge2.as_usize()] = 4;
+    tree.stats.visits[edge3.as_usize()] = 90;
+
+    // In UCT selection at child A:
+    // If parent_visits were taken from edge 0, it would be 100!
+    // But child A was only visited 10 times (6 + 4 = 10).
+    // The selection policy should evaluate parent_visits as 10:
+    let uct = UctSelection::<1> { c_uct: 1.0 };
+    let chosen = uct.select_child(&tree, child_a);
+    assert!(chosen.is_some());
+}

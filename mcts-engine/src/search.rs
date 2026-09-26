@@ -36,7 +36,7 @@ pub fn descend_trajectory<D, S, Action, Reward, Stats, StepDelta>(
     selection: &S,
     root: NodeId,
     root_state: &D::State,
-    path: &mut Vec<PathElement>,
+    path: &mut Vec<PathElement<Reward>>,
     virtual_loss_weight: f32,
 ) -> TrajectoryOutcome<D::State>
 where
@@ -70,7 +70,7 @@ where
             let outcome = dynamics.step(&mut state, action);
 
             if tree.edge_reward(edge).is_none() {
-                tree.set_edge_reward(edge, outcome.reward);
+                tree.set_edge_reward(edge, outcome.reward.clone());
             }
 
             let agent = dynamics.current_agent(&state);
@@ -80,6 +80,7 @@ where
                 node: current_node,
                 edge,
                 next_node: child,
+                reward: outcome.reward,
             });
 
             current_node = child;

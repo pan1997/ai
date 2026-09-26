@@ -86,7 +86,7 @@ impl MultiGameScheduler {
         }
 
         // 2. Preallocate scratch buffers across iterations
-        let mut paths: Vec<Vec<PathElement>> = (0..self.batch_size)
+        let mut paths: Vec<Vec<PathElement<Reward>>> = (0..self.batch_size)
             .map(|_| Vec::with_capacity(32))
             .collect();
         let mut current_node = roots.to_vec();
@@ -169,6 +169,7 @@ impl MultiGameScheduler {
                         node: current_node[b],
                         edge,
                         next_node: child,
+                        reward: outcome.reward.clone(),
                     });
 
                     current_node[b] = child;

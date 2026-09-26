@@ -51,5 +51,7 @@ pub use dynamics::{
     Transition, TurnBasedDynamics, default_step_batch,
 };
 pub use graph::GraphEnv;
-pub use model::{ActionModel, BatchedModel, DefaultActionModel, Evaluation, HasPolicy, HasValue, Model};
+pub use model::{
+    ActionModel, BatchedModel, DefaultActionModel, Evaluation, HasPolicy, HasValue, Model,
+};
 pub use world::{TurnBasedWorld, World};

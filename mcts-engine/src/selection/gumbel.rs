@@ -41,15 +41,11 @@ impl<Action, Reward, StepDelta, const N: usize>
 
         let is_root = !store.parent_edge(node_id).is_valid();
 
-        let parent_visits: u32 = if is_root {
-            store
-                .child_edges(node_id)
-                .map(|e| store.stats.visits[e.as_usize()])
-                .sum()
-        } else {
-            store.stats.visits[store.parent_edge(node_id).as_usize()]
-        };
-        let parent_visits_sqrt = (parent_visits as f32).sqrt();
+        let parent_visits: u32 = store
+            .child_edges(node_id)
+            .map(|e| store.stats.visits[e.as_usize()])
+            .sum();
+        let parent_visits_sqrt = (parent_visits.max(1) as f32).sqrt();
 
         let mut best_edge = EdgeId::INVALID;
         let mut best_score = f32::NEG_INFINITY;

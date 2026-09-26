@@ -1,0 +1,12 @@
+[package]
+name = "mcts-utils"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+graphviz-rust = "0.9.9"
+rand = { workspace = true }

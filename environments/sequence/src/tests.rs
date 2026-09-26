@@ -1,9 +1,9 @@
 //! Comprehensive unit tests for Sequence game rules, sequence detection, determinization, and MCTS agents.
 
 use crate::board::{
-    card_positions, coord_to_index, create_double_deck, detect_sequences, index_to_coord, is_corner,
-    is_corner_index, is_jack, is_one_eyed_jack, is_two_eyed_jack, BoardCell, SequenceRecord,
-    BOARD_CELLS, BOARD_LAYOUT,
+    BOARD_CELLS, BOARD_LAYOUT, BoardCell, SequenceRecord, card_positions, coord_to_index,
+    create_double_deck, detect_sequences, index_to_coord, is_corner, is_corner_index, is_jack,
+    is_one_eyed_jack, is_two_eyed_jack,
 };
 use crate::dynamics::determinize_state;
 use crate::game::{SequenceAction, SequenceConfig, SequenceState};
@@ -15,7 +15,11 @@ use mcts_traits::{Agent, World};
 #[test]
 fn test_double_deck_composition() {
     let deck = create_double_deck();
-    assert_eq!(deck.len(), 104, "Double deck must contain exactly 104 cards");
+    assert_eq!(
+        deck.len(),
+        104,
+        "Double deck must contain exactly 104 cards"
+    );
 
     let mut jacks = 0;
     let mut two_eyed = 0;
@@ -34,8 +38,14 @@ fn test_double_deck_composition() {
     }
 
     assert_eq!(jacks, 8, "Double deck must have 8 Jacks");
-    assert_eq!(two_eyed, 4, "Double deck must have 4 Two-Eyed Jacks (2x JC, 2x JD)");
-    assert_eq!(one_eyed, 4, "Double deck must have 4 One-Eyed Jacks (2x JS, 2x JH)");
+    assert_eq!(
+        two_eyed, 4,
+        "Double deck must have 4 Two-Eyed Jacks (2x JC, 2x JD)"
+    );
+    assert_eq!(
+        one_eyed, 4,
+        "Double deck must have 4 One-Eyed Jacks (2x JS, 2x JH)"
+    );
 }
 
 #[test]
@@ -45,7 +55,11 @@ fn test_board_layout_card_counts_and_corners() {
 
     for (idx, &cell) in BOARD_LAYOUT.iter().enumerate() {
         let (r, c) = index_to_coord(idx);
-        assert_eq!(coord_to_index(r, c), idx, "Coordinate conversion must roundtrip");
+        assert_eq!(
+            coord_to_index(r, c),
+            idx,
+            "Coordinate conversion must roundtrip"
+        );
 
         match cell {
             BoardCell::Corner => {
@@ -60,12 +74,25 @@ fn test_board_layout_card_counts_and_corners() {
         }
     }
 
-    assert_eq!(corner_count, 4, "Board must have exactly 4 corner wild spaces");
-    assert_eq!(card_counts.len(), 48, "Board must contain 48 distinct non-Jack cards");
+    assert_eq!(
+        corner_count, 4,
+        "Board must have exactly 4 corner wild spaces"
+    );
+    assert_eq!(
+        card_counts.len(),
+        48,
+        "Board must contain 48 distinct non-Jack cards"
+    );
     for (card, count) in card_counts {
-        assert_eq!(count, 2, "Card {card} must appear exactly twice on the board");
+        assert_eq!(
+            count, 2,
+            "Card {card} must appear exactly twice on the board"
+        );
         let positions = card_positions(card);
-        assert_ne!(positions[0], positions[1], "Two card positions must be distinct");
+        assert_ne!(
+            positions[0], positions[1],
+            "Two card positions must be distinct"
+        );
     }
 }
 
@@ -81,19 +108,17 @@ fn test_sequence_detection_horizontal_and_localized_equivalence() {
     }
 
     // Localized check at last placed (1, 5)
-    let detected_localized = detect_sequences(
-        &board,
-        0,
-        Some((1, 5)),
-        &mut locked_chips,
-        &mut seqs,
-    );
+    let detected_localized =
+        detect_sequences(&board, 0, Some((1, 5)), &mut locked_chips, &mut seqs);
     assert_eq!(detected_localized, 1, "Should detect 1 horizontal sequence");
     assert_eq!(seqs.len(), 1);
 
     // Verify chips are locked
     for c in 1..=5 {
-        assert!(locked_chips[coord_to_index(1, c)], "Sequence chips must be locked");
+        assert!(
+            locked_chips[coord_to_index(1, c)],
+            "Sequence chips must be locked"
+        );
     }
 
     // Now test full board scan equivalence
@@ -120,7 +145,10 @@ fn test_sequence_detection_corner_sharing() {
     assert_eq!(detected, 1, "Sequence should form using corner (0, 0)");
     assert!(!locked[0], "Corner spaces are never locked to one team");
     for c in 1..=4 {
-        assert!(locked[coord_to_index(0, c)], "Non-corner chips must be locked");
+        assert!(
+            locked[coord_to_index(0, c)],
+            "Non-corner chips must be locked"
+        );
     }
 }
 
@@ -140,7 +168,10 @@ fn test_sequence_detection_nine_in_a_row_double_sequence() {
     // 9th chip placed at (2, 9)
     board[coord_to_index(2, 9)] = Some(0);
     let detected = detect_sequences(&board, 0, Some((2, 9)), &mut locked, &mut seqs);
-    assert_eq!(detected, 1, "9-in-a-row should form second sequence sharing chip 5");
+    assert_eq!(
+        detected, 1,
+        "9-in-a-row should form second sequence sharing chip 5"
+    );
     assert_eq!(seqs.len(), 2);
 }
 
@@ -154,23 +185,36 @@ fn test_sequence_detection_intersection_limit() {
     for c in 1..=5 {
         board[coord_to_index(4, c)] = Some(0);
     }
-    assert_eq!(detect_sequences(&board, 0, Some((4, 5)), &mut locked, &mut seqs), 1);
+    assert_eq!(
+        detect_sequences(&board, 0, Some((4, 5)), &mut locked, &mut seqs),
+        1
+    );
 
     // Sequence 2: vertical col 3, rows 2..=6 (intersects Sequence 1 at (4, 3) - 1 non-corner chip)
     for r in 2..=6 {
         board[coord_to_index(r, 3)] = Some(0);
     }
-    assert_eq!(detect_sequences(&board, 0, Some((6, 3)), &mut locked, &mut seqs), 1);
-    assert_eq!(seqs.len(), 2, "2 sequences sharing 1 non-corner chip are valid");
+    assert_eq!(
+        detect_sequences(&board, 0, Some((6, 3)), &mut locked, &mut seqs),
+        1
+    );
+    assert_eq!(
+        seqs.len(),
+        2,
+        "2 sequences sharing 1 non-corner chip are valid"
+    );
 
     // Sequence 3 candidate: diagonal passing through BOTH (4, 2) and (4, 3) would share 2 chips -> illegal!
-    let cand = SequenceRecord::new(0, [
-        coord_to_index(4, 2) as u8,
-        coord_to_index(4, 3) as u8,
-        coord_to_index(5, 4) as u8,
-        coord_to_index(6, 5) as u8,
-        coord_to_index(7, 6) as u8,
-    ]);
+    let cand = SequenceRecord::new(
+        0,
+        [
+            coord_to_index(4, 2) as u8,
+            coord_to_index(4, 3) as u8,
+            coord_to_index(5, 4) as u8,
+            coord_to_index(6, 5) as u8,
+            coord_to_index(7, 6) as u8,
+        ],
+    );
     assert_eq!(cand.shared_non_corner_count(&seqs[0]), 2);
 }
 
@@ -195,7 +239,11 @@ fn test_two_eyed_jack_and_one_eyed_jack_mechanics() {
     state.step(&play_wild, &mut rng);
 
     let idx = coord_to_index(5, 5);
-    assert_eq!(state.board[idx], Some(0), "Wild Jack must place team 0 token at (5, 5)");
+    assert_eq!(
+        state.board[idx],
+        Some(0),
+        "Wild Jack must place team 0 token at (5, 5)"
+    );
     assert_eq!(state.current_player, 1, "Turn should advance to Player 1");
 
     // Player 1 uses One-Eyed Jack to remove player 0's token at (5, 5)
@@ -205,10 +253,16 @@ fn test_two_eyed_jack_and_one_eyed_jack_mechanics() {
         card: removal_card,
         pos: (5, 5),
     };
-    assert!(legal_p1.contains(&remove_action), "One-Eyed Jack should be able to remove opponent token");
+    assert!(
+        legal_p1.contains(&remove_action),
+        "One-Eyed Jack should be able to remove opponent token"
+    );
 
     state.step(&remove_action, &mut rng);
-    assert_eq!(state.board[idx], None, "Removed token space must now be empty");
+    assert_eq!(
+        state.board[idx], None,
+        "Removed token space must now be empty"
+    );
 }
 
 #[test]
@@ -223,13 +277,16 @@ fn test_locked_chip_immunity_to_one_eyed_jack() {
         state.board[idx] = Some(0);
         state.locked_chips[idx] = true;
     }
-    state.sequences.push(SequenceRecord::new(0, [
-        coord_to_index(3, 1) as u8,
-        coord_to_index(3, 2) as u8,
-        coord_to_index(3, 3) as u8,
-        coord_to_index(3, 4) as u8,
-        coord_to_index(3, 5) as u8,
-    ]));
+    state.sequences.push(SequenceRecord::new(
+        0,
+        [
+            coord_to_index(3, 1) as u8,
+            coord_to_index(3, 2) as u8,
+            coord_to_index(3, 3) as u8,
+            coord_to_index(3, 4) as u8,
+            coord_to_index(3, 5) as u8,
+        ],
+    ));
     state.team_sequence_counts[0] = 1;
 
     // Player 1 has One-Eyed Jack
@@ -245,7 +302,10 @@ fn test_locked_chip_immunity_to_one_eyed_jack() {
             card: FrenchBasicCard::JACK_SPADES,
             pos: (3, c),
         };
-        assert!(!legal_p1.contains(&forbidden), "One-Eyed Jack cannot target locked chips");
+        assert!(
+            !legal_p1.contains(&forbidden),
+            "One-Eyed Jack cannot target locked chips"
+        );
     }
 }
 
@@ -262,7 +322,10 @@ fn test_dead_card_exchange() {
     state.board[coord_to_index(positions[0].0, positions[0].1)] = Some(1);
     state.board[coord_to_index(positions[1].0, positions[1].1)] = Some(0);
 
-    assert!(state.is_dead_card(card), "Card should be dead when both board spots are occupied");
+    assert!(
+        state.is_dead_card(card),
+        "Card should be dead when both board spots are occupied"
+    );
 
     state.hands[0] = vec![card];
     let mut legal = Vec::new();
@@ -277,8 +340,16 @@ fn test_dead_card_exchange() {
     let initial_hand_len = state.hands[0].len();
     state.step(&legal[0], &mut rng);
 
-    assert_eq!(state.hands[0].len(), initial_hand_len, "Player draws a replacement for discarded dead card");
-    assert_eq!(state.discards.last(), Some(&card), "Dead card must be moved to discard pile");
+    assert_eq!(
+        state.hands[0].len(),
+        initial_hand_len,
+        "Player draws a replacement for discarded dead card"
+    );
+    assert_eq!(
+        state.discards.last(),
+        Some(&card),
+        "Dead card must be moved to discard pile"
+    );
 }
 
 #[test]
@@ -295,13 +366,24 @@ fn test_determinization_card_conservation() {
     let det = determinize_state(&obs, &mut rng);
 
     // Exact card conservation checks
-    assert_eq!(det.hands[0], obs.my_hand, "Observer hand must match exactly");
+    assert_eq!(
+        det.hands[0], obs.my_hand,
+        "Observer hand must match exactly"
+    );
     assert_eq!(det.hands[1].len(), 7, "Opponent hand must have 7 cards");
-    assert_eq!(det.deck.len(), 104 - 14, "Remaining deck count must be preserved");
+    assert_eq!(
+        det.deck.len(),
+        104 - 14,
+        "Remaining deck count must be preserved"
+    );
 
     // Total cards across all hands + deck + discards must equal 104
-    let total_cards: usize = det.hands.iter().map(|h| h.len()).sum::<usize>() + det.deck.len() + det.discards.len();
-    assert_eq!(total_cards, 104, "Total cards in determinized state must equal 104");
+    let total_cards: usize =
+        det.hands.iter().map(|h| h.len()).sum::<usize>() + det.deck.len() + det.discards.len();
+    assert_eq!(
+        total_cards, 104,
+        "Total cards in determinized state must equal 104"
+    );
 }
 
 #[test]
@@ -340,16 +422,26 @@ fn test_ismcts_and_opponent_model_mcts_step() {
     let world = Sequence2PWorld::default();
     let state = world.initial();
 
-    let mut ismcts = crate::agent::IsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic("ISMCTS", 20, 2);
-    let mut opp_mcts = crate::agent::OpponentModelMctsAgent::<_, 2>::new_heuristic("OppModelMCTS", 20, 2);
+    let mut ismcts =
+        crate::agent::IsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic(
+            "ISMCTS", 20, 2,
+        );
+    let mut opp_mcts =
+        crate::agent::OpponentModelMctsAgent::<_, 2>::new_heuristic("OppModelMCTS", 20, 2);
 
     let action_ismcts = ismcts.select_action(&state);
     let action_opp = opp_mcts.select_action(&state);
 
     let mut legal = Vec::new();
     state.legal_actions(&mut legal);
-    assert!(legal.contains(&action_ismcts), "ISMCTS chosen action must be legal");
-    assert!(legal.contains(&action_opp), "OpponentModel MCTS chosen action must be legal");
+    assert!(
+        legal.contains(&action_ismcts),
+        "ISMCTS chosen action must be legal"
+    );
+    assert!(
+        legal.contains(&action_opp),
+        "OpponentModel MCTS chosen action must be legal"
+    );
 }
 
 #[test]
@@ -370,8 +462,10 @@ fn test_sequence_belief_sampler() {
     assert_eq!(s2.hands[0], obs.my_hand);
 
     // Total cards must equal 104
-    let total1: usize = s1.hands.iter().map(|h| h.len()).sum::<usize>() + s1.deck.len() + s1.discards.len();
-    let total2: usize = s2.hands.iter().map(|h| h.len()).sum::<usize>() + s2.deck.len() + s2.discards.len();
+    let total1: usize =
+        s1.hands.iter().map(|h| h.len()).sum::<usize>() + s1.deck.len() + s1.discards.len();
+    let total2: usize =
+        s2.hands.iter().map(|h| h.len()).sum::<usize>() + s2.deck.len() + s2.discards.len();
     assert_eq!(total1, 104);
     assert_eq!(total2, 104);
 }
@@ -420,20 +514,24 @@ fn test_sequence_ismcts_dynamics_expand_actions() {
 
 #[test]
 fn test_single_tree_ismcts_agent_step_and_parse() {
-    use crate::agent::{parse_agent, SingleTreeIsMctsAgent};
+    use crate::agent::{SingleTreeIsMctsAgent, parse_agent};
 
     let world = Sequence2PWorld::default();
     let state = world.initial();
 
-    let mut agent = SingleTreeIsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic(
-        "SingleTreeBot",
-        30,
-    );
+    let mut agent =
+        SingleTreeIsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic(
+            "SingleTreeBot",
+            30,
+        );
     let chosen = agent.select_action(&state);
 
     let mut legal = Vec::new();
     state.legal_actions(&mut legal);
-    assert!(legal.contains(&chosen), "SingleTreeIsMctsAgent chosen action must be legal");
+    assert!(
+        legal.contains(&chosen),
+        "SingleTreeIsMctsAgent chosen action must be legal"
+    );
 
     // Verify parse_agent
     let mut parsed = parse_agent::<2>("is-mcts-single:50", "ParsedBot");
@@ -447,10 +545,10 @@ fn test_single_tree_ismcts_vs_heuristic_match() {
     let world = Sequence2PWorld::default();
     let driver = MatchDriver::new();
 
-    let mut a0 = crate::agent::SingleTreeIsMctsAgent::<crate::evaluator::SequenceHeuristicEvaluator, 2>::new_heuristic(
-        "SingleTreeBot",
-        20,
-    );
+    let mut a0 = crate::agent::SingleTreeIsMctsAgent::<
+        crate::evaluator::SequenceHeuristicEvaluator,
+        2,
+    >::new_heuristic("SingleTreeBot", 20);
     let mut a1 = crate::agent::HeuristicAgent::new("HeuristicBot");
 
     let result = driver.play_2p(&world, &mut a0, &mut a1, None);
@@ -460,11 +558,15 @@ fn test_single_tree_ismcts_vs_heuristic_match() {
 
 #[test]
 fn test_single_tree_ismcts_search_depth_vs_multi_tree() {
-    use crate::dynamics::{SequenceBeliefSampler, SequenceIsmctsDynamics, SequenceTurnDynamics, determinize_state};
+    use crate::dynamics::{
+        SequenceBeliefSampler, SequenceIsmctsDynamics, SequenceTurnDynamics, determinize_state,
+    };
     use crate::evaluator::SequenceHeuristicEvaluator;
     use mcts_engine::backup::VectorBackup;
     use mcts_engine::scheduler::{IsmctsScheduler, SequentialScheduler};
-    use mcts_engine::selection::{IsmctsSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats};
+    use mcts_engine::selection::{
+        IsmctsSelection, IsmctsStats, MultiAgentPuctSelection, MultiAgentPuctStats,
+    };
     use mcts_engine::tree_store::{EdgeId, NodeId, NodeStatus, TreeStore};
     use mcts_traits::AgentId;
 
@@ -503,7 +605,9 @@ fn test_single_tree_ismcts_search_depth_vs_multi_tree() {
         let mut tree = TreeStore::with_capacity(100, 3000, stats);
         let root = tree.insert_root(AgentId(0));
         let scheduler = SequentialScheduler;
-        scheduler.search(&mut tree, &dynamics, &model, &selection, &backup, root, &hyp_state, 50);
+        scheduler.search(
+            &mut tree, &dynamics, &model, &selection, &backup, root, &hyp_state, 50,
+        );
         depth_distribution(&tree, root, 0, &mut multi_counts);
     }
 
@@ -516,16 +620,33 @@ fn test_single_tree_ismcts_search_depth_vs_multi_tree() {
     let root = single_tree.insert_root(AgentId(0));
     let mut sampler = SequenceBeliefSampler::new();
     let scheduler = IsmctsScheduler;
-    scheduler.search(&mut single_tree, &dynamics, &model, &selection, &backup, &mut sampler, &obs, root, 500);
+    scheduler.search(
+        &mut single_tree,
+        &dynamics,
+        &model,
+        &selection,
+        &backup,
+        &mut sampler,
+        &obs,
+        root,
+        500,
+    );
 
     let mut single_counts = [0usize; 10];
     depth_distribution(&single_tree, root, 0, &mut single_counts);
 
     // Single-tree ISMCTS concentrates all 500 iterations into a rich, deep tree:
-    assert!(single_tree.num_nodes() >= 250, "Single-tree should expand >= 250 nodes");
-    assert!(single_counts[3] > 0, "Single-tree should explore deep ply 3+ expansions");
+    assert!(
+        single_tree.num_nodes() >= 250,
+        "Single-tree should expand >= 250 nodes"
+    );
+    assert!(
+        single_counts[3] > 0,
+        "Single-tree should explore deep ply 3+ expansions"
+    );
     // Deep node concentration at depth 2 & 3 must vastly exceed any individual 50-iter multi-tree:
-    assert!(single_counts[2] > 100, "Single-tree should have > 100 expanded nodes at depth 2");
+    assert!(
+        single_counts[2] > 100,
+        "Single-tree should have > 100 expanded nodes at depth 2"
+    );
 }
-
-

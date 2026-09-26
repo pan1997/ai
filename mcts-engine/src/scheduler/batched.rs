@@ -86,7 +86,7 @@ impl BatchedScheduler {
         }
 
         // 2. Preallocate reusable scratch buffers across all batch iterations
-        let mut paths: Vec<Vec<PathElement>> = (0..self.batch_size)
+        let mut paths: Vec<Vec<PathElement<Reward>>> = (0..self.batch_size)
             .map(|_| Vec::with_capacity(32))
             .collect();
         let mut leaf_nodes: Vec<NodeId> = Vec::with_capacity(self.batch_size);
@@ -156,7 +156,15 @@ impl BatchedScheduler {
                         path_leaf_map[b] = Some(pos);
                     }
                 } else {
-                    path_leaf_map[b] = None;
+                    // NodeStatus::Expanded: Selection terminated at an already expanded leaf.
+                    // Evaluate the leaf state instead of falsely treating it as terminal (None).
+                    if let Some(pos) = states_to_evaluate.iter().position(|s| s == state) {
+                        path_leaf_map[b] = Some(pos);
+                    } else {
+                        let pos = states_to_evaluate.len();
+                        states_to_evaluate.push(state.clone());
+                        path_leaf_map[b] = Some(pos);
+                    }
                 }
             }
 

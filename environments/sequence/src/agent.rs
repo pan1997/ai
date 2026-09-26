@@ -1,8 +1,8 @@
 //! Agent implementations for Sequence: Human CLI, Random, Heuristic, ISMCTS, Opponent-Model MCTS.
 
 use crate::dynamics::{
-    determinize_state, RandomOpponentPolicy, SequenceBeliefSampler, SequenceIsmctsDynamics,
-    SequenceRoundDynamics, SequenceTurnDynamics,
+    RandomOpponentPolicy, SequenceBeliefSampler, SequenceIsmctsDynamics, SequenceRoundDynamics,
+    SequenceTurnDynamics, determinize_state,
 };
 use crate::evaluator::{SequenceHeuristicEvaluator, UniformEvaluator};
 use crate::game::{SequenceAction, SequenceState};
@@ -52,13 +52,19 @@ impl Agent<SequenceState, SequenceAction> for HumanAgent {
         }
 
         println!("{}", render_state(state, true));
-        println!("\n=== {}'s Turn (Player {}) ===", self.name, state.current_player);
+        println!(
+            "\n=== {}'s Turn (Player {}) ===",
+            self.name, state.current_player
+        );
         println!("Available legal moves ({} total):", legal.len());
         for (i, action) in legal.iter().take(20).enumerate() {
             println!("  [{:2}] {}", i, format_action(action));
         }
         if legal.len() > 20 {
-            println!("  ... and {} more options. (Type 'list' to see all)", legal.len() - 20);
+            println!(
+                "  ... and {} more options. (Type 'list' to see all)",
+                legal.len() - 20
+            );
         }
 
         let stdin = io::stdin();
@@ -84,7 +90,10 @@ impl Agent<SequenceState, SequenceAction> for HumanAgent {
 
             match trimmed.parse::<usize>() {
                 Ok(idx) if idx < legal.len() => return legal[idx],
-                _ => println!("Invalid index. Enter a number between 0 and {}.", legal.len() - 1),
+                _ => println!(
+                    "Invalid index. Enter a number between 0 and {}.",
+                    legal.len() - 1
+                ),
             }
         }
     }
@@ -244,7 +253,9 @@ where
             let hyp_state = determinize_state(&obs, &mut rng);
 
             let dynamics = SequenceTurnDynamics::new(world);
-            let selection = MultiAgentPuctSelection::<P> { c_puct: self.c_puct };
+            let selection = MultiAgentPuctSelection::<P> {
+                c_puct: self.c_puct,
+            };
             let backup = VectorBackup::<P>::default();
             let stats = MultiAgentPuctStats::<P>::new();
 
@@ -446,7 +457,9 @@ where
 
         let world = SequenceWorld::<P>::new(state.config);
         let dynamics = SequenceTurnDynamics::new(world);
-        let selection = MultiAgentPuctSelection::<P> { c_puct: self.c_puct };
+        let selection = MultiAgentPuctSelection::<P> {
+            c_puct: self.c_puct,
+        };
         let backup = VectorBackup::<P>::default();
         let stats = MultiAgentPuctStats::<P>::new();
 
@@ -595,7 +608,9 @@ where
                 self.opponent_policy.clone(),
                 state.current_player,
             );
-            let selection = MultiAgentPuctSelection::<P> { c_puct: self.c_puct };
+            let selection = MultiAgentPuctSelection::<P> {
+                c_puct: self.c_puct,
+            };
             let backup = VectorBackup::<P>::default();
             let stats = MultiAgentPuctStats::<P>::new();
 
@@ -654,27 +669,53 @@ pub fn parse_agent<const P: usize>(spec: &str, default_name: &str) -> BoxAgent<P
         "heuristic" => Box::new(HeuristicAgent::new(default_name)),
         "mcts" => {
             let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(200);
-            Box::new(MctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(default_name, iters))
+            Box::new(MctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(
+                default_name,
+                iters,
+            ))
         }
         "is-mcts" => {
             let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
             let dets = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(5);
-            Box::new(IsMctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(default_name, iters, dets))
+            Box::new(IsMctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(
+                default_name,
+                iters,
+                dets,
+            ))
         }
         "is-mcts-single" | "single-tree-is-mcts" => {
             let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
-            Box::new(SingleTreeIsMctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(default_name, iters))
+            Box::new(
+                SingleTreeIsMctsAgent::<SequenceHeuristicEvaluator, P>::new_heuristic(
+                    default_name,
+                    iters,
+                ),
+            )
         }
         "macro-heuristic" => {
             let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
             let dets = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(5);
-            Box::new(OpponentModelMctsAgent::<HeuristicOpponentPolicy, P>::new_heuristic(default_name, iters, dets))
+            Box::new(
+                OpponentModelMctsAgent::<HeuristicOpponentPolicy, P>::new_heuristic(
+                    default_name,
+                    iters,
+                    dets,
+                ),
+            )
         }
         "macro-random" => {
             let iters = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
             let dets = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(5);
-            Box::new(OpponentModelMctsAgent::<RandomOpponentPolicy, P>::new_random(default_name, iters, dets))
+            Box::new(
+                OpponentModelMctsAgent::<RandomOpponentPolicy, P>::new_random(
+                    default_name,
+                    iters,
+                    dets,
+                ),
+            )
         }
-        other => panic!("Unknown agent specification: '{other}'. Expected human, random, heuristic, mcts:<iters>, is-mcts:<iters>:<dets>, is-mcts-single:<iters>, macro-heuristic:<iters>:<dets>, or macro-random:<iters>:<dets>"),
+        other => panic!(
+            "Unknown agent specification: '{other}'. Expected human, random, heuristic, mcts:<iters>, is-mcts:<iters>:<dets>, is-mcts-single:<iters>, macro-heuristic:<iters>:<dets>, or macro-random:<iters>:<dets>"
+        ),
     }
 }

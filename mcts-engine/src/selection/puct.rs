@@ -114,15 +114,11 @@ impl<Action, Reward, StepDelta, const N: usize>
             return None;
         }
 
-        let parent_visits: u32 = if store.parent_edge(node_id).is_valid() {
-            store.stats.visits[store.parent_edge(node_id).as_usize()]
-        } else {
-            store
-                .child_edges(node_id)
-                .map(|e| store.stats.visits[e.as_usize()])
-                .sum()
-        };
-        let parent_visits_sqrt = (parent_visits as f32).sqrt();
+        let parent_visits: u32 = store
+            .child_edges(node_id)
+            .map(|e| store.stats.visits[e.as_usize()])
+            .sum();
+        let parent_visits_sqrt = (parent_visits.max(1) as f32).sqrt();
 
         let mut best_edge = EdgeId::INVALID;
         let mut best_score = f32::NEG_INFINITY;

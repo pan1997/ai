@@ -1,8 +1,8 @@
 //! Terminal rendering utilities for Sequence board grids, card representations, and scoreboards.
 
 use crate::board::{
-    coord_to_index, is_corner, is_one_eyed_jack, is_two_eyed_jack, BoardCell, Card, BOARD_CELLS,
-    BOARD_DIM,
+    BOARD_CELLS, BOARD_DIM, BoardCell, Card, coord_to_index, is_corner, is_one_eyed_jack,
+    is_two_eyed_jack,
 };
 use crate::game::{SequenceAction, SequenceState};
 
@@ -16,13 +16,7 @@ pub fn format_card(card: Card) -> String {
 }
 
 /// Formats a board cell at coordinate $(r, c)$ given the token and locked status.
-pub fn format_cell(
-    r: u8,
-    c: u8,
-    token: Option<u8>,
-    locked: bool,
-    use_color: bool,
-) -> String {
+pub fn format_cell(r: u8, c: u8, token: Option<u8>, locked: bool, use_color: bool) -> String {
     if is_corner(r, c) {
         if use_color {
             return "\x1b[1;33m ★  \x1b[0m".to_string();
@@ -118,13 +112,7 @@ pub fn render_board(
         out.push_str(&format!("{r:2} │", r = r));
         for c in 0..BOARD_DIM {
             let idx = coord_to_index(r as u8, c as u8);
-            let cell_str = format_cell(
-                r as u8,
-                c as u8,
-                board[idx],
-                locked_chips[idx],
-                use_color,
-            );
+            let cell_str = format_cell(r as u8, c as u8, board[idx], locked_chips[idx], use_color);
             out.push_str(&cell_str);
             if c + 1 < BOARD_DIM {
                 out.push('│');

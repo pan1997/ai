@@ -1,14 +1,14 @@
 //! Planning dynamics, root determinization, and opponent policies for Sequence.
 
 use crate::board::{
-    card_positions, coord_to_index, create_double_deck, index_to_coord, is_corner_index, is_jack,
-    Card, FrenchBasicCard, Standard52, BOARD_CELLS,
+    BOARD_CELLS, Card, FrenchBasicCard, Standard52, card_positions, coord_to_index,
+    create_double_deck, index_to_coord, is_corner_index, is_jack,
 };
 use crate::game::{SequenceAction, SequenceState};
 use crate::world::{SequenceObservation, SequenceWorld};
 use mcts_traits::dynamics::{OpponentPolicy, RoundBasedDynamics, TurnBasedDynamics};
-use rand::seq::SliceRandom;
 use rand::Rng;
+use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
 /// Determinizes a hidden-information [`SequenceObservation`] into a hypothetical ground-truth [`SequenceState`].
@@ -92,8 +92,7 @@ impl OpponentPolicy<SequenceState, SequenceAction> for RandomOpponentPolicy {
 }
 
 /// Macro round-based planning dynamics for Sequence, stepping through opponent turns using an opponent policy.
-pub type SequenceRoundDynamics<const P: usize, Pol> =
-    RoundBasedDynamics<SequenceWorld<P>, Pol>;
+pub type SequenceRoundDynamics<const P: usize, Pol> = RoundBasedDynamics<SequenceWorld<P>, Pol>;
 
 /// Belief state determinization sampler for Sequence matches.
 ///
@@ -254,7 +253,11 @@ impl<const P: usize> mcts_traits::AgentDynamics for SequenceIsmctsDynamics<P> {
     }
 
     #[inline]
-    fn step(&self, s: &mut Self::State, action: &Self::Action) -> mcts_traits::StepOutcome<Self::Reward, ()> {
+    fn step(
+        &self,
+        s: &mut Self::State,
+        action: &Self::Action,
+    ) -> mcts_traits::StepOutcome<Self::Reward, ()> {
         let outcome = self.world.step_action(s, action);
         mcts_traits::StepOutcome::new(outcome.reward, outcome.terminated)
     }
@@ -264,4 +267,3 @@ impl<const P: usize> mcts_traits::AgentDynamics for SequenceIsmctsDynamics<P> {
         mcts_traits::AgentId(mcts_traits::TurnBasedWorld::current_player(&self.world, s) as u32)
     }
 }
-

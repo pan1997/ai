@@ -60,7 +60,7 @@ impl IsmctsScheduler {
             backup.init_root(tree, root, &eval);
         }
 
-        let mut path: Vec<PathElement> = Vec::new();
+        let mut path: Vec<PathElement<Reward>> = Vec::new();
 
         // 2. Main Trajectory Iteration Loop
         for _ in 0..num_iterations {
@@ -89,11 +89,10 @@ impl IsmctsScheduler {
                 }
 
                 // Select compatible child maximizing availability-weighted PUCT score
-                let selected = selection.select_compatible_child(
-                    tree,
-                    current_node,
-                    |_edge, action| scratch_legal.contains(action),
-                );
+                let selected =
+                    selection.select_compatible_child(tree, current_node, |_edge, action| {
+                        scratch_legal.contains(action)
+                    });
 
                 if let Some(edge) = selected {
                     let action = tree.edge_action(edge).clone();
@@ -110,6 +109,7 @@ impl IsmctsScheduler {
                         node: current_node,
                         edge,
                         next_node: child,
+                        reward: outcome.reward,
                     });
 
                     current_node = child;

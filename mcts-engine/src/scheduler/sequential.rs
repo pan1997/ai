@@ -74,7 +74,10 @@ impl SequentialScheduler {
                         backup.backup(tree, &path, Some(&eval));
                     }
                 }
-                NodeStatus::Expanded => {}
+                NodeStatus::Expanded => {
+                    let eval = model.evaluate(&state);
+                    backup.backup(tree, &path, Some(&eval));
+                }
             }
         }
     }

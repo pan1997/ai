@@ -71,8 +71,8 @@ impl<const N: usize> VectorBackup<N> {
 
 macro_rules! impl_vector_backup {
     ($stats:ident) => {
-        impl<A, R, Eval, StepDelta, const N: usize>
-            BackupPolicy<A, R, $stats<N>, Eval, StepDelta> for VectorBackup<N>
+        impl<A, R, Eval, StepDelta, const N: usize> BackupPolicy<A, R, $stats<N>, Eval, StepDelta>
+            for VectorBackup<N>
         where
             A: Clone,
             R: Copy + MultiAgentReward<N>,
@@ -97,7 +97,7 @@ macro_rules! impl_vector_backup {
             fn backup(
                 &self,
                 store: &mut TreeStore<A, R, $stats<N>, StepDelta>,
-                path: &[PathElement],
+                path: &[PathElement<R>],
                 evaluation: Option<&Eval>,
             ) {
                 if path.is_empty() {
@@ -114,7 +114,9 @@ macro_rules! impl_vector_backup {
                 );
 
                 // Initialize priors on leaf outgoing edges if expanded and non-terminal
-                if let (NodeStatus::Expanded, Some(eval)) = (store.node_status(leaf_node), evaluation) {
+                if let (NodeStatus::Expanded, Some(eval)) =
+                    (store.node_status(leaf_node), evaluation)
+                {
                     Self::write_priors(store, leaf_node, eval);
                 }
 
@@ -134,12 +136,9 @@ macro_rules! impl_vector_backup {
                 // Accumulate returns backwards along path
                 for i in (0..path.len()).rev() {
                     let element = &path[i];
-                    let edge_reward = store
-                        .edge_reward(element.edge)
-                        .expect("VectorBackup: transition reward must be set for traversed path edges")
-                        .agent_rewards();
+                    let step_reward = element.reward.agent_rewards();
 
-                    for (g_val, &reward_val) in g.iter_mut().zip(edge_reward.iter()) {
+                    for (g_val, &reward_val) in g.iter_mut().zip(step_reward.iter()) {
                         *g_val = reward_val + self.gamma * (*g_val);
                     }
 
@@ -148,7 +147,8 @@ macro_rules! impl_vector_backup {
                     let new_visits = old_visits + 1;
                     store.stats.visits[edge_idx] = new_visits;
 
-                    for (q_val, &g_val) in store.stats.mean_value[edge_idx].iter_mut().zip(g.iter()) {
+                    for (q_val, &g_val) in store.stats.mean_value[edge_idx].iter_mut().zip(g.iter())
+                    {
                         let q_old = *q_val;
                         *q_val = q_old + (g_val - q_old) / (new_visits as f32);
                     }
@@ -160,4 +160,3 @@ macro_rules! impl_vector_backup {
 
 impl_vector_backup!(MultiAgentPuctStats);
 impl_vector_backup!(IsmctsStats);
-
