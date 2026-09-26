@@ -272,3 +272,242 @@ fn test_render_chance_nodes_option() {
     let svg = render_svg(&tree, root, &options).expect("render_svg failed");
     assert!(svg.contains("<svg"));
 }
+
+#[test]
+fn test_ismcts_y_shaped_pomdp_blind_and_cued() {
+    use mcts_engine::backup::VectorBackup;
+    use mcts_engine::scheduler::IsmctsScheduler;
+    use mcts_engine::selection::ismcts::{IsmctsSelection, IsmctsStats};
+    use mcts_traits::belief::BeliefSampler;
+    use mcts_traits::{ActionModel, AgentDynamics, AgentId, Evaluation, Model, StepOutcome};
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum Action {
+        Advance = 0,
+        Left = 1,
+        Right = 2,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Step {
+        Stem,
+        Split,
+        Terminal,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct State {
+        mdp_id: u8,
+        step: Step,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    enum Obs {
+        #[default]
+        Same,
+        O0,
+        O1,
+    }
+
+    struct Pomdp {
+        cued: bool,
+    }
+
+    impl AgentDynamics for Pomdp {
+        type State = State;
+        type Action = Action;
+        type Reward = [f32; 1];
+        type StepDelta = Obs;
+
+        fn initial(&self) -> State {
+            State {
+                mdp_id: 0,
+                step: Step::Stem,
+            }
+        }
+
+        fn actions(&self, state: &State, out: &mut Vec<Action>) {
+            out.clear();
+            match state.step {
+                Step::Stem => out.push(Action::Advance),
+                Step::Split => {
+                    out.push(Action::Left);
+                    out.push(Action::Right);
+                }
+                Step::Terminal => {}
+            }
+        }
+
+        fn expand_actions(&self, state: &State, out: &mut Vec<Action>) {
+            self.actions(state, out);
+        }
+
+        fn current_agent(&self, _state: &State) -> AgentId {
+            AgentId(0)
+        }
+
+        fn step(&self, state: &mut State, action: &Action) -> StepOutcome<[f32; 1], Obs> {
+            match state.step {
+                Step::Stem => {
+                    state.step = Step::Split;
+                    let delta = if self.cued {
+                        if state.mdp_id == 0 { Obs::O0 } else { Obs::O1 }
+                    } else {
+                        Obs::Same
+                    };
+                    StepOutcome::with_delta([0.0], delta, false)
+                }
+                Step::Split => {
+                    state.step = Step::Terminal;
+                    let reward = match *action {
+                        Action::Left => {
+                            if state.mdp_id == 0 {
+                                [1.0]
+                            } else {
+                                [0.0]
+                            }
+                        }
+                        Action::Right => {
+                            if state.mdp_id == 0 {
+                                [0.0]
+                            } else {
+                                [1.0]
+                            }
+                        }
+                        Action::Advance => panic!(),
+                    };
+                    StepOutcome::with_delta(reward, Obs::Same, true)
+                }
+                Step::Terminal => panic!(),
+            }
+        }
+    }
+
+    struct Sampler {
+        rng: StdRng,
+    }
+
+    impl BeliefSampler for Sampler {
+        type State = State;
+        type Context = ();
+
+        fn sample(&mut self, _ctx: &()) -> State {
+            State {
+                mdp_id: if self.rng.gen_bool(0.5) { 0 } else { 1 },
+                step: Step::Stem,
+            }
+        }
+    }
+
+    struct Neutral;
+    impl Model<State> for Neutral {
+        fn evaluate(&self, _s: &State) -> Evaluation {
+            Evaluation {
+                priors: vec![0.5, 0.5],
+                values: vec![0.0],
+            }
+        }
+    }
+    impl ActionModel<State, Action> for Neutral {
+        fn evaluate_actions(&self, s: &State, acts: &[Action]) -> Evaluation {
+            let n = acts.len();
+            let mut eval = self.evaluate(s);
+            eval.priors = if n > 0 {
+                vec![1.0 / n as f32; n]
+            } else {
+                vec![]
+            };
+            eval
+        }
+    }
+
+    let scheduler = IsmctsScheduler;
+    let selection = IsmctsSelection::<1>::new(1.414);
+    let backup = VectorBackup::<1>::default();
+
+    // 1. Blind Test
+    {
+        let dynamics = Pomdp { cued: false };
+        let mut sampler = Sampler {
+            rng: StdRng::seed_from_u64(42),
+        };
+        let mut tree: TreeStore<Action, [f32; 1], IsmctsStats<1>, Obs> =
+            TreeStore::with_capacity(20, 20, IsmctsStats::<1>::new());
+        let root = tree.insert_root(AgentId(0));
+
+        scheduler.search(
+            &mut tree,
+            &dynamics,
+            &Neutral,
+            &selection,
+            &backup,
+            &mut sampler,
+            &(),
+            root,
+            60,
+        );
+
+        // One advance edge, one split node with Left & Right
+        assert_eq!(tree.stats.visits[0], 60);
+        let q_left = tree.stats.mean_value[1][0];
+        let q_right = tree.stats.mean_value[2][0];
+        assert!((q_left - 0.5).abs() <= 0.15, "q_left: {q_left}");
+        assert!((q_right - 0.5).abs() <= 0.15, "q_right: {q_right}");
+    }
+
+    // 2. Cued Test
+    {
+        let dynamics = Pomdp { cued: true };
+        let mut sampler = Sampler {
+            rng: StdRng::seed_from_u64(42),
+        };
+        let mut tree: TreeStore<Action, [f32; 1], IsmctsStats<1>, Obs> =
+            TreeStore::with_capacity(30, 30, IsmctsStats::<1>::new());
+        let root = tree.insert_root(AgentId(0));
+
+        scheduler.search(
+            &mut tree,
+            &dynamics,
+            &Neutral,
+            &selection,
+            &backup,
+            &mut sampler,
+            &(),
+            root,
+            60,
+        );
+
+        let branches: Vec<_> = tree.delta_children(EdgeId(0)).collect();
+        assert_eq!(branches.len(), 2);
+
+        let (node_o0, node_o1) = if *branches[0].0 == Obs::O0 {
+            (branches[0].1, branches[1].1)
+        } else {
+            (branches[1].1, branches[0].1)
+        };
+
+        // In Subtree O0 (MDP 0): Left wins (Q=1.0), Right loses (Q=0.0)
+        let o0_edge0 = tree.first_child_edge(node_o0);
+        let o0_q_left = tree.stats.mean_value[o0_edge0.as_usize()][0];
+        let o0_v_left = tree.stats.visits[o0_edge0.as_usize()];
+        let o0_q_right = tree.stats.mean_value[o0_edge0.as_usize() + 1][0];
+        let o0_v_right = tree.stats.visits[o0_edge0.as_usize() + 1];
+
+        assert_eq!(o0_q_left, 1.0);
+        assert_eq!(o0_q_right, 0.0);
+        assert!(o0_v_left > o0_v_right);
+
+        // In Subtree O1 (MDP 1): Left loses (Q=0.0), Right wins (Q=1.0)
+        let o1_edge0 = tree.first_child_edge(node_o1);
+        let o1_q_left = tree.stats.mean_value[o1_edge0.as_usize()][0];
+        let o1_v_left = tree.stats.visits[o1_edge0.as_usize()];
+        let o1_q_right = tree.stats.mean_value[o1_edge0.as_usize() + 1][0];
+        let o1_v_right = tree.stats.visits[o1_edge0.as_usize() + 1];
+
+        assert_eq!(o1_q_left, 0.0);
+        assert_eq!(o1_q_right, 1.0);
+        assert!(o1_v_right > o1_v_left);
+    }
+}
