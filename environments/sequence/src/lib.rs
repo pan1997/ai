@@ -14,6 +14,7 @@
 //! - [`evaluator`]: Domain heuristic threat evaluators and rollout models.
 //! - [`render`]: Terminal board rendering with ANSI team token colors.
 //! - [`agent`]: Human CLI, Random, Heuristic, ISMCTS, and Opponent-Model MCTS agents.
+//! - [`tournament`]: Parallel round-robin tournament execution and multi-core game dispatch.
 
 pub mod agent;
 pub mod board;
@@ -21,6 +22,7 @@ pub mod dynamics;
 pub mod evaluator;
 pub mod game;
 pub mod render;
+pub mod tournament;
 pub mod world;
 
 #[cfg(test)]
@@ -40,6 +42,9 @@ pub use dynamics::{
 pub use evaluator::{SequenceHeuristicEvaluator, UniformEvaluator};
 pub use game::{SequenceAction, SequenceConfig, SequenceState};
 pub use render::{format_action, format_card, render_board, render_state};
+pub use tournament::{
+    SeatAssignment, TournamentGameResult, play_matchup_parallel, play_single_game, run_tournament,
+};
 pub use world::{
     Sequence2PWorld, Sequence3PWorld, Sequence4PWorld, Sequence6PWorld, SequenceObservation,
     SequenceWorld,

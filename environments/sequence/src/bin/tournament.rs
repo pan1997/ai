@@ -1,16 +1,13 @@
 //! Benchmarking tournament arena runner for Sequence.
 //!
 //! Evaluates win rates, game lengths, and head-to-head performance across diverse agents
-//! (ISMCTS, Opponent-Model MCTS, Heuristic, Random) with balanced seat rotations.
+//! (ISMCTS, Opponent-Model MCTS, Heuristic, Random) with balanced seat rotations and
+//! multi-core parallel game execution.
 
-use mcts_engine::arena::{
-    GameOutcome, H2HMatrix, MatchDriver, TwoPlayerTournamentStats, disambiguate_names,
-};
-use sequence::agent::{BoxAgent, parse_agent};
-use sequence::game::SequenceConfig;
-use sequence::world::SequenceWorld;
+use mcts_engine::arena::{TwoPlayerTournamentStats, disambiguate_names};
+use sequence::tournament::run_tournament;
 use std::env;
-use std::time::Instant;
+use std::io::Write;
 
 fn print_help() {
     println!(
@@ -25,6 +22,7 @@ OPTIONS:
     --agent <SPEC>      Repeatable flag to add an individual agent spec
     --games <N>         Number of games to play per pair [default: 10]
                         (half as Seat 0 / Team 0, half as Seat 1 / Team 1)
+    -n-cpu, --n-cpu <N> Number of games to run in parallel [default: 1]
     --players <N>       Number of players per game: 2 [default]
     --p1, --p2          Pairwise shorthand specs (e.g. --p1 is-mcts:300:5 --p2 heuristic)
     -h, --help          Print help information
@@ -50,6 +48,7 @@ fn main() {
 
     let mut agent_specs: Vec<String> = Vec::new();
     let mut games_per_pair = 10usize;
+    let mut n_cpu = 1usize;
     let mut p1_spec: Option<String> = None;
     let mut p2_spec: Option<String> = None;
 
@@ -72,6 +71,22 @@ fn main() {
             "--games" if i + 1 < args.len() => {
                 games_per_pair = args[i + 1].parse().unwrap_or(10);
                 i += 2;
+            }
+            "-n-cpu" | "--n-cpu" | "-n" | "--cpus" | "--threads" if i + 1 < args.len() => {
+                n_cpu = args[i + 1].parse().unwrap_or(1).max(1);
+                i += 2;
+            }
+            arg if arg.starts_with("-n-cpu=") || arg.starts_with("--n-cpu=") => {
+                if let Some((_, val)) = arg.split_once('=') {
+                    n_cpu = val.parse().unwrap_or(1).max(1);
+                }
+                i += 1;
+            }
+            arg if arg.starts_with("--cpus=") || arg.starts_with("--threads=") => {
+                if let Some((_, val)) = arg.split_once('=') {
+                    n_cpu = val.parse().unwrap_or(1).max(1);
+                }
+                i += 1;
             }
             "--p1" if i + 1 < args.len() => {
                 p1_spec = Some(args[i + 1].clone());
@@ -112,85 +127,30 @@ fn main() {
     println!("          🎴 SEQUENCE - ROUND-ROBIN TOURNAMENT 🎴          ");
     println!("============================================================");
     println!(
-        "Agents ({}): {} | Games per pair: {}\n",
+        "Agents ({}): {} | Games per pair: {} | Parallel workers (n-cpu): {}\n",
         n,
         names.join(", "),
-        games_per_pair
+        games_per_pair,
+        n_cpu
     );
 
-    let world = SequenceWorld::<2>::new(SequenceConfig::new_2p());
-    let driver = MatchDriver::new();
-
-    let mut h2h = H2HMatrix::new(n);
-    let mut stats = vec![TwoPlayerTournamentStats::default(); n];
-    let total_start = Instant::now();
-
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let half = games_per_pair / 2;
-            let rem = games_per_pair - half;
-
+    let (h2h, stats, elapsed) = run_tournament(
+        &agent_specs,
+        &names,
+        games_per_pair,
+        n_cpu,
+        |_i, _j, name_a, name_b| {
             print!(
                 "Running matchup: {} vs {} ({} games)... ",
-                names[i], names[j], games_per_pair
+                name_a, name_b, games_per_pair
             );
-
-            // Games with agent i as Seat 0 (Player 0) and agent j as Seat 1 (Player 1)
-            for _ in 0..half {
-                let mut a0: BoxAgent<2> = parse_agent::<2>(&agent_specs[i], &names[i]);
-                let mut a1: BoxAgent<2> = parse_agent::<2>(&agent_specs[j], &names[j]);
-
-                let result = driver.play_2p(&world, a0.as_mut(), a1.as_mut(), None);
-                let outcome = if result.final_reward[0] > 0.0 {
-                    GameOutcome::Seat0Wins
-                } else if result.final_reward[1] > 0.0 {
-                    GameOutcome::Seat1Wins
-                } else {
-                    GameOutcome::Draw
-                };
-
-                h2h.record_game(i, j, outcome);
-                TwoPlayerTournamentStats::record_game(
-                    &mut stats,
-                    i,
-                    j,
-                    outcome,
-                    result.moves_per_seat[0],
-                    result.moves_per_seat[1],
-                );
-            }
-
-            // Games with agent j as Seat 0 and agent i as Seat 1 (swapped seats)
-            for _ in 0..rem {
-                let mut a0: BoxAgent<2> = parse_agent::<2>(&agent_specs[j], &names[j]);
-                let mut a1: BoxAgent<2> = parse_agent::<2>(&agent_specs[i], &names[i]);
-
-                let result = driver.play_2p(&world, a0.as_mut(), a1.as_mut(), None);
-                let outcome = if result.final_reward[0] > 0.0 {
-                    GameOutcome::Seat0Wins
-                } else if result.final_reward[1] > 0.0 {
-                    GameOutcome::Seat1Wins
-                } else {
-                    GameOutcome::Draw
-                };
-
-                // Note: swapped order for recording in matrix
-                h2h.record_game(j, i, outcome);
-                TwoPlayerTournamentStats::record_game(
-                    &mut stats,
-                    j,
-                    i,
-                    outcome,
-                    result.moves_per_seat[0],
-                    result.moves_per_seat[1],
-                );
-            }
-
+            let _ = std::io::stdout().flush();
+        },
+        |_i, _j, _name_a, _name_b, _dur| {
             println!("done.");
-        }
-    }
+        },
+    );
 
-    let elapsed = total_start.elapsed();
     println!("\nTournament completed in {:.2?}!\n", elapsed);
 
     // Render standings and H2H table
