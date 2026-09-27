@@ -1,4 +1,5 @@
 import tempfile
+import time
 from pathlib import Path
 import numpy as np
 import pytest
@@ -262,6 +263,39 @@ def test_selfplay_supervisor_multiple_workers():
     assert len(supervisor.worker_threads) == 3
     supervisor.stop()
     assert len(supervisor._processes) == 0
+
+
+def test_selfplay_supervisor_backpressure():
+    import sys
+    from learner.orchestrator import SelfPlaySupervisor
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        spool_dir = Path(tmpdir)
+        (spool_dir / "traj_001.bin").write_bytes(b"dummy")
+        (spool_dir / "traj_002.bin").write_bytes(b"dummy")
+
+        supervisor = SelfPlaySupervisor(
+            binary_path=sys.executable,
+            spool_dir=str(spool_dir),
+            model_path="/tmp/model",
+            num_workers=1,
+            games_per_batch=1,
+            sims=1,
+            max_spool_chunks=2,
+        )
+        supervisor.start()
+        # Give worker thread a moment to run its loop
+        time.sleep(0.2)
+        # Should be paused by backpressure because pending_chunks (2) >= max_spool_chunks (2)
+        assert len(supervisor._processes) == 0
+
+        # Unlink one file to relieve backpressure
+        (spool_dir / "traj_001.bin").unlink()
+        time.sleep(0.3)
+        # Once relieved, worker should attempt to spawn
+        # (It will fail quickly since sys.executable isn't a valid selfplay binary, but the process was created/attempted)
+        supervisor.stop()
+
 
 
 def test_game_config_registry():

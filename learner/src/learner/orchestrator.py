@@ -38,6 +38,7 @@ class SelfPlaySupervisor:
         sims: int = 40,
         c_puct: float = 1.414,
         parallel_games: int = 16,
+        max_spool_chunks: int = 4,
     ):
         self.binary_path = binary_path
         self.spool_dir = spool_dir
@@ -47,6 +48,7 @@ class SelfPlaySupervisor:
         self.sims = sims
         self.c_puct = c_puct
         self.parallel_games = parallel_games
+        self.max_spool_chunks = max(1, max_spool_chunks)
         self.stop_event = threading.Event()
         self.worker_threads: List[threading.Thread] = []
         self._processes: Dict[int, subprocess.Popen] = {}
@@ -88,7 +90,18 @@ class SelfPlaySupervisor:
             str(self.parallel_games),
         ]
 
+        spool_path = Path(self.spool_dir)
         while not self.stop_event.is_set():
+            # Check spool backpressure: pause worker if unconsumed chunks exceed limit
+            if spool_path.exists():
+                try:
+                    pending_chunks = len(list(spool_path.glob("traj_*.bin")))
+                    if pending_chunks >= self.max_spool_chunks:
+                        time.sleep(0.1)
+                        continue
+                except OSError:
+                    pass
+
             try:
                 with self._lock:
                     if self.stop_event.is_set():
@@ -244,7 +257,9 @@ class ExperimentOrchestrator:
         selfplay_parallel_games: int = 16,
         enable_selfplay: bool = True,
         steps_per_iter: Optional[int] = None,
-        max_train_steps: int = 300,
+        max_train_steps: Optional[int] = None,
+        max_chunks_per_iter: Optional[int] = 1,
+        max_spool_chunks: int = 4,
         updates_per_transition: Optional[float] = None,
         updates_per_trajectory: Optional[float] = None,
         replay_ratio: Optional[float] = None,
@@ -287,7 +302,9 @@ class ExperimentOrchestrator:
         self.selfplay_parallel_games = max(1, selfplay_parallel_games)
         self.enable_selfplay = enable_selfplay
         self.steps_per_iter = steps_per_iter
-        self.max_train_steps = max(1, max_train_steps)
+        self.max_train_steps = max(1, max_train_steps) if max_train_steps is not None else None
+        self.max_chunks_per_iter = max_chunks_per_iter
+        self.max_spool_chunks = max(1, max_spool_chunks)
         self.updates_per_transition = updates_per_transition
         self.updates_per_trajectory = updates_per_trajectory
         self.replay_ratio = replay_ratio
@@ -328,6 +345,7 @@ class ExperimentOrchestrator:
                 sims=self.selfplay_sims,
                 c_puct=self.selfplay_cpuct,
                 parallel_games=self.selfplay_parallel_games,
+                max_spool_chunks=self.max_spool_chunks,
             )
             if self.enable_selfplay
             else None
@@ -404,7 +422,7 @@ class ExperimentOrchestrator:
         self._setup_mlflow()
 
         # 4. Ingest any preexisting trajectory chunks
-        initial_ingested = self.trainer.ingest(self.spool_dir)
+        initial_ingested = self.trainer.ingest(self.spool_dir, max_chunks=self.max_chunks_per_iter)
         if initial_ingested > 0:
             print(f"[Orchestrator] Pre-ingested {initial_ingested} existing steps into replay buffer.")
 
@@ -423,7 +441,7 @@ class ExperimentOrchestrator:
                     break
 
                 # Sweep spool directory for newly written chunks
-                newly_ingested = self.trainer.ingest(self.spool_dir)
+                newly_ingested = self.trainer.ingest(self.spool_dir, max_chunks=self.max_chunks_per_iter)
                 pending_steps += newly_ingested
 
                 # If enough new samples or initial bootstrap buffer is ready
@@ -450,7 +468,9 @@ class ExperimentOrchestrator:
                             1, (len(self.replay_buffer) // self.batch_size) * self.epochs_per_iter
                         )
 
-                    target_steps = max(1, min(target_steps, self.max_train_steps))
+                    if self.max_train_steps is not None:
+                        target_steps = max(1, min(target_steps, self.max_train_steps))
+
                     tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
                         num_steps=target_steps,
                         batch_size=self.batch_size,
@@ -487,7 +507,11 @@ class ExperimentOrchestrator:
                         f"Buffer = {len(self.replay_buffer):5d} (+{pending_steps:3d}) | "
                         f"Step = {self.global_step:5d} ({elapsed:.1f}s)"
                     )
-                    pending_steps = 0
+                    if self.updates_per_transition is not None and self.max_train_steps is not None:
+                        consumed = round(steps / self.updates_per_transition)
+                        pending_steps = max(0, pending_steps - consumed)
+                    else:
+                        pending_steps = 0
 
                     # Periodic Tournament Evaluation
                     if self.eval_interval > 0 and self.iteration % self.eval_interval == 0:
@@ -618,8 +642,20 @@ def main():
     parser.add_argument(
         "--max-train-steps",
         type=int,
-        default=300,
-        help="Safety cap on the maximum gradient steps executed in a single iteration (default: 300)",
+        default=None,
+        help="Optional safety cap on the maximum gradient steps executed in a single iteration (default: None)",
+    )
+    parser.add_argument(
+        "--max-chunks-per-iter",
+        type=int,
+        default=1,
+        help="Maximum spool chunks ingested per iteration (default: 1)",
+    )
+    parser.add_argument(
+        "--max-spool-chunks",
+        type=int,
+        default=4,
+        help="Maximum unconsumed chunks in spool directory before pausing workers (default: 4)",
     )
 
     args = parser.parse_args()
@@ -646,6 +682,8 @@ def main():
         enable_selfplay=not args.no_selfplay,
         steps_per_iter=args.steps_per_iter,
         max_train_steps=args.max_train_steps,
+        max_chunks_per_iter=args.max_chunks_per_iter,
+        max_spool_chunks=args.max_spool_chunks,
         updates_per_transition=args.updates_per_transition,
         updates_per_trajectory=args.updates_per_trajectory,
         replay_ratio=args.replay_ratio,

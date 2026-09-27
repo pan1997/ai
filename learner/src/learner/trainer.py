@@ -63,8 +63,17 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
-def ingest_spool_chunks(spool_dir: Path | str, replay_buffer: ReplayBuffer) -> int:
+def ingest_spool_chunks(
+    spool_dir: Path | str,
+    replay_buffer: ReplayBuffer,
+    max_chunks: Optional[int] = None,
+) -> int:
     """Scans `spool_dir` for completed `.bin` chunks, ingests them into the buffer, and unlinks them.
+
+    Args:
+        spool_dir: Directory containing `.bin` chunks.
+        replay_buffer: Replay buffer to extend with ingested records.
+        max_chunks: Optional limit on the number of chunks to ingest in this sweep.
 
     Returns:
         Total number of steps ingested in this sweep.
@@ -74,12 +83,16 @@ def ingest_spool_chunks(spool_dir: Path | str, replay_buffer: ReplayBuffer) -> i
         return 0
 
     total_ingested = 0
+    chunks_processed = 0
     for chunk_file in sorted(path.glob("traj_*.bin")):
+        if max_chunks is not None and chunks_processed >= max_chunks:
+            break
         try:
             _header, records = read_trajectory_chunk(chunk_file)
             replay_buffer.extend(records)
             total_ingested += len(records)
             chunk_file.unlink()
+            chunks_processed += 1
         except (IOError, ValueError, PermissionError) as e:
             if isinstance(e, ValueError):
                 try:
@@ -117,9 +130,9 @@ class AlphaZeroTrainer:
             weight_decay=weight_decay,
         )
 
-    def ingest(self, spool_dir: Path | str) -> int:
+    def ingest(self, spool_dir: Path | str, max_chunks: Optional[int] = None) -> int:
         """Ingests completed .bin trajectory chunks from spool_dir into the replay buffer."""
-        return ingest_spool_chunks(spool_dir, self.replay_buffer)
+        return ingest_spool_chunks(spool_dir, self.replay_buffer, max_chunks=max_chunks)
 
     def train_epoch(self, batch_size: int) -> Tuple[float, float, float, int]:
         """Runs 1 training epoch over the replay buffer.
