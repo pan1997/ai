@@ -510,6 +510,9 @@ class ExperimentOrchestrator:
                     if self.updates_per_transition is not None and self.max_train_steps is not None:
                         consumed = round(steps / self.updates_per_transition)
                         pending_steps = max(0, pending_steps - consumed)
+                    elif self.replay_ratio is not None and self.max_train_steps is not None:
+                        consumed = round((steps * self.batch_size) / self.replay_ratio)
+                        pending_steps = max(0, pending_steps - consumed)
                     else:
                         pending_steps = 0
 
