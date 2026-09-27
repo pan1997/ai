@@ -243,6 +243,8 @@ class ExperimentOrchestrator:
         selfplay_workers: int = 1,
         selfplay_parallel_games: int = 16,
         enable_selfplay: bool = True,
+        steps_per_iter: Optional[int] = None,
+        max_train_steps: int = 300,
         updates_per_transition: Optional[float] = None,
         updates_per_trajectory: Optional[float] = None,
         replay_ratio: Optional[float] = None,
@@ -284,6 +286,8 @@ class ExperimentOrchestrator:
         self.selfplay_workers = max(1, selfplay_workers)
         self.selfplay_parallel_games = max(1, selfplay_parallel_games)
         self.enable_selfplay = enable_selfplay
+        self.steps_per_iter = steps_per_iter
+        self.max_train_steps = max(1, max_train_steps)
         self.updates_per_transition = updates_per_transition
         self.updates_per_trajectory = updates_per_trajectory
         self.replay_ratio = replay_ratio
@@ -429,33 +433,28 @@ class ExperimentOrchestrator:
                     self.iteration += 1
                     t0 = time.time()
 
-                    # Execute training updates (either per-transition/trajectory/replay-ratio or epoch-based)
-                    if self.updates_per_transition is not None:
+                    # Execute training updates (fixed steps, per-transition/trajectory/replay-ratio, or capped epoch-based)
+                    if self.steps_per_iter is not None:
+                        target_steps = self.steps_per_iter
+                    elif self.updates_per_transition is not None:
                         target_steps = max(1, round(pending_steps * self.updates_per_transition))
-                        tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
-                            num_steps=target_steps,
-                            batch_size=self.batch_size,
-                        )
                     elif self.updates_per_trajectory is not None:
                         est_trajs = max(1.0, pending_steps / 7.5)
                         target_steps = max(1, round(est_trajs * self.updates_per_trajectory))
-                        tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
-                            num_steps=target_steps,
-                            batch_size=self.batch_size,
-                        )
                     elif self.replay_ratio is not None:
                         target_steps = max(
                             1, round((pending_steps * self.replay_ratio) / self.batch_size)
                         )
-                        tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
-                            num_steps=target_steps,
-                            batch_size=self.batch_size,
-                        )
                     else:
-                        tot_loss, p_loss, v_loss, steps = self.trainer.train_iteration(
-                            epochs=self.epochs_per_iter,
-                            batch_size=self.batch_size,
+                        target_steps = max(
+                            1, (len(self.replay_buffer) // self.batch_size) * self.epochs_per_iter
                         )
+
+                    target_steps = max(1, min(target_steps, self.max_train_steps))
+                    tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
+                        num_steps=target_steps,
+                        batch_size=self.batch_size,
+                    )
                     self.global_step += steps
                     elapsed = time.time() - t0
 
@@ -592,9 +591,11 @@ def main():
     parser.add_argument("--no-selfplay", action="store_true", help="Do not spawn self-play worker subprocess")
     parser.add_argument(
         "--updates-per-transition",
+        "--steps-per-sample",
         type=float,
         default=None,
-        help="Gradient weight updates per newly ingested transition (e.g. 0.25)",
+        dest="updates_per_transition",
+        help="Gradient weight updates per newly ingested transition/sample (e.g. 0.25)",
     )
     parser.add_argument(
         "--updates-per-trajectory",
@@ -607,6 +608,18 @@ def main():
         type=float,
         default=None,
         help="Data reuse ratio: average times each transition is sampled (e.g. 8.0)",
+    )
+    parser.add_argument(
+        "--steps-per-iter",
+        type=int,
+        default=None,
+        help="Fixed number of mini-batch gradient updates per iteration (e.g. 50 or 100)",
+    )
+    parser.add_argument(
+        "--max-train-steps",
+        type=int,
+        default=300,
+        help="Safety cap on the maximum gradient steps executed in a single iteration (default: 300)",
     )
 
     args = parser.parse_args()
@@ -631,6 +644,8 @@ def main():
         selfplay_workers=args.selfplay_workers,
         selfplay_parallel_games=args.selfplay_parallel_games,
         enable_selfplay=not args.no_selfplay,
+        steps_per_iter=args.steps_per_iter,
+        max_train_steps=args.max_train_steps,
         updates_per_transition=args.updates_per_transition,
         updates_per_trajectory=args.updates_per_trajectory,
         replay_ratio=args.replay_ratio,
