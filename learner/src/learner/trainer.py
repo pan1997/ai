@@ -81,7 +81,11 @@ def ingest_spool_chunks(spool_dir: Path | str, replay_buffer: ReplayBuffer) -> i
             total_ingested += len(records)
             chunk_file.unlink()
         except (IOError, ValueError, PermissionError) as e:
-            # Chunk may be partially written or locked; retry next sweep
+            if isinstance(e, ValueError):
+                try:
+                    chunk_file.unlink()
+                except OSError:
+                    pass
             continue
 
     return total_ingested

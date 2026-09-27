@@ -97,7 +97,7 @@ pub fn execute_episodes<E: SelfPlayEnv, M: BatchedModel<E>>(
     let mut rng = rand::thread_rng();
 
     let obs_len = E::CHANNELS * E::HEIGHT * E::WIDTH;
-    let mask_len = (config.action_dim + 7) / 8;
+    let mask_len = ((config.action_dim + 31) / 32) * 4;
     let batch_capacity = config.parallel_games.min(config.num_games).max(1);
 
     // Pre-allocate storage for `batch_capacity` concurrent games
