@@ -1,0 +1,20 @@
+[package]
+name = "mcts-onnx"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "ONNX Runtime inference client, dynamic micro-batcher, and trajectory spooler for MCTS"
+
+[dependencies]
+mcts-traits = { workspace = true }
+mcts-engine = { workspace = true }
+byteorder = "1.5"
+flume = "0.11"
+notify = "6.1"
+ndarray = "0.17"
+rand = { workspace = true }
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "download-binaries", "copy-dylibs", "tls-rustls"] }
+
+[dev-dependencies]
+mcts-envs = { workspace = true }

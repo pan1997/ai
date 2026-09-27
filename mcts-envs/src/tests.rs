@@ -1,6 +1,7 @@
 //! Comprehensive unit and integration tests for `mcts-envs` games and evaluators.
 
 use crate::evaluators::{RolloutEvaluator, UniformRandomModel};
+use crate::graph::GraphEnv;
 use crate::hex::{HexPlayer, HexState, HexWorld};
 use crate::kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnWorld};
 use crate::tzf8::{Direction, Tzf8Dynamics, Tzf8State};
@@ -9,6 +10,39 @@ use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
 use mcts_traits::{AgentDynamics, AgentId, Model, TurnBasedDynamics, World};
+
+#[test]
+fn test_graph_env_chain_dynamics() {
+    let env = GraphEnv::chain(4);
+    assert_eq!(env.initial(), 0);
+
+    let mut actions = Vec::new();
+    env.actions(&0, &mut actions);
+    assert_eq!(actions, vec![0, 1]);
+
+    let mut s = 0;
+    // Step forward: 0 -> 1
+    let out = env.step(&mut s, &1);
+    assert_eq!(s, 1);
+    assert!(!out.terminated);
+    assert_eq!(out.reward, [0.0]);
+
+    // Step forward: 1 -> 2
+    let out = env.step(&mut s, &1);
+    assert_eq!(s, 2);
+    assert!(!out.terminated);
+    assert_eq!(out.reward, [0.0]);
+
+    // Step forward: 2 -> 3 (terminal +1.0)
+    let out = env.step(&mut s, &1);
+    assert_eq!(s, 3);
+    assert!(out.terminated);
+    assert_eq!(out.reward, [1.0]);
+
+    // State 3 is terminal, actions should be empty
+    env.actions(&3, &mut actions);
+    assert!(actions.is_empty());
+}
 
 #[test]
 fn test_hex_win_detection() {

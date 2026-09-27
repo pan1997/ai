@@ -137,3 +137,89 @@ impl<S, A, M: Model<S>> ActionModel<S, A> for DefaultActionModel<M> {
         self.0.evaluate(s)
     }
 }
+
+/// Trait for environment states that can be encoded into planar float tensors (NCHW).
+pub trait TensorRepresentable {
+    /// Number of feature channels (e.g. 2 for Connect 4: own pieces, opponent pieces).
+    const CHANNELS: usize;
+    /// Spatial height dimension (e.g. 3 for TicTacToe, 6 for Connect 4).
+    const HEIGHT: usize;
+    /// Spatial width dimension (e.g. 3 for TicTacToe, 7 for Connect 4).
+    const WIDTH: usize;
+
+    /// Flattens the state into a pre-allocated float buffer of length `CHANNELS * HEIGHT * WIDTH`.
+    ///
+    /// Must write strictly to `out` without allocating heap memory.
+    fn encode_tensor(&self, out: &mut [f32]);
+}
+
+/// Encodes a batch of state references contiguously into `out`.
+///
+/// Output shape corresponds to flattened `(B, C, H, W)` where $B$ is `states.len()`.
+///
+/// # Panics
+/// Panics if `out.len() < states.len() * S::CHANNELS * S::HEIGHT * S::WIDTH`.
+#[inline]
+pub fn encode_batch<S: TensorRepresentable>(states: &[&S], out: &mut [f32]) {
+    let stride = S::CHANNELS * S::HEIGHT * S::WIDTH;
+    let required_len = states.len() * stride;
+    assert!(
+        out.len() >= required_len,
+        "encode_batch: buffer length ({}) smaller than required ({required_len})",
+        out.len()
+    );
+
+    for (i, state) in states.iter().enumerate() {
+        let start = i * stride;
+        let end = start + stride;
+        state.encode_tensor(&mut out[start..end]);
+    }
+}
+
+/// Computes numerically stable softmax over a masked subset of legal action indices.
+///
+/// Returns a vector of probabilities corresponding 1:1 with `legal_actions` (summing to 1.0).
+/// If `legal_actions` is empty, returns an empty vector.
+pub fn softmax_masked(logits: &[f32], legal_actions: &[usize]) -> Vec<f32> {
+    if legal_actions.is_empty() {
+        return Vec::new();
+    }
+
+    let mut max_val = f32::NEG_INFINITY;
+    for &action in legal_actions {
+        if action < logits.len() && logits[action] > max_val {
+            max_val = logits[action];
+        }
+    }
+
+    if !max_val.is_finite() {
+        max_val = 0.0;
+    }
+
+    let mut exp_sum = 0.0f32;
+    let mut exps = Vec::with_capacity(legal_actions.len());
+
+    for &action in legal_actions {
+        let val = if action < logits.len() {
+            (logits[action] - max_val).exp()
+        } else {
+            0.0
+        };
+        exps.push(val);
+        exp_sum += val;
+    }
+
+    if exp_sum > 0.0 && exp_sum.is_finite() {
+        for val in &mut exps {
+            *val /= exp_sum;
+        }
+    } else {
+        let uniform = 1.0 / (legal_actions.len() as f32);
+        for val in &mut exps {
+            *val = uniform;
+        }
+    }
+
+    exps
+}
+

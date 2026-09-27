@@ -206,3 +206,39 @@ impl<const R: usize, const C: usize> Default for Connect4State<R, C> {
         Self::new()
     }
 }
+
+impl<const R: usize, const C: usize> mcts_traits::TensorRepresentable for Connect4State<R, C> {
+    const CHANNELS: usize = 2;
+    const HEIGHT: usize = R;
+    const WIDTH: usize = C;
+
+    /// Encodes the $R \times C$ board into a perspective-normalized 2-channel float tensor:
+    /// - Channel 0: Current player's checkers (1.0 if present, else 0.0).
+    /// - Channel 1: Opponent player's checkers (1.0 if present, else 0.0).
+    #[inline]
+    fn encode_tensor(&self, out: &mut [f32]) {
+        assert_eq!(
+            out.len(),
+            Self::CHANNELS * Self::HEIGHT * Self::WIDTH,
+            "Connect4State::encode_tensor: output slice must be exactly {} elements",
+            Self::CHANNELS * Self::HEIGHT * Self::WIDTH
+        );
+        out.fill(0.0);
+
+        let me = self.current_player;
+        let opp = me.other();
+        let plane_size = R * C;
+
+        for r in 0..R {
+            for c in 0..C {
+                let idx = r * C + c;
+                if self.board[r][c] == Some(me) {
+                    out[idx] = 1.0;
+                } else if self.board[r][c] == Some(opp) {
+                    out[plane_size + idx] = 1.0;
+                }
+            }
+        }
+    }
+}
+

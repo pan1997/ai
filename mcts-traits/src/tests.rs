@@ -452,3 +452,53 @@ fn test_belief_sampler_snapshot_and_incremental() {
     // history = [5, 15], state = 12
     assert_eq!(inc_sampler.sample(&history), 5 + 15 + 12);
 }
+
+#[test]
+fn test_tensor_representable_and_utilities() {
+    use crate::model::{TensorRepresentable, encode_batch, softmax_masked};
+
+    struct DummyGridState {
+        pub player: f32,
+    }
+
+    impl TensorRepresentable for DummyGridState {
+        const CHANNELS: usize = 2;
+        const HEIGHT: usize = 2;
+        const WIDTH: usize = 2;
+
+        fn encode_tensor(&self, out: &mut [f32]) {
+            assert_eq!(out.len(), 8);
+            out.fill(0.0);
+            out[0] = self.player;
+        }
+    }
+
+    // 1. Single encode
+    let s0 = DummyGridState { player: 1.0 };
+    let mut buf = [0.0f32; 8];
+    s0.encode_tensor(&mut buf);
+    assert_eq!(buf[0], 1.0);
+    assert_eq!(buf[1..], [0.0; 7]);
+
+    // 2. Batch encode
+    let s1 = DummyGridState { player: 2.0 };
+    let states = [&s0, &s1];
+    let mut batch_buf = [0.0f32; 16];
+    encode_batch(&states, &mut batch_buf);
+    assert_eq!(batch_buf[0], 1.0);
+    assert_eq!(batch_buf[8], 2.0);
+
+    // 3. Softmax masked
+    let logits = [2.0, 1.0, 0.0, 5.0];
+    let legal = [0, 2]; // logits 2.0 and 0.0
+    let priors = softmax_masked(&logits, &legal);
+    assert_eq!(priors.len(), 2);
+    let diff = (priors[0] + priors[1] - 1.0).abs();
+    assert!(diff < 1e-5);
+    assert!(priors[0] > priors[1]);
+
+    // Empty legal actions
+    let empty_priors = softmax_masked(&logits, &[]);
+    assert!(empty_priors.is_empty());
+}
+

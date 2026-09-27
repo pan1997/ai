@@ -25,6 +25,7 @@
 //! - [`evaluators::UniformRandomModel`]: Fast baseline providing uniform priors and zero values for testing search flow.
 
 pub mod evaluators;
+pub mod graph;
 pub mod hex;
 /// Kuhn Poker imperfect-information game theory benchmark.
 pub mod kuhn_poker;
@@ -34,6 +35,7 @@ pub mod tzf8;
 mod tests;
 
 pub use evaluators::{RolloutEvaluator, UniformRandomModel};
+pub use graph::{GraphEnv, GraphTransition};
 pub use hex::{HexPlayer, HexState, HexWorld};
 pub use kuhn_poker::{KuhnAction, KuhnAgentDynamics, KuhnObservation, KuhnWorld, KuhnWorldState};
 pub use tzf8::{Direction, Tzf8Dynamics, Tzf8State};

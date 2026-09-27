@@ -4,11 +4,14 @@ members = [
     "mcts-traits",
     "mcts-engine",
     "mcts-envs",
+    "mcts-utils",
+    "mcts-onnx",
     "environments/connect4",
     "environments/blokus",
     "environments/tzf8",
     "environments/hex",
-    "environments/sequence", "mcts-utils",
+    "environments/sequence",
+    "environments/tictactoe",
 ]
 
 [workspace.package]
@@ -22,6 +25,8 @@ mcts-traits = { path = "mcts-traits" }
 mcts-engine = { path = "mcts-engine" }
 mcts-envs = { path = "mcts-envs" }
 mcts-utils = { path = "mcts-utils" }
+mcts-onnx = { path = "mcts-onnx" }
+tictactoe = { path = "environments/tictactoe" }
 connect4 = { path = "environments/connect4" }
 blokus = { path = "environments/blokus" }
 tzf8 = { path = "environments/tzf8" }

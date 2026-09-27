@@ -53,5 +53,6 @@ pub use dynamics::{
 pub use graph::GraphEnv;
 pub use model::{
     ActionModel, BatchedModel, DefaultActionModel, Evaluation, HasPolicy, HasValue, Model,
+    TensorRepresentable, encode_batch, softmax_masked,
 };
 pub use world::{TurnBasedWorld, World};
