@@ -118,3 +118,155 @@ fn test_tabular_model_evaluate_and_serialization() {
 
     let _ = std::fs::remove_file(&temp_path);
 }
+
+#[derive(Debug, Clone, PartialEq)]
+struct MockEnv {
+    step: usize,
+}
+
+impl mcts_traits::TensorRepresentable for MockEnv {
+    const CHANNELS: usize = 1;
+    const HEIGHT: usize = 1;
+    const WIDTH: usize = 1;
+
+    fn encode_tensor(&self, out: &mut [f32]) {
+        out[0] = self.step as f32;
+    }
+}
+
+struct MockDynamics;
+
+impl mcts_traits::AgentDynamics for MockDynamics {
+    type State = MockEnv;
+    type Action = usize;
+    type Reward = [f32; 2];
+    type StepDelta = ();
+
+    fn initial(&self) -> Self::State {
+        MockEnv { step: 0 }
+    }
+
+    fn current_agent(&self, s: &Self::State) -> mcts_traits::AgentId {
+        mcts_traits::AgentId((s.step % 2) as u32)
+    }
+
+    fn actions(&self, s: &Self::State, out: &mut Vec<Self::Action>) {
+        out.clear();
+        if s.step < 2 {
+            out.push(0);
+            out.push(1);
+        }
+    }
+
+    fn step(
+        &self,
+        s: &mut Self::State,
+        _action: &Self::Action,
+    ) -> mcts_traits::StepOutcome<Self::Reward, Self::StepDelta> {
+        s.step += 1;
+        let term = s.step >= 2;
+        let rew = if term { [1.0, -1.0] } else { [0.0, 0.0] };
+        mcts_traits::StepOutcome::new(rew, term)
+    }
+}
+
+impl mcts_traits::BatchedAgentDynamics for MockDynamics {
+    fn step_batch(
+        &self,
+        states: &mut [Self::State],
+        actions: &[Self::Action],
+        outcomes: &mut Vec<mcts_traits::StepOutcome<Self::Reward, Self::StepDelta>>,
+    ) {
+        mcts_traits::default_step_batch(self, states, actions, outcomes);
+    }
+}
+
+impl crate::selfplay::SelfPlayEnv for MockEnv {
+    type Dynamics = MockDynamics;
+
+    fn dynamics(&self) -> Self::Dynamics {
+        MockDynamics
+    }
+
+    fn initial() -> Self {
+        MockEnv { step: 0 }
+    }
+
+    fn legal_actions(&self, out: &mut Vec<usize>) {
+        out.clear();
+        if self.step < 2 {
+            out.push(0);
+            out.push(1);
+        }
+    }
+
+    fn action_mask(&self, out: &mut [u8]) {
+        out.fill(0);
+        if self.step < 2 {
+            out[0] = 0b00000011;
+        }
+    }
+
+    fn apply_action(&mut self, _action: usize) {
+        self.step += 1;
+    }
+
+    fn is_terminal(&self) -> bool {
+        self.step >= 2
+    }
+
+    fn terminal_returns(&self) -> [f32; 2] {
+        [1.0, -1.0]
+    }
+
+    fn current_player_index(&self) -> usize {
+        self.step % 2
+    }
+}
+
+struct MockBatchedModel;
+
+impl mcts_traits::Model<MockEnv> for MockBatchedModel {
+    fn evaluate(&self, _s: &MockEnv) -> mcts_traits::Evaluation {
+        mcts_traits::Evaluation::vector(vec![0.5, 0.5], vec![0.0, 0.0])
+    }
+}
+
+impl mcts_traits::BatchedModel<MockEnv> for MockBatchedModel {
+    fn evaluate_batch(&self, states: &[&MockEnv]) -> Vec<mcts_traits::Evaluation> {
+        states.iter().map(|s| mcts_traits::Model::evaluate(self, s)).collect()
+    }
+}
+
+#[test]
+fn test_execute_episodes_with_multigamescheduler() {
+    let temp_dir = std::env::temp_dir().join(format!("spool_mg_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    let mut spooler = TrajectorySpooler::new(&temp_dir, 0, 100, 0, 1, 1, 1, 2, 2).unwrap();
+    let config = crate::selfplay::SelfPlayConfig {
+        spool_dir: temp_dir.clone(),
+        model_path: None,
+        num_games: 7,
+        num_sims: 5,
+        parallel_games: 3,
+        c_puct: 1.414,
+        worker_id: 0,
+        dirichlet_alpha: 0.3,
+        dirichlet_epsilon: 0.25,
+        game_id: 0,
+        action_dim: 2,
+        num_players: 2,
+        chunk_size: 100,
+    };
+
+    let model = MockBatchedModel;
+    let (completed_games, total_steps) =
+        crate::selfplay::execute_episodes(&model, &mut spooler, &config);
+
+    assert_eq!(completed_games, 7);
+    assert_eq!(total_steps, 14); // 7 games * 2 steps each
+    assert_eq!(spooler.len(), 14);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}

@@ -37,6 +37,7 @@ class SelfPlaySupervisor:
         games_per_batch: int = 50,
         sims: int = 40,
         c_puct: float = 1.414,
+        parallel_games: int = 16,
     ):
         self.binary_path = binary_path
         self.spool_dir = spool_dir
@@ -45,6 +46,7 @@ class SelfPlaySupervisor:
         self.games_per_batch = games_per_batch
         self.sims = sims
         self.c_puct = c_puct
+        self.parallel_games = parallel_games
         self.stop_event = threading.Event()
         self.worker_threads: List[threading.Thread] = []
         self._processes: Dict[int, subprocess.Popen] = {}
@@ -82,6 +84,8 @@ class SelfPlaySupervisor:
             str(self.c_puct),
             "--worker-id",
             str(worker_id),
+            "--parallel-games",
+            str(self.parallel_games),
         ]
 
         while not self.stop_event.is_set():
@@ -237,6 +241,7 @@ class ExperimentOrchestrator:
         selfplay_sims: Optional[int] = None,
         selfplay_cpuct: float = 1.414,
         selfplay_workers: int = 1,
+        selfplay_parallel_games: int = 16,
         enable_selfplay: bool = True,
         updates_per_transition: Optional[float] = None,
         updates_per_trajectory: Optional[float] = None,
@@ -277,6 +282,7 @@ class ExperimentOrchestrator:
         )
         self.selfplay_cpuct = selfplay_cpuct
         self.selfplay_workers = max(1, selfplay_workers)
+        self.selfplay_parallel_games = max(1, selfplay_parallel_games)
         self.enable_selfplay = enable_selfplay
         self.updates_per_transition = updates_per_transition
         self.updates_per_trajectory = updates_per_trajectory
@@ -317,6 +323,7 @@ class ExperimentOrchestrator:
                 games_per_batch=self.selfplay_games,
                 sims=self.selfplay_sims,
                 c_puct=self.selfplay_cpuct,
+                parallel_games=self.selfplay_parallel_games,
             )
             if self.enable_selfplay
             else None
@@ -576,6 +583,12 @@ def main():
         default=1,
         help="Number of parallel self-play worker processes to run",
     )
+    parser.add_argument(
+        "--selfplay-parallel-games",
+        type=int,
+        default=16,
+        help="Number of concurrent game trees managed in lockstep by MultiGameScheduler",
+    )
     parser.add_argument("--no-selfplay", action="store_true", help="Do not spawn self-play worker subprocess")
     parser.add_argument(
         "--updates-per-transition",
@@ -616,6 +629,7 @@ def main():
         selfplay_games=args.selfplay_games,
         selfplay_sims=args.selfplay_sims,
         selfplay_workers=args.selfplay_workers,
+        selfplay_parallel_games=args.selfplay_parallel_games,
         enable_selfplay=not args.no_selfplay,
         updates_per_transition=args.updates_per_transition,
         updates_per_trajectory=args.updates_per_trajectory,

@@ -19,6 +19,7 @@ fn main() {
         model_path: None,
         num_games: 50,
         num_sims: 50,
+        parallel_games: 16,
         c_puct: 1.414,
         worker_id: 0,
         dirichlet_alpha: 0.3,
@@ -55,6 +56,10 @@ fn main() {
             "--worker-id" => {
                 i += 1;
                 config.worker_id = args[i].parse().unwrap();
+            }
+            "--parallel-games" | "--batch-size" => {
+                i += 1;
+                config.parallel_games = args[i].parse().unwrap();
             }
             _ => {}
         }

@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod client;
+pub mod direct;
 pub mod dispatcher;
 pub mod selfplay;
 pub mod spool;
@@ -17,6 +18,7 @@ mod tests;
 
 pub use agent::AlphaZeroAgent;
 pub use client::OnnxModelClient;
+pub use direct::DirectOnnxModel;
 pub use dispatcher::{BatcherConfig, EvalRequest, EvaluationRaw, InferenceDispatcher};
 pub use ort;
 pub use selfplay::{SelfPlayConfig, SelfPlayEnv, execute_episodes, run_selfplay_session};

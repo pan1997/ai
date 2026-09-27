@@ -103,6 +103,13 @@ pub trait BatchedModel<S>: Model<S> {
     fn evaluate_batch(&self, states: &[&S]) -> Vec<Evaluation>;
 }
 
+impl<S, M: BatchedModel<S> + ?Sized> BatchedModel<S> for &M {
+    #[inline]
+    fn evaluate_batch(&self, states: &[&S]) -> Vec<Evaluation> {
+        (**self).evaluate_batch(states)
+    }
+}
+
 /// Evaluation interface for models capable of evaluating candidate action lists directly.
 ///
 /// In Information Set MCTS (ISMCTS), an interior or opponent node can expand candidate actions

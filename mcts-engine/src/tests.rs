@@ -222,6 +222,70 @@ fn test_multi_game_scheduler() {
 }
 
 #[test]
+fn test_multi_game_scheduler_comprehensive_parallel_search() {
+    // 4 concurrent games across branching graph environments
+    let mut env = GraphEnv::<1>::new(0);
+    // Tree for game 0 & game 1 (starting at state 0):
+    // 0 -> action 1 -> state 1 (reward 1.0)
+    // 0 -> action 2 -> state 2 (reward -1.0)
+    env.add_transition(0, 1, 1, [1.0], true);
+    env.add_transition(0, 2, 2, [-1.0], true);
+    env.set_actions(0, vec![1, 2]);
+
+    // Tree for game 2 & game 3 (starting at state 10):
+    // 10 -> action 1 -> state 11 (reward 0.5)
+    // 10 -> action 2 -> state 12 (reward -0.5)
+    env.add_transition(10, 1, 11, [0.5], true);
+    env.add_transition(10, 2, 12, [-0.5], true);
+    env.set_actions(10, vec![1, 2]);
+
+    let mut model = MockModel::default();
+    model.priors.insert(0, vec![0.7, 0.3]);
+    model.priors.insert(10, vec![0.4, 0.6]);
+    model.values.insert(0, vec![0.2]);
+    model.values.insert(10, vec![-0.1]);
+
+    let selection = MultiAgentPuctSelection::<1> { c_puct: 1.414 };
+    let backup = VectorBackup::<1>::default();
+
+    let mut trees: Vec<TreeStore<u32, [f32; 1], MultiAgentPuctStats<1>, ()>> = (0..4)
+        .map(|_| TreeStore::with_capacity(32, 64, MultiAgentPuctStats::<1>::new()))
+        .collect();
+
+    let roots: Vec<NodeId> = trees.iter_mut().map(|t| t.insert_root(AgentId(0))).collect();
+    let root_states = [&0, &0, &10, &10]; // Note: games 0 & 1 share state 0 (dedup test), games 2 & 3 share state 10
+
+    let scheduler = MultiGameScheduler::new(4);
+    scheduler.search(
+        &mut trees,
+        &roots,
+        &root_states,
+        &env,
+        &model,
+        &selection,
+        &backup,
+        15,
+    );
+
+    // Verify all 4 trees accumulated exactly 15 simulations across their child edges
+    for i in 0..4 {
+        let edges: Vec<_> = trees[i].child_edges(roots[i]).collect();
+        assert_eq!(edges.len(), 2);
+        let v0 = trees[i].stats.visits[edges[0].as_usize()];
+        let v1 = trees[i].stats.visits[edges[1].as_usize()];
+        assert_eq!(
+            v0 + v1,
+            15,
+            "Tree {i} did not accumulate 15 total visits: {v0} + {v1}"
+        );
+        // Prioritized action should have more visits
+        if i < 2 {
+            assert!(v0 > v1, "Game {i} should prefer action 1 (higher prior and reward)");
+        }
+    }
+}
+
+#[test]
 fn test_gumbel_puct_selection_root_vs_interior() {
     let stats = MultiAgentPuctStats::<1> {
         visits: vec![2, 2, 2],
