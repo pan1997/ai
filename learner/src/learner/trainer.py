@@ -156,7 +156,49 @@ class AlphaZeroTrainer:
         avg_tot = float(np.mean([l[0] for l in losses]))
         avg_p = float(np.mean([l[1] for l in losses]))
         avg_v = float(np.mean([l[2] for l in losses]))
-        return avg_tot, avg_p, avg_v, steps
+        return avg_tot, avg_p, avg_v, len(losses)
+
+    def train_steps(
+        self, num_steps: int, batch_size: int
+    ) -> Tuple[float, float, float, int]:
+        """Runs an explicit number of mini-batch gradient optimization steps over the replay buffer.
+
+        Returns:
+            (avg_total_loss, avg_policy_loss, avg_value_loss, steps_executed)
+        """
+        if len(self.replay_buffer) < 10 or num_steps <= 0:
+            return 0.0, 0.0, 0.0, 0
+
+        self.model.train()
+        actual_batch_size = min(batch_size, len(self.replay_buffer))
+
+        losses = []
+        for _ in range(num_steps):
+            batch = self.replay_buffer.sample_batch(actual_batch_size)
+            obs_batch = np.stack([r["obs"] for r in batch]).reshape(
+                -1, self.in_channels, self.height, self.width
+            )
+            policy_batch = np.stack([r["policy"] for r in batch])
+            value_batch = np.stack([r["value"] for r in batch])
+
+            x = torch.from_numpy(obs_batch).float().to(self.device)
+            target_p = torch.from_numpy(policy_batch).float().to(self.device)
+            target_v = torch.from_numpy(value_batch).float().to(self.device)
+
+            self.optimizer.zero_grad()
+            p_logits, v_pred = self.model(x)
+            total_loss, p_loss, v_loss = compute_alphazero_loss(
+                p_logits, v_pred, target_p, target_v
+            )
+            total_loss.backward()
+            self.optimizer.step()
+
+            losses.append((total_loss.item(), p_loss.item(), v_loss.item()))
+
+        avg_tot = float(np.mean([l[0] for l in losses]))
+        avg_p = float(np.mean([l[1] for l in losses]))
+        avg_v = float(np.mean([l[2] for l in losses]))
+        return avg_tot, avg_p, avg_v, len(losses)
 
     def train_iteration(
         self, epochs: int, batch_size: int

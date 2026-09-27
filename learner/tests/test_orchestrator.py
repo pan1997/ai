@@ -167,3 +167,81 @@ def test_experiment_orchestrator_short_run():
         assert orchestrator.iteration == 1
         assert model_path.exists()
         assert ckpt_path.exists()
+
+
+def test_updates_per_transition_orchestration():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root_dir = Path(tmpdir)
+        spool_dir = root_dir / "spool"
+        spool_dir.mkdir(parents=True)
+        model_path = root_dir / "latest.onnx"
+        ckpt_path = root_dir / "latest.pt"
+        db_path = root_dir / "mlflow.db"
+
+        import struct
+        from learner.spool_reader import HEADER_FORMAT, MAGIC
+        chunk_file = spool_dir / "traj_init.bin"
+        num_steps = 30
+        channels = 3
+        height = 3
+        width = 3
+        action_dim = 9
+        num_players = 2
+
+        obs_len = channels * height * width
+        mask_len = 4
+        stride_bytes = obs_len * 4 + mask_len + action_dim * 4 + num_players * 4 + 4 + num_players * 4
+
+        header_bytes = struct.pack(
+            HEADER_FORMAT,
+            MAGIC,
+            1,
+            0,
+            num_steps,
+            0,
+            channels,
+            height,
+            width,
+            action_dim,
+            num_players,
+            stride_bytes,
+            b"\x00" * 16,
+        )
+
+        dt = np.dtype([
+            ("obs", np.float32, (obs_len,)),
+            ("mask", np.uint8, (mask_len,)),
+            ("policy", np.float32, (action_dim,)),
+            ("value", np.float32, (num_players,)),
+            ("action", np.uint32),
+            ("reward", np.float32, (num_players,)),
+        ])
+        records = np.zeros(num_steps, dtype=dt)
+        for i in range(num_steps):
+            records[i]["policy"] = np.ones(action_dim) / action_dim
+            records[i]["value"] = np.array([1.0, -1.0])
+        with open(chunk_file, "wb") as f:
+            f.write(header_bytes)
+            f.write(records.tobytes())
+
+        # updates_per_transition = 0.5 -> 30 steps * 0.5 = 15 gradient steps!
+        orchestrator = ExperimentOrchestrator(
+            spool_dir=str(spool_dir),
+            model_path=str(model_path),
+            checkpoint_path=str(ckpt_path),
+            tracking_uri=f"sqlite:///{db_path}",
+            experiment_name="test_updates_per_transition",
+            run_name="test_rate_run",
+            min_new_steps=10,
+            batch_size=8,
+            updates_per_transition=0.5,
+            poll_interval=0.1,
+            eval_interval=0,
+            enable_selfplay=False,
+        )
+
+        orchestrator.run(max_iterations=1)
+
+        assert orchestrator.iteration == 1
+        assert orchestrator.global_step == 15  # Exactly 30 * 0.5 = 15 updates!
+

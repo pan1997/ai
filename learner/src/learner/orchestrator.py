@@ -228,6 +228,9 @@ class ExperimentOrchestrator:
         selfplay_sims: int = 40,
         selfplay_cpuct: float = 1.414,
         enable_selfplay: bool = True,
+        updates_per_transition: Optional[float] = None,
+        updates_per_trajectory: Optional[float] = None,
+        replay_ratio: Optional[float] = None,
     ):
         self.spool_dir = Path(spool_dir)
         self.model_path = Path(model_path)
@@ -259,6 +262,9 @@ class ExperimentOrchestrator:
         self.selfplay_sims = selfplay_sims
         self.selfplay_cpuct = selfplay_cpuct
         self.enable_selfplay = enable_selfplay
+        self.updates_per_transition = updates_per_transition
+        self.updates_per_trajectory = updates_per_trajectory
+        self.replay_ratio = replay_ratio
 
         self.stop_event = threading.Event()
         self.iteration = 0
@@ -335,6 +341,9 @@ class ExperimentOrchestrator:
             "selfplay_sims": self.selfplay_sims,
             "selfplay_cpuct": self.selfplay_cpuct,
             "selfplay_games_per_batch": self.selfplay_games,
+            "updates_per_transition": self.updates_per_transition,
+            "updates_per_trajectory": self.updates_per_trajectory,
+            "replay_ratio": self.replay_ratio,
         })
 
     def run(self, max_iterations: Optional[int] = None) -> None:
@@ -394,11 +403,33 @@ class ExperimentOrchestrator:
                     self.iteration += 1
                     t0 = time.time()
 
-                    # Execute training iteration
-                    tot_loss, p_loss, v_loss, steps = self.trainer.train_iteration(
-                        epochs=self.epochs_per_iter,
-                        batch_size=self.batch_size,
-                    )
+                    # Execute training updates (either per-transition/trajectory/replay-ratio or epoch-based)
+                    if self.updates_per_transition is not None:
+                        target_steps = max(1, round(pending_steps * self.updates_per_transition))
+                        tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
+                            num_steps=target_steps,
+                            batch_size=self.batch_size,
+                        )
+                    elif self.updates_per_trajectory is not None:
+                        est_trajs = max(1.0, pending_steps / 7.5)
+                        target_steps = max(1, round(est_trajs * self.updates_per_trajectory))
+                        tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
+                            num_steps=target_steps,
+                            batch_size=self.batch_size,
+                        )
+                    elif self.replay_ratio is not None:
+                        target_steps = max(
+                            1, round((pending_steps * self.replay_ratio) / self.batch_size)
+                        )
+                        tot_loss, p_loss, v_loss, steps = self.trainer.train_steps(
+                            num_steps=target_steps,
+                            batch_size=self.batch_size,
+                        )
+                    else:
+                        tot_loss, p_loss, v_loss, steps = self.trainer.train_iteration(
+                            epochs=self.epochs_per_iter,
+                            batch_size=self.batch_size,
+                        )
                     self.global_step += steps
                     elapsed = time.time() - t0
 
@@ -514,6 +545,24 @@ def main():
     parser.add_argument("--selfplay-games", type=int, default=50, help="Games per self-play batch")
     parser.add_argument("--selfplay-sims", type=int, default=40, help="MCTS simulations in self-play")
     parser.add_argument("--no-selfplay", action="store_true", help="Do not spawn self-play worker subprocess")
+    parser.add_argument(
+        "--updates-per-transition",
+        type=float,
+        default=None,
+        help="Gradient weight updates per newly ingested transition (e.g. 0.25)",
+    )
+    parser.add_argument(
+        "--updates-per-trajectory",
+        type=float,
+        default=None,
+        help="Gradient weight updates per newly completed game trajectory (e.g. 2.0)",
+    )
+    parser.add_argument(
+        "--replay-ratio",
+        type=float,
+        default=None,
+        help="Data reuse ratio: average times each transition is sampled (e.g. 8.0)",
+    )
 
     args = parser.parse_args()
 
@@ -534,6 +583,9 @@ def main():
         selfplay_games=args.selfplay_games,
         selfplay_sims=args.selfplay_sims,
         enable_selfplay=not args.no_selfplay,
+        updates_per_transition=args.updates_per_transition,
+        updates_per_trajectory=args.updates_per_trajectory,
+        replay_ratio=args.replay_ratio,
     )
 
     # Register OS signal handlers for clean interrupt handling
