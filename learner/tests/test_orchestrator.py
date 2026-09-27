@@ -245,3 +245,22 @@ def test_updates_per_transition_orchestration():
         assert orchestrator.iteration == 1
         assert orchestrator.global_step == 15  # Exactly 30 * 0.5 = 15 updates!
 
+
+def test_selfplay_supervisor_multiple_workers():
+    import sys
+    from learner.orchestrator import SelfPlaySupervisor
+
+    supervisor = SelfPlaySupervisor(
+        binary_path=sys.executable,
+        spool_dir="/tmp",
+        model_path="/tmp/model",
+        num_workers=3,
+        games_per_batch=1,
+        sims=1,
+    )
+    assert supervisor.num_workers == 3
+    supervisor.start()
+    assert len(supervisor.worker_threads) == 3
+    supervisor.stop()
+    assert len(supervisor._processes) == 0
+

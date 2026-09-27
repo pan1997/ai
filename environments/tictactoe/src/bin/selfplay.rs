@@ -167,6 +167,7 @@ fn main() {
     let mut num_games = 50;
     let mut num_sims = 50;
     let mut c_puct = 1.414;
+    let mut worker_id: u32 = 0;
 
     let mut i = 1;
     while i < args.len() {
@@ -191,6 +192,10 @@ fn main() {
                 i += 1;
                 c_puct = args[i].parse().unwrap();
             }
+            "--worker-id" => {
+                i += 1;
+                worker_id = args[i].parse().unwrap();
+            }
             _ => {}
         }
         i += 1;
@@ -198,7 +203,7 @@ fn main() {
 
     let mut spooler = TrajectorySpooler::new(
         &spool_dir,
-        0,
+        worker_id,
         50,
         0, // game_id: TicTacToe
         TicTacToeState::CHANNELS as u32,

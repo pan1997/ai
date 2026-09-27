@@ -25,13 +25,14 @@ from learner.trainer import AlphaZeroTrainer, ReplayBuffer
 
 
 class SelfPlaySupervisor:
-    """Supervises a continuous self-play background worker subprocess."""
+    """Supervises continuous self-play background worker subprocesses."""
 
     def __init__(
         self,
         binary_path: str,
         spool_dir: str,
         model_path: str,
+        num_workers: int = 1,
         games_per_batch: int = 50,
         sims: int = 40,
         c_puct: float = 1.414,
@@ -39,24 +40,33 @@ class SelfPlaySupervisor:
         self.binary_path = binary_path
         self.spool_dir = spool_dir
         self.model_path = model_path
+        self.num_workers = max(1, num_workers)
         self.games_per_batch = games_per_batch
         self.sims = sims
         self.c_puct = c_puct
         self.stop_event = threading.Event()
-        self.worker_thread: Optional[threading.Thread] = None
-        self._current_process: Optional[subprocess.Popen] = None
+        self.worker_threads: List[threading.Thread] = []
+        self._processes: Dict[int, subprocess.Popen] = {}
         self._lock = threading.Lock()
 
     def start(self) -> None:
-        """Starts the background self-play worker thread."""
+        """Starts the background self-play worker threads."""
         self.stop_event.clear()
-        self.worker_thread = threading.Thread(
-            target=self._worker_loop, name="SelfPlayWorker", daemon=True
+        self.worker_threads.clear()
+        for worker_id in range(self.num_workers):
+            t = threading.Thread(
+                target=self._worker_loop,
+                args=(worker_id,),
+                name=f"SelfPlayWorker-{worker_id}",
+                daemon=True,
+            )
+            t.start()
+            self.worker_threads.append(t)
+        print(
+            f"[SelfPlaySupervisor] Started {self.num_workers} parallel self-play worker(s) using '{self.binary_path}'"
         )
-        self.worker_thread.start()
-        print(f"[SelfPlaySupervisor] Started self-play worker using '{self.binary_path}'")
 
-    def _worker_loop(self) -> None:
+    def _worker_loop(self, worker_id: int) -> None:
         cmd = [
             self.binary_path,
             "--spool-dir",
@@ -69,6 +79,8 @@ class SelfPlaySupervisor:
             str(self.sims),
             "--c-puct",
             str(self.c_puct),
+            "--worker-id",
+            str(worker_id),
         ]
 
         while not self.stop_event.is_set():
@@ -76,41 +88,49 @@ class SelfPlaySupervisor:
                 with self._lock:
                     if self.stop_event.is_set():
                         break
-                    self._current_process = subprocess.Popen(
+                    proc = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
                     )
+                    self._processes[worker_id] = proc
 
-                # Wait for current batch to complete
-                stdout, stderr = self._current_process.communicate()
+                stdout, stderr = proc.communicate()
 
-                if self._current_process.returncode != 0 and not self.stop_event.is_set():
+                with self._lock:
+                    self._processes.pop(worker_id, None)
+
+                if proc.returncode != 0 and not self.stop_event.is_set():
                     print(
-                        f"[SelfPlaySupervisor] Worker exited with code {self._current_process.returncode}. Stderr: {stderr.strip()}"
+                        f"[SelfPlaySupervisor] Worker {worker_id} exited with code {proc.returncode}. Stderr: {stderr.strip()}"
                     )
                     time.sleep(2.0)
             except Exception as e:
                 if not self.stop_event.is_set():
-                    print(f"[SelfPlaySupervisor] Error running selfplay: {e}")
+                    print(f"[SelfPlaySupervisor] Error running worker {worker_id}: {e}")
                     time.sleep(2.0)
 
     def stop(self) -> None:
-        """Stops the worker thread and terminates any running subprocess cleanly."""
-        print("[SelfPlaySupervisor] Stopping self-play worker...")
+        """Stops all worker threads and terminates any running subprocesses cleanly."""
+        print(f"[SelfPlaySupervisor] Stopping {len(self.worker_threads)} self-play worker(s)...")
         self.stop_event.set()
         with self._lock:
-            if self._current_process and self._current_process.poll() is None:
-                self._current_process.terminate()
-                try:
-                    self._current_process.wait(timeout=3.0)
-                except subprocess.TimeoutExpired:
-                    self._current_process.kill()
+            for wid, proc in list(self._processes.items()):
+                if proc.poll() is None:
+                    proc.terminate()
+            for wid, proc in list(self._processes.items()):
+                if proc.poll() is None:
+                    try:
+                        proc.wait(timeout=3.0)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+            self._processes.clear()
 
-        if self.worker_thread:
-            self.worker_thread.join(timeout=5.0)
-        print("[SelfPlaySupervisor] Self-play worker stopped.")
+        for t in self.worker_threads:
+            t.join(timeout=5.0)
+        print("[SelfPlaySupervisor] All self-play workers stopped.")
+
 
 
 class TournamentEvaluator:
@@ -227,6 +247,7 @@ class ExperimentOrchestrator:
         selfplay_games: int = 50,
         selfplay_sims: int = 40,
         selfplay_cpuct: float = 1.414,
+        selfplay_workers: int = 1,
         enable_selfplay: bool = True,
         updates_per_transition: Optional[float] = None,
         updates_per_trajectory: Optional[float] = None,
@@ -261,6 +282,7 @@ class ExperimentOrchestrator:
         self.selfplay_games = selfplay_games
         self.selfplay_sims = selfplay_sims
         self.selfplay_cpuct = selfplay_cpuct
+        self.selfplay_workers = max(1, selfplay_workers)
         self.enable_selfplay = enable_selfplay
         self.updates_per_transition = updates_per_transition
         self.updates_per_trajectory = updates_per_trajectory
@@ -297,6 +319,7 @@ class ExperimentOrchestrator:
                 binary_path=self.selfplay_bin,
                 spool_dir=str(self.spool_dir),
                 model_path=str(self.model_path),
+                num_workers=self.selfplay_workers,
                 games_per_batch=self.selfplay_games,
                 sims=self.selfplay_sims,
                 c_puct=self.selfplay_cpuct,
@@ -341,6 +364,7 @@ class ExperimentOrchestrator:
             "selfplay_sims": self.selfplay_sims,
             "selfplay_cpuct": self.selfplay_cpuct,
             "selfplay_games_per_batch": self.selfplay_games,
+            "selfplay_workers": self.selfplay_workers,
             "updates_per_transition": self.updates_per_transition,
             "updates_per_trajectory": self.updates_per_trajectory,
             "replay_ratio": self.replay_ratio,
@@ -544,6 +568,12 @@ def main():
     parser.add_argument("--eval-games", type=int, default=20, help="Games per evaluation tournament")
     parser.add_argument("--selfplay-games", type=int, default=50, help="Games per self-play batch")
     parser.add_argument("--selfplay-sims", type=int, default=40, help="MCTS simulations in self-play")
+    parser.add_argument(
+        "--selfplay-workers",
+        type=int,
+        default=1,
+        help="Number of parallel self-play worker processes to run",
+    )
     parser.add_argument("--no-selfplay", action="store_true", help="Do not spawn self-play worker subprocess")
     parser.add_argument(
         "--updates-per-transition",
@@ -582,6 +612,7 @@ def main():
         eval_games=args.eval_games,
         selfplay_games=args.selfplay_games,
         selfplay_sims=args.selfplay_sims,
+        selfplay_workers=args.selfplay_workers,
         enable_selfplay=not args.no_selfplay,
         updates_per_transition=args.updates_per_transition,
         updates_per_trajectory=args.updates_per_trajectory,
