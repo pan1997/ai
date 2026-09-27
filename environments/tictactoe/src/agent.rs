@@ -7,7 +7,7 @@ use mcts_engine::backup::VectorBackup;
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
-use mcts_traits::{Agent, AgentId, Model, TensorRepresentable};
+use mcts_traits::{Agent, AgentId, Model};
 use rand::seq::SliceRandom;
 use std::io::{self, BufRead, Write};
 
@@ -255,60 +255,8 @@ impl<M: Model<TicTacToeState>> Agent<TicTacToeState, usize> for MctsAgent<M> {
 }
 
 /// AlphaZero agent powered by an ONNX neural network and MCTS.
-pub struct AlphaZeroAgent {
-    name: String,
-    _dispatcher: mcts_onnx::InferenceDispatcher,
-    inner: MctsAgent<mcts_onnx::OnnxModelClient<TicTacToeState>>,
-}
+pub type AlphaZeroAgent = mcts_onnx::AlphaZeroAgent<TicTacToeState, TicTacToeDynamics>;
 
-impl AlphaZeroAgent {
-    /// Loads an AlphaZero agent from an ONNX model file.
-    pub fn from_onnx_file(
-        name: impl Into<String>,
-        model_path: &str,
-        num_simulations: usize,
-        c_puct: f32,
-    ) -> Result<Self, String> {
-        let session = mcts_onnx::ort::session::Session::builder()
-            .map_err(|e| format!("Failed to create ORT session builder: {e}"))?
-            .commit_from_file(model_path)
-            .map_err(|e| format!("Failed to load ONNX model from '{model_path}': {e}"))?;
-
-        let config = mcts_onnx::BatcherConfig {
-            channels: TicTacToeState::CHANNELS,
-            height: TicTacToeState::HEIGHT,
-            width: TicTacToeState::WIDTH,
-            max_batch_size: 64,
-            max_latency: std::time::Duration::from_millis(2),
-        };
-
-        let dispatcher = mcts_onnx::InferenceDispatcher::new(session, config);
-        let client = mcts_onnx::OnnxModelClient::new(dispatcher.request_sender(), |s: &TicTacToeState| {
-            let mut legal = Vec::new();
-            s.legal_actions(&mut legal);
-            legal
-        });
-
-        let name_str = name.into();
-        let inner = MctsAgent::new(name_str.clone(), client, num_simulations, c_puct);
-
-        Ok(Self {
-            name: name_str,
-            _dispatcher: dispatcher,
-            inner,
-        })
-    }
-}
-
-impl Agent<TicTacToeState, usize> for AlphaZeroAgent {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn select_action(&mut self, state: &TicTacToeState) -> usize {
-        self.inner.select_action(state)
-    }
-}
 
 /// Parses an agent specification string into a boxed agent instance.
 ///
@@ -388,7 +336,19 @@ pub fn parse_agent_spec(spec: &str) -> Result<BoxAgent, String> {
             } else {
                 50
             };
-            let agent = AlphaZeroAgent::from_onnx_file(format!("AlphaZero({sims})"), model_path, sims, 1.414)?;
+            let agent = AlphaZeroAgent::from_onnx_file(
+                format!("AlphaZero({sims})"),
+                model_path,
+                sims,
+                1.414,
+                9,
+                TicTacToeDynamics,
+                |s: &TicTacToeState| {
+                    let mut legal = Vec::new();
+                    s.legal_actions(&mut legal);
+                    legal
+                },
+            )?;
             Ok(Box::new(agent))
         }
         _ => Err(format!("Unknown agent type '{spec}'")),

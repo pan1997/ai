@@ -1,12 +1,12 @@
-//! Asynchronous self-play trajectory worker for TicTacToe.
+//! Asynchronous self-play trajectory worker for Connect 4.
 //!
 //! Reuses the generic zero-allocation [`mcts_onnx::run_selfplay_session`] runner.
 
+use connect4::Connect4State;
 use mcts_onnx::{SelfPlayConfig, run_selfplay_session};
 use std::path::PathBuf;
-use tictactoe::TicTacToeState;
 
-fn legal_actions(s: &TicTacToeState) -> Vec<usize> {
+fn legal_actions(s: &Connect4State<6, 7>) -> Vec<usize> {
     let mut legal = Vec::new();
     s.legal_actions(&mut legal);
     legal
@@ -15,7 +15,7 @@ fn legal_actions(s: &TicTacToeState) -> Vec<usize> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut config = SelfPlayConfig {
-        spool_dir: PathBuf::from("./spool_tictactoe"),
+        spool_dir: PathBuf::from("./spool_connect4"),
         model_path: None,
         num_games: 50,
         num_sims: 50,
@@ -23,8 +23,8 @@ fn main() {
         worker_id: 0,
         dirichlet_alpha: 0.3,
         dirichlet_epsilon: 0.25,
-        game_id: 0,
-        action_dim: 9,
+        game_id: 1, // Connect 4
+        action_dim: 7, // 7 columns
         num_players: 2,
         chunk_size: 50,
     };
@@ -61,8 +61,8 @@ fn main() {
         i += 1;
     }
 
-    if let Err(err) = run_selfplay_session::<TicTacToeState>(config, legal_actions) {
-        eprintln!("[tictactoe-selfplay] Worker error: {err}");
+    if let Err(err) = run_selfplay_session::<Connect4State<6, 7>>(config, legal_actions) {
+        eprintln!("[connect4-selfplay] Worker error: {err}");
         std::process::exit(1);
     }
 }

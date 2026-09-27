@@ -20,6 +20,7 @@ import mlflow
 import numpy as np
 import torch
 
+from learner.game_config import GameConfig, get_game_config
 from learner.models.convnet import AlphaZeroConvNet
 from learner.trainer import AlphaZeroTrainer, ReplayBuffer
 
@@ -145,9 +146,13 @@ class TournamentEvaluator:
         self.binary_path = binary_path
 
     def evaluate(
-        self, model_path: str, num_sims: int = 50, games: int = 20
+        self,
+        model_path: str,
+        num_sims: int = 50,
+        games: int = 20,
+        baselines: Optional[list] = None,
     ) -> Dict[str, float]:
-        """Runs tournament matches against Tactical and Random baselines.
+        """Runs tournament matches against specified baseline agents.
 
         Returns:
             Dictionary of metrics (e.g. draw rates, win rates).
@@ -156,41 +161,23 @@ class TournamentEvaluator:
         if not Path(self.binary_path).exists():
             return metrics
 
-        # 1. Match vs Tactical
-        cmd_tactical = [
-            self.binary_path,
-            "--p1",
-            f"alphazero:{model_path}:{num_sims}",
-            "--p2",
-            "tactical",
-            "--games",
-            str(games),
-        ]
-        res_t = subprocess.run(cmd_tactical, capture_output=True, text=True)
-        if res_t.returncode == 0:
-            stats = self._parse_standings(res_t.stdout, "alphazero")
-            if stats:
-                metrics["eval/tactical_win_rate"] = stats["win_rate"]
-                metrics["eval/tactical_draw_rate"] = stats["draw_rate"]
-                metrics["eval/tactical_loss_rate"] = stats["loss_rate"]
-
-        # 2. Match vs Random
-        cmd_random = [
-            self.binary_path,
-            "--p1",
-            f"alphazero:{model_path}:{num_sims}",
-            "--p2",
-            "random",
-            "--games",
-            str(games),
-        ]
-        res_r = subprocess.run(cmd_random, capture_output=True, text=True)
-        if res_r.returncode == 0:
-            stats = self._parse_standings(res_r.stdout, "alphazero")
-            if stats:
-                metrics["eval/random_win_rate"] = stats["win_rate"]
-                metrics["eval/random_draw_rate"] = stats["draw_rate"]
-                metrics["eval/random_loss_rate"] = stats["loss_rate"]
+        for baseline in (baselines or ["tactical", "random"]):
+            cmd = [
+                self.binary_path,
+                "--p1",
+                f"alphazero:{model_path}:{num_sims}",
+                "--p2",
+                baseline,
+                "--games",
+                str(games),
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                stats = self._parse_standings(res.stdout, "alphazero")
+                if stats:
+                    metrics[f"eval/{baseline}_win_rate"] = stats["win_rate"]
+                    metrics[f"eval/{baseline}_draw_rate"] = stats["draw_rate"]
+                    metrics[f"eval/{baseline}_loss_rate"] = stats["loss_rate"]
 
         return metrics
 
@@ -220,18 +207,19 @@ class ExperimentOrchestrator:
 
     def __init__(
         self,
-        spool_dir: str = "./spool_tictactoe",
-        model_path: str = "./models/latest.onnx",
-        checkpoint_path: str = "./models/latest.pt",
+        game: str = "tictactoe",
+        spool_dir: Optional[str] = None,
+        model_path: Optional[str] = None,
+        checkpoint_path: Optional[str] = None,
         tracking_uri: str = "sqlite:///mlruns/mlflow.db",
-        experiment_name: str = "alphazero_tictactoe",
+        experiment_name: Optional[str] = None,
         run_name: Optional[str] = None,
         resume: bool = True,
-        in_channels: int = 3,
-        height: int = 3,
-        width: int = 3,
-        action_dim: int = 9,
-        num_players: int = 2,
+        in_channels: Optional[int] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
+        action_dim: Optional[int] = None,
+        num_players: Optional[int] = None,
         hidden_channels: int = 64,
         num_res_blocks: int = 2,
         learning_rate: float = 0.002,
@@ -242,10 +230,11 @@ class ExperimentOrchestrator:
         poll_interval: float = 1.5,
         eval_interval: int = 5,
         eval_games: int = 20,
-        selfplay_bin: str = "target/release/tictactoe-selfplay",
-        tournament_bin: str = "target/release/tictactoe-tournament",
+        eval_baselines: Optional[list] = None,
+        selfplay_bin: Optional[str] = None,
+        tournament_bin: Optional[str] = None,
         selfplay_games: int = 50,
-        selfplay_sims: int = 40,
+        selfplay_sims: Optional[int] = None,
         selfplay_cpuct: float = 1.414,
         selfplay_workers: int = 1,
         enable_selfplay: bool = True,
@@ -253,19 +242,21 @@ class ExperimentOrchestrator:
         updates_per_trajectory: Optional[float] = None,
         replay_ratio: Optional[float] = None,
     ):
-        self.spool_dir = Path(spool_dir)
-        self.model_path = Path(model_path)
-        self.checkpoint_path = Path(checkpoint_path)
+        self.game_cfg = get_game_config(game)
+        self.game = self.game_cfg.name
+        self.spool_dir = Path(spool_dir or f"./spool_{self.game}")
+        self.model_path = Path(model_path or f"./models/{self.game}_latest.onnx")
+        self.checkpoint_path = Path(checkpoint_path or f"./models/{self.game}_latest.pt")
         self.tracking_uri = tracking_uri
-        self.experiment_name = experiment_name
+        self.experiment_name = experiment_name or f"alphazero_{self.game}"
         self.run_name = run_name or f"run_{int(time.time())}"
         self.resume = resume
 
-        self.in_channels = in_channels
-        self.height = height
-        self.width = width
-        self.action_dim = action_dim
-        self.num_players = num_players
+        self.in_channels = in_channels if in_channels is not None else self.game_cfg.in_channels
+        self.height = height if height is not None else self.game_cfg.height
+        self.width = width if width is not None else self.game_cfg.width
+        self.action_dim = action_dim if action_dim is not None else self.game_cfg.action_dim
+        self.num_players = num_players if num_players is not None else self.game_cfg.num_players
         self.hidden_channels = hidden_channels
         self.num_res_blocks = num_res_blocks
         self.learning_rate = learning_rate
@@ -276,11 +267,14 @@ class ExperimentOrchestrator:
         self.poll_interval = poll_interval
         self.eval_interval = eval_interval
         self.eval_games = eval_games
+        self.eval_baselines = eval_baselines or list(self.game_cfg.eval_baselines)
 
-        self.selfplay_bin = selfplay_bin
-        self.tournament_bin = tournament_bin
+        self.selfplay_bin = selfplay_bin or self.game_cfg.selfplay_bin
+        self.tournament_bin = tournament_bin or self.game_cfg.tournament_bin
         self.selfplay_games = selfplay_games
-        self.selfplay_sims = selfplay_sims
+        self.selfplay_sims = (
+            selfplay_sims if selfplay_sims is not None else self.game_cfg.default_selfplay_sims
+        )
         self.selfplay_cpuct = selfplay_cpuct
         self.selfplay_workers = max(1, selfplay_workers)
         self.enable_selfplay = enable_selfplay
@@ -295,23 +289,23 @@ class ExperimentOrchestrator:
 
         # Build model and trainer
         self.model = AlphaZeroConvNet(
-            in_channels=in_channels,
-            height=height,
-            width=width,
-            action_dim=action_dim,
-            num_players=num_players,
-            hidden_channels=hidden_channels,
-            num_res_blocks=num_res_blocks,
+            in_channels=self.in_channels,
+            height=self.height,
+            width=self.width,
+            action_dim=self.action_dim,
+            num_players=self.num_players,
+            hidden_channels=self.hidden_channels,
+            num_res_blocks=self.num_res_blocks,
         )
         self.replay_buffer = ReplayBuffer(max_capacity=100_000)
         self.trainer = AlphaZeroTrainer(
             model=self.model,
             replay_buffer=self.replay_buffer,
-            learning_rate=learning_rate,
-            weight_decay=weight_decay,
-            in_channels=in_channels,
-            height=height,
-            width=width,
+            learning_rate=self.learning_rate,
+            weight_decay=self.weight_decay,
+            in_channels=self.in_channels,
+            height=self.height,
+            width=self.width,
         )
 
         self.selfplay_supervisor = (
@@ -350,6 +344,7 @@ class ExperimentOrchestrator:
 
         # Log hyperparameters
         mlflow.log_params({
+            "game": self.game,
             "in_channels": self.in_channels,
             "board_size": f"{self.height}x{self.width}",
             "action_dim": self.action_dim,
@@ -495,17 +490,17 @@ class ExperimentOrchestrator:
                             model_path=str(self.model_path),
                             num_sims=self.selfplay_sims,
                             games=self.eval_games,
+                            baselines=self.eval_baselines,
                         )
                         if eval_metrics:
                             mlflow.log_metrics(eval_metrics, step=self.global_step)
-                            tac_w = eval_metrics.get("eval/tactical_win_rate", 0.0) * 100
-                            tac_d = eval_metrics.get("eval/tactical_draw_rate", 0.0) * 100
-                            tac_l = eval_metrics.get("eval/tactical_loss_rate", 0.0) * 100
-                            rnd_w = eval_metrics.get("eval/random_win_rate", 0.0) * 100
-                            print(
-                                f"  --> Eval Standings: vs Tactical: {tac_w:.0f}% W / {tac_d:.0f}% D / {tac_l:.0f}% L | "
-                                f"vs Random: {rnd_w:.0f}% W"
-                            )
+                            summary_parts = []
+                            for b in self.eval_baselines:
+                                w = eval_metrics.get(f"eval/{b}_win_rate", 0.0) * 100
+                                d = eval_metrics.get(f"eval/{b}_draw_rate", 0.0) * 100
+                                l = eval_metrics.get(f"eval/{b}_loss_rate", 0.0) * 100
+                                summary_parts.append(f"vs {b.capitalize()}: {w:.0f}% W / {d:.0f}% D / {l:.0f}% L")
+                            print(f"  --> Eval Standings: {' | '.join(summary_parts)}")
 
                 else:
                     time.sleep(self.poll_interval)
@@ -552,11 +547,18 @@ def main():
     parser = argparse.ArgumentParser(
         description="Continuous AlphaZero Actor-Learner Experiment Orchestrator with MLflow tracking"
     )
-    parser.add_argument("--spool-dir", type=str, default="./spool_tictactoe")
-    parser.add_argument("--model-path", type=str, default="./models/latest.onnx")
-    parser.add_argument("--checkpoint-path", type=str, default="./models/latest.pt")
+    parser.add_argument(
+        "--game",
+        type=str,
+        default="tictactoe",
+        choices=["tictactoe", "connect4"],
+        help="Target game environment (default: tictactoe)",
+    )
+    parser.add_argument("--spool-dir", type=str, default=None, help="Directory holding binary trajectory chunks")
+    parser.add_argument("--model-path", type=str, default=None, help="Output ONNX model path")
+    parser.add_argument("--checkpoint-path", type=str, default=None, help="PyTorch checkpoint path")
     parser.add_argument("--tracking-uri", type=str, default="sqlite:///mlruns/mlflow.db")
-    parser.add_argument("--experiment-name", type=str, default="alphazero_tictactoe")
+    parser.add_argument("--experiment-name", type=str, default=None)
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--no-resume", action="store_true", help="Start fresh run instead of resuming")
     parser.add_argument("--max-iterations", type=int, default=None, help="Stop after N training iterations")
@@ -567,7 +569,7 @@ def main():
     parser.add_argument("--eval-interval", type=int, default=5, help="Tournament evaluation interval")
     parser.add_argument("--eval-games", type=int, default=20, help="Games per evaluation tournament")
     parser.add_argument("--selfplay-games", type=int, default=50, help="Games per self-play batch")
-    parser.add_argument("--selfplay-sims", type=int, default=40, help="MCTS simulations in self-play")
+    parser.add_argument("--selfplay-sims", type=int, default=None, help="MCTS simulations in self-play")
     parser.add_argument(
         "--selfplay-workers",
         type=int,
@@ -597,6 +599,7 @@ def main():
     args = parser.parse_args()
 
     orchestrator = ExperimentOrchestrator(
+        game=args.game,
         spool_dir=args.spool_dir,
         model_path=args.model_path,
         checkpoint_path=args.checkpoint_path,

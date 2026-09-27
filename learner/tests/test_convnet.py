@@ -101,3 +101,38 @@ def test_onnx_export_and_runtime_inference():
         policy_out, value_out = outputs[0], outputs[1]
         assert policy_out.shape == (2, action_dim)
         assert value_out.shape == (2, num_players)
+
+
+def test_alphazero_convnet_connect4_dimensions():
+    in_channels = 3
+    height = 6
+    width = 7
+    action_dim = 7
+    num_players = 2
+
+    model = AlphaZeroConvNet(
+        in_channels=in_channels,
+        height=height,
+        width=width,
+        action_dim=action_dim,
+        num_players=num_players,
+        hidden_channels=32,
+        num_res_blocks=2,
+    )
+
+    x = torch.randn(4, in_channels, height, width)
+    p_logits, v_pred = model(x)
+    assert p_logits.shape == (4, action_dim)
+    assert v_pred.shape == (4, num_players)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        onnx_path = Path(tmpdir) / "c4_model.onnx"
+        export_alphazero_onnx(model, onnx_path, (in_channels, height, width))
+        assert onnx_path.exists()
+
+        session = ort.InferenceSession(str(onnx_path))
+        dummy = np.random.randn(3, in_channels, height, width).astype(np.float32)
+        outs = session.run(None, {"state": dummy})
+        assert outs[0].shape == (3, 7)
+        assert outs[1].shape == (3, 2)
+

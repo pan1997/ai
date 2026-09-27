@@ -513,3 +513,44 @@ fn test_adversarial_mcts_blocks_horizontal_threat() {
         "Adversarial MCTS must recognize minimax threat and block at column 0"
     );
 }
+
+#[test]
+fn test_tensor_encoding_and_action_mask() {
+    use mcts_traits::TensorRepresentable;
+
+    let mut state = Connect4State::<6, 7>::new();
+    assert_eq!(Connect4State::<6, 7>::CHANNELS, 3);
+    assert_eq!(Connect4State::<6, 7>::HEIGHT, 6);
+    assert_eq!(Connect4State::<6, 7>::WIDTH, 7);
+
+    // Initial state: Red to move
+    let mut tensor = vec![0.0f32; 3 * 6 * 7];
+    state.encode_tensor(&mut tensor);
+
+    // Channel 0 (Red) and Channel 1 (Yellow) are empty
+    for i in 0..(2 * 6 * 7) {
+        assert_eq!(tensor[i], 0.0);
+    }
+    // Channel 2 (Turn) should be 1.0 (Red's turn)
+    for i in (2 * 6 * 7)..(3 * 6 * 7) {
+        assert_eq!(tensor[i], 1.0);
+    }
+
+    // Action mask: all 7 columns legal
+    let mut mask = vec![0u8; 4];
+    state.action_mask(&mut mask);
+    assert_eq!(mask[0], 0b0111_1111); // 7 columns legal
+
+    // Red plays col 3
+    let (row, win) = state.apply_action(3);
+    assert_eq!(row, 5); // bottom row
+    assert!(!win);
+    assert_eq!(state.current_player, Player::Yellow);
+
+    state.encode_tensor(&mut tensor);
+    // Red piece at (5, 3) in Channel 0: row 5, col 3 -> index 5 * 7 + 3 = 38
+    assert_eq!(tensor[38], 1.0);
+    // Channel 2 should now be 0.0 (Yellow's turn)
+    assert_eq!(tensor[2 * 42 + 38], 0.0);
+}
+

@@ -206,3 +206,44 @@ impl mcts_traits::TensorRepresentable for TicTacToeState {
     }
 }
 
+impl mcts_onnx::SelfPlayEnv for TicTacToeState {
+    type Dynamics = crate::dynamics::TicTacToeDynamics;
+
+    fn dynamics(&self) -> Self::Dynamics {
+        crate::dynamics::TicTacToeDynamics
+    }
+
+    fn initial() -> Self {
+        Self::new()
+    }
+
+    fn legal_actions(&self, out: &mut Vec<usize>) {
+        self.legal_actions(out);
+    }
+
+    fn action_mask(&self, out: &mut [u8]) {
+        self.action_mask(out);
+    }
+
+    fn apply_action(&mut self, action: usize) {
+        self.apply_action(action);
+    }
+
+    fn is_terminal(&self) -> bool {
+        self.is_terminal()
+    }
+
+    fn terminal_returns(&self) -> [f32; 2] {
+        match self.check_winner() {
+            Some(Player::X) => [1.0, -1.0],
+            Some(Player::O) => [-1.0, 1.0],
+            None => [0.0, 0.0],
+        }
+    }
+
+    fn current_player_index(&self) -> usize {
+        self.current_player.index()
+    }
+}
+
+

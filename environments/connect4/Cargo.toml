@@ -9,6 +9,7 @@ description = "High-performance Connect 4 game engine, MCTS agents, and interact
 [dependencies]
 mcts-traits = { workspace = true }
 mcts-engine = { workspace = true }
+mcts-onnx = { workspace = true }
 rand = { workspace = true }
 
 [[bin]]
@@ -18,3 +19,8 @@ path = "src/bin/play.rs"
 [[bin]]
 name = "connect4-tournament"
 path = "src/bin/tournament.rs"
+
+[[bin]]
+name = "connect4-selfplay"
+path = "src/bin/selfplay.rs"
+

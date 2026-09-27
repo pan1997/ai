@@ -258,9 +258,60 @@ def test_selfplay_supervisor_multiple_workers():
         games_per_batch=1,
         sims=1,
     )
-    assert supervisor.num_workers == 3
     supervisor.start()
     assert len(supervisor.worker_threads) == 3
     supervisor.stop()
     assert len(supervisor._processes) == 0
+
+
+def test_game_config_registry():
+    from learner.game_config import get_game_config, GAME_REGISTRY
+
+    ttt = get_game_config("tictactoe")
+    assert ttt.name == "tictactoe"
+    assert ttt.height == 3 and ttt.width == 3 and ttt.action_dim == 9
+
+    c4 = get_game_config("connect4")
+    assert c4.name == "connect4"
+    assert c4.height == 6 and c4.width == 7 and c4.action_dim == 7
+
+    with pytest.raises(ValueError, match="Unknown game"):
+        get_game_config("nonexistent_game")
+
+
+def test_orchestrator_connect4_initialization():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root_dir = Path(tmpdir)
+        orchestrator = ExperimentOrchestrator(
+            game="connect4",
+            spool_dir=str(root_dir / "spool"),
+            model_path=str(root_dir / "latest.onnx"),
+            checkpoint_path=str(root_dir / "latest.pt"),
+            tracking_uri=f"sqlite:///{root_dir / 'mlflow.db'}",
+            enable_selfplay=False,
+        )
+        assert orchestrator.game == "connect4"
+        assert orchestrator.height == 6
+        assert orchestrator.width == 7
+        assert orchestrator.action_dim == 7
+        assert orchestrator.model.policy_fcs[0].out_features == 7
+
+
+def test_ingest_corrupted_or_empty_spool_chunk():
+    from learner.trainer import ingest_spool_chunks
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        spool_dir = Path(tmpdir)
+        buffer = ReplayBuffer(max_capacity=50)
+
+        # 0-byte file
+        (spool_dir / "traj_empty.bin").write_bytes(b"")
+        # Incomplete header (< 64 bytes)
+        (spool_dir / "traj_partial.bin").write_bytes(b"MCTS" + b"\x00" * 10)
+
+        # Ingestion should ignore/skip corrupt files without raising uncaught exceptions
+        ingested = ingest_spool_chunks(spool_dir, buffer)
+        assert ingested == 0
+        assert len(buffer) == 0
+
 

@@ -199,6 +199,49 @@ impl<const R: usize, const C: usize> Connect4State<R, C> {
         }
         false
     }
+
+    /// Populates `out` with the bitpacked action mask for legal actions.
+    #[inline]
+    pub fn action_mask(&self, out: &mut [u8]) {
+        out.fill(0);
+        let mut legal = Vec::with_capacity(C);
+        self.legal_actions(&mut legal);
+        for a in legal {
+            if a / 8 < out.len() {
+                out[a / 8] |= 1 << (a % 8);
+            }
+        }
+    }
+
+    /// Drops a checker for `self.current_player` into `col` and alternates `self.current_player`.
+    ///
+    /// Returns the row index where the checker landed, and whether the move resulted in a win.
+    #[inline]
+    pub fn apply_action(&mut self, col: usize) -> (usize, bool) {
+        let current = self.current_player;
+        let row = self.drop_piece(col).expect("Connect4: illegal action");
+        let is_win = self.check_win_at(row, col, current);
+        self.current_player = current.other();
+        (row, is_win)
+    }
+
+    /// Returns `true` if the state is terminal (board is full or either player has won).
+    #[inline]
+    pub fn is_terminal(&self) -> bool {
+        self.is_board_full() || self.has_won(Player::Red) || self.has_won(Player::Yellow)
+    }
+
+    /// Returns the winning player if one exists.
+    #[inline]
+    pub fn check_winner(&self) -> Option<Player> {
+        if self.has_won(Player::Red) {
+            Some(Player::Red)
+        } else if self.has_won(Player::Yellow) {
+            Some(Player::Yellow)
+        } else {
+            None
+        }
+    }
 }
 
 impl<const R: usize, const C: usize> Default for Connect4State<R, C> {
@@ -208,13 +251,14 @@ impl<const R: usize, const C: usize> Default for Connect4State<R, C> {
 }
 
 impl<const R: usize, const C: usize> mcts_traits::TensorRepresentable for Connect4State<R, C> {
-    const CHANNELS: usize = 2;
+    const CHANNELS: usize = 3;
     const HEIGHT: usize = R;
     const WIDTH: usize = C;
 
-    /// Encodes the $R \times C$ board into a perspective-normalized 2-channel float tensor:
-    /// - Channel 0: Current player's checkers (1.0 if present, else 0.0).
-    /// - Channel 1: Opponent player's checkers (1.0 if present, else 0.0).
+    /// Encodes the $R \times C$ board into an absolute fixed-seat 3-channel float tensor:
+    /// - Channel 0: Player Red checkers (1.0 if present, else 0.0).
+    /// - Channel 1: Player Yellow checkers (1.0 if present, else 0.0).
+    /// - Channel 2: Turn indicator (1.0 if Red to move, else 0.0).
     #[inline]
     fn encode_tensor(&self, out: &mut [f32]) {
         assert_eq!(
@@ -225,20 +269,62 @@ impl<const R: usize, const C: usize> mcts_traits::TensorRepresentable for Connec
         );
         out.fill(0.0);
 
-        let me = self.current_player;
-        let opp = me.other();
         let plane_size = R * C;
+        let turn_val = if self.current_player == Player::Red { 1.0 } else { 0.0 };
 
         for r in 0..R {
             for c in 0..C {
                 let idx = r * C + c;
-                if self.board[r][c] == Some(me) {
+                if self.board[r][c] == Some(Player::Red) {
                     out[idx] = 1.0;
-                } else if self.board[r][c] == Some(opp) {
+                } else if self.board[r][c] == Some(Player::Yellow) {
                     out[plane_size + idx] = 1.0;
                 }
+                out[2 * plane_size + idx] = turn_val;
             }
         }
     }
 }
+
+impl<const R: usize, const C: usize> mcts_onnx::SelfPlayEnv for Connect4State<R, C> {
+    type Dynamics = mcts_traits::TurnBasedDynamics<crate::Connect4World<R, C>>;
+
+    fn dynamics(&self) -> Self::Dynamics {
+        mcts_traits::TurnBasedDynamics::new(crate::Connect4World::<R, C>::new())
+    }
+
+    fn initial() -> Self {
+        Self::new()
+    }
+
+    fn legal_actions(&self, out: &mut Vec<usize>) {
+        self.legal_actions(out);
+    }
+
+    fn action_mask(&self, out: &mut [u8]) {
+        self.action_mask(out);
+    }
+
+    fn apply_action(&mut self, action: usize) {
+        self.apply_action(action);
+    }
+
+    fn is_terminal(&self) -> bool {
+        self.is_terminal()
+    }
+
+    fn terminal_returns(&self) -> [f32; 2] {
+        match self.check_winner() {
+            Some(Player::Red) => [1.0, -1.0],
+            Some(Player::Yellow) => [-1.0, 1.0],
+            None => [0.0, 0.0],
+        }
+    }
+
+    fn current_player_index(&self) -> usize {
+        self.current_player.index()
+    }
+}
+
+
 

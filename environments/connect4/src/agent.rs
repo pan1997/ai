@@ -512,10 +512,17 @@ pub enum Connect4AgentSpec {
         /// Number of leaf rollouts (0 for uniform prior evaluation).
         rollouts: usize,
     },
+    /// AlphaZero MCTS agent evaluating leaf states using an ONNX neural network model.
+    AlphaZero {
+        /// Path to the ONNX model file.
+        model_path: String,
+        /// Number of MCTS simulation sweeps per decision.
+        sims: usize,
+    },
 }
 
 impl Connect4AgentSpec {
-    /// Parses an agent specification string (e.g. `mcts:200:3`, `macro-tactical:100`, `tactical`, `random`).
+    /// Parses an agent specification string (e.g. `mcts:200:3`, `macro-tactical:100`, `tactical`, `random`, `alphazero:./model.onnx:50`).
     pub fn parse(s: &str, default_iters: usize, default_rollouts: usize) -> Result<Self, String> {
         let parts: Vec<&str> = s.split(':').collect();
         let parse_iters = |idx: usize| -> Result<usize, String> {
@@ -543,6 +550,18 @@ impl Connect4AgentSpec {
         match parts[0].trim().to_lowercase().as_str() {
             "random" | "rand" => Ok(Self::Random),
             "tactical" | "heur" | "heuristic" => Ok(Self::Tactical),
+            "alphazero" => {
+                if parts.len() < 2 {
+                    return Err(format!("Invalid AlphaZero spec '{s}'. Expected 'alphazero:<model_path>[:sims]'"));
+                }
+                let model_path = parts[1].trim().to_string();
+                let sims = if parts.len() >= 3 {
+                    parts[2].trim().parse::<usize>().map_err(|e| format!("Invalid simulations count in '{s}': {e}"))?
+                } else {
+                    default_iters
+                };
+                Ok(Self::AlphaZero { model_path, sims })
+            }
             "mcts" | "mcts-sequential" | "sequential" | "adversarial" | "round-adversarial"
             | "round-adv" | "round" => {
                 let iters = parse_iters(1)?;
@@ -567,7 +586,7 @@ impl Connect4AgentSpec {
                 Ok(Self::MacroRandom { iters, rollouts })
             }
             other => Err(format!(
-                "Unknown agent type '{other}'. Supported: mcts[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]], tactical, random"
+                "Unknown agent type '{other}'. Supported: mcts[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]], alphazero:<path>[:sims], tactical, random"
             )),
         }
     }
@@ -577,6 +596,7 @@ impl Connect4AgentSpec {
         match self {
             Self::Random => "Random".to_string(),
             Self::Tactical => "Tactical".to_string(),
+            Self::AlphaZero { sims, .. } => format!("AlphaZero({sims})"),
             Self::Mcts { iters, rollouts } => {
                 let eval = if *rollouts == 0 { "uniform" } else { "rollout" };
                 format!("MCTS({iters},{eval})")
@@ -602,6 +622,22 @@ impl Connect4AgentSpec {
         match self {
             Self::Random => Box::new(RandomAgent::new(name)),
             Self::Tactical => Box::new(TacticalAgent::new(name)),
+            Self::AlphaZero { model_path, sims } => {
+                let agent = mcts_onnx::AlphaZeroAgent::<Connect4State<R, C>, TurnBasedDynamics<Connect4World<R, C>>>::from_onnx_file(
+                    name,
+                    model_path,
+                    *sims,
+                    c_puct,
+                    C,
+                    TurnBasedDynamics::new(Connect4World::<R, C>::new()),
+                    |st: &Connect4State<R, C>| {
+                        let mut legal = Vec::new();
+                        st.legal_actions(&mut legal);
+                        legal
+                    },
+                ).expect("Failed to initialize AlphaZero agent from ONNX model file");
+                Box::new(agent)
+            }
             Self::Mcts { iters, rollouts } => {
                 if *rollouts == 0 {
                     Box::new(MctsAgent::new_adversarial(
