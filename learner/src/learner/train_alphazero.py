@@ -14,7 +14,7 @@ def train_iteration(
     spool_dir: Path | str,
     onnx_out_path: Path | str,
     replay_buffer: ReplayBuffer,
-    in_channels: int = 2,
+    in_channels: int = 3,
     height: int = 3,
     width: int = 3,
     action_dim: int = 9,
@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--spool-dir", type=str, default="./spool_tictactoe")
     parser.add_argument("--model-path", type=str, default="./models/latest.onnx")
     parser.add_argument("--checkpoint-path", type=str, default="./models/latest.pt")
-    parser.add_argument("--channels", type=int, default=2)
+    parser.add_argument("--channels", type=int, default=3)
     parser.add_argument("--height", type=int, default=3)
     parser.add_argument("--width", type=int, default=3)
     parser.add_argument("--action-dim", type=int, default=9)

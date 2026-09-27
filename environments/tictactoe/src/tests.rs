@@ -144,3 +144,44 @@ fn test_mcts_agent_rollout_defeats_random() {
     // MCTS playing X should win the vast majority against purely random play
     assert!(mcts_wins >= 8, "MCTS won only {mcts_wins}/{games} games");
 }
+
+#[test]
+fn test_tensor_encoding_channels_and_perspective() {
+    use mcts_traits::TensorRepresentable;
+
+    let mut state = TicTacToeState::new();
+    let mut buf = vec![0.0f32; TicTacToeState::CHANNELS * TicTacToeState::HEIGHT * TicTacToeState::WIDTH];
+    assert_eq!(buf.len(), 27);
+
+    // Initial state: turn X, empty board
+    state.encode_tensor(&mut buf);
+    // Channel 0 (X pieces): all 0
+    assert!(buf[0..9].iter().all(|&v| v == 0.0));
+    // Channel 1 (O pieces): all 0
+    assert!(buf[9..18].iter().all(|&v| v == 0.0));
+    // Channel 2 (turn): all 1.0 because it's X's turn
+    assert!(buf[18..27].iter().all(|&v| v == 1.0));
+
+    // X plays cell 4 (center)
+    state.apply_action(4);
+    assert_eq!(state.current_player, Player::O);
+    state.encode_tensor(&mut buf);
+    // Channel 0 (X pieces): cell 4 is 1.0, others 0
+    assert_eq!(buf[4], 1.0);
+    assert_eq!(buf[0..9].iter().sum::<f32>(), 1.0);
+    // Channel 1 (O pieces): all 0
+    assert!(buf[9..18].iter().all(|&v| v == 0.0));
+    // Channel 2 (turn): all 0.0 because it's O's turn
+    assert!(buf[18..27].iter().all(|&v| v == 0.0));
+
+    // O plays cell 0 (corner)
+    state.apply_action(0);
+    assert_eq!(state.current_player, Player::X);
+    state.encode_tensor(&mut buf);
+    // Channel 0 (X pieces): cell 4 is 1.0
+    assert_eq!(buf[4], 1.0);
+    // Channel 1 (O pieces): cell 0 is 1.0
+    assert_eq!(buf[9 + 0], 1.0);
+    // Channel 2 (turn): all 1.0 because it's X's turn
+    assert!(buf[18..27].iter().all(|&v| v == 1.0));
+}

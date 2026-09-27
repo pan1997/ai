@@ -173,31 +173,35 @@ impl TicTacToeState {
 }
 
 impl mcts_traits::TensorRepresentable for TicTacToeState {
-    const CHANNELS: usize = 2;
+    const CHANNELS: usize = 3;
     const HEIGHT: usize = 3;
     const WIDTH: usize = 3;
 
-    /// Encodes the 3x3 board into a perspective-normalized 2-channel float tensor:
-    /// - Channel 0: Current player's pieces (1.0 if present, else 0.0).
-    /// - Channel 1: Opponent's pieces (1.0 if present, else 0.0).
+    /// Encodes the 3x3 board into a fixed-seat 3-channel float tensor:
+    /// - Channel 0: Player X's pieces (1.0 if present, else 0.0).
+    /// - Channel 1: Player O's pieces (1.0 if present, else 0.0).
+    /// - Channel 2: Turn indicator (1.0 if Player X's turn, 0.0 if Player O's turn).
     #[inline]
     fn encode_tensor(&self, out: &mut [f32]) {
         assert_eq!(
             out.len(),
             Self::CHANNELS * Self::HEIGHT * Self::WIDTH,
-            "TicTacToeState::encode_tensor: output slice must be exactly 18 elements"
+            "TicTacToeState::encode_tensor: output slice must be exactly 27 elements"
         );
         out.fill(0.0);
 
-        let me = self.current_player;
-        let opp = me.other();
-
         for i in 0..9 {
-            if self.board[i] == Some(me) {
+            if self.board[i] == Some(Player::X) {
                 out[i] = 1.0;
-            } else if self.board[i] == Some(opp) {
+            } else if self.board[i] == Some(Player::O) {
                 out[9 + i] = 1.0;
             }
+        }
+
+        if self.current_player == Player::X {
+            out[18..27].fill(1.0);
+        } else {
+            out[18..27].fill(0.0);
         }
     }
 }

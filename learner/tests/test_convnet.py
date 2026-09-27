@@ -10,7 +10,7 @@ from learner.trainer import compute_alphazero_loss
 
 def test_alphazero_convnet_shapes_and_gradient():
     batch_size = 4
-    in_channels = 2
+    in_channels = 3
     height = 3
     width = 3
     action_dim = 9
@@ -27,12 +27,26 @@ def test_alphazero_convnet_shapes_and_gradient():
     )
 
     x = torch.randn(batch_size, in_channels, height, width)
+    # Channel 2 is turn indicator (1.0 for P0, 0.0 for P1)
+    x[:2, 2, :, :] = 1.0
+    x[2:, 2, :, :] = 0.0
+
     policy_logits, values = model(x)
 
     assert policy_logits.shape == (batch_size, action_dim)
     assert values.shape == (batch_size, num_players)
     # Tanh bounds
     assert torch.all(values >= -1.0) and torch.all(values <= 1.0)
+
+    # Test all-heads forward inspection
+    all_policies, all_values = model.forward_all_heads(x)
+    assert all_policies.shape == (batch_size, num_players, action_dim)
+    assert all_values.shape == (batch_size, num_players)
+
+    # When channel 2 is 1.0 (P0), policy_logits matches P0 head
+    torch.testing.assert_close(policy_logits[:2], all_policies[:2, 0])
+    # When channel 2 is 0.0 (P1), policy_logits matches P1 head
+    torch.testing.assert_close(policy_logits[2:], all_policies[2:, 1])
 
     # Test loss backprop
     target_policy = torch.softmax(torch.randn(batch_size, action_dim), dim=-1)
@@ -47,7 +61,7 @@ def test_alphazero_convnet_shapes_and_gradient():
 
 
 def test_onnx_export_and_runtime_inference():
-    in_channels = 2
+    in_channels = 3
     height = 3
     width = 3
     action_dim = 9

@@ -56,52 +56,111 @@ class AlphaZeroConvNet(nn.Module):
         # Residual backbone
         self.res_blocks = nn.ModuleList([ResidualBlock(hidden_channels) for _ in range(num_res_blocks)])
 
-        # Policy Head (Outputs raw action logits)
-        self.policy_conv = nn.Sequential(
-            nn.Conv2d(hidden_channels, 2, kernel_size=1, bias=False),
-            nn.BatchNorm2d(2),
-            nn.ReLU(inplace=True),
-        )
-        self.policy_fc = nn.Linear(2 * height * width, action_dim)
+        # Dedicated Policy Heads (One per player)
+        self.policy_convs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(hidden_channels, 2, kernel_size=1, bias=False),
+                nn.BatchNorm2d(2),
+                nn.ReLU(inplace=True),
+            )
+            for _ in range(num_players)
+        ])
+        self.policy_fcs = nn.ModuleList([
+            nn.Linear(2 * height * width, action_dim)
+            for _ in range(num_players)
+        ])
 
-        # Value Head (Outputs tanh value estimates in [-1, +1])
-        self.value_conv = nn.Sequential(
-            nn.Conv2d(hidden_channels, 1, kernel_size=1, bias=False),
-            nn.BatchNorm2d(1),
-            nn.ReLU(inplace=True),
-        )
-        self.value_fc = nn.Sequential(
-            nn.Linear(1 * height * width, 64),
-            nn.ReLU(inplace=True),
-            nn.Linear(64, num_players),
-            nn.Tanh(),
-        )
+        # Dedicated Value Heads (One per player, each outputting scalar in [-1, +1])
+        self.value_convs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(hidden_channels, 1, kernel_size=1, bias=False),
+                nn.BatchNorm2d(1),
+                nn.ReLU(inplace=True),
+            )
+            for _ in range(num_players)
+        ])
+        self.value_fcs = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(1 * height * width, 64),
+                nn.ReLU(inplace=True),
+                nn.Linear(64, 1),
+                nn.Tanh(),
+            )
+            for _ in range(num_players)
+        ])
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass computing policy logits and value estimates.
+        """Forward pass computing active policy logits and multi-agent value estimates.
 
         Args:
             x: Input observation tensor of shape `(batch_size, in_channels, height, width)`.
 
         Returns:
-            policy_logits: `(batch_size, action_dim)`
+            policy_logits: `(batch_size, action_dim)` for active player.
+            values: `(batch_size, num_players)` where index `p` is the expected return for player `p`.
+        """
+        out = self.stem(x)
+        for block in self.res_blocks:
+            out = block(out)
+
+        # 1. Multi-Agent Value Vector: evaluated by each player's dedicated value head
+        v_list = []
+        for i in range(self.num_players):
+            v = self.value_convs[i](out)
+            v = torch.flatten(v, start_dim=1)
+            v = self.value_fcs[i](v)
+            v_list.append(v)
+        values = torch.cat(v_list, dim=-1)
+
+        # 2. Player Policy Heads
+        p_list = []
+        for i in range(self.num_players):
+            p = self.policy_convs[i](out)
+            p = torch.flatten(p, start_dim=1)
+            p = self.policy_fcs[i](p)
+            p_list.append(p)
+
+        if self.num_players == 1:
+            policy_logits = p_list[0]
+        elif self.in_channels > self.num_players and self.num_players == 2:
+            # Active player turn indicator at channel index self.num_players (e.g. channel 2)
+            # 1.0 = Player 0 (X), 0.0 = Player 1 (O)
+            turn = x[:, self.num_players : self.num_players + 1, 0, 0]
+            policy_logits = turn * p_list[0] + (1.0 - turn) * p_list[1]
+        elif self.in_channels >= self.num_players * 2:
+            # General N-player one-hot active channels at indices num_players..2*num_players
+            stacked = torch.stack(p_list, dim=1)
+            indicators = x[:, self.num_players : self.num_players + self.num_players, 0, 0].unsqueeze(-1)
+            policy_logits = (stacked * indicators).sum(dim=1)
+        else:
+            policy_logits = p_list[0]
+
+        return policy_logits, values
+
+    def forward_all_heads(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Computes policy logits for ALL players alongside value estimates.
+
+        Returns:
+            all_policies: `(batch_size, num_players, action_dim)`
             values: `(batch_size, num_players)`
         """
         out = self.stem(x)
         for block in self.res_blocks:
             out = block(out)
 
-        # Policy head
-        p = self.policy_conv(out)
-        p = torch.flatten(p, start_dim=1)
-        policy_logits = self.policy_fc(p)
+        v_list = [
+            self.value_fcs[i](torch.flatten(self.value_convs[i](out), start_dim=1))
+            for i in range(self.num_players)
+        ]
+        values = torch.cat(v_list, dim=-1)
 
-        # Value head
-        v = self.value_conv(out)
-        v = torch.flatten(v, start_dim=1)
-        values = self.value_fc(v)
+        p_list = [
+            self.policy_fcs[i](torch.flatten(self.policy_convs[i](out), start_dim=1))
+            for i in range(self.num_players)
+        ]
+        all_policies = torch.stack(p_list, dim=1)
 
-        return policy_logits, values
+        return all_policies, values
 
 
 def export_alphazero_onnx(

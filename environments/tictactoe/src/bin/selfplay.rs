@@ -3,7 +3,8 @@
 //! Generates MCTS self-play games and writes binary chunks (`traj_*.bin`) via [`TrajectorySpooler`].
 //! Supports hot-swapping ONNX models in real time when new weights are exported by the learner.
 
-use mcts_engine::backup::VectorBackup;
+use mcts_engine::backup::{BackupPolicy, VectorBackup};
+use mcts_engine::dirichlet::add_root_dirichlet_noise;
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
@@ -61,6 +62,12 @@ fn execute_selfplay_episodes<M: Model<TicTacToeState>>(
             );
             let root_agent = AgentId(state.current_player.index() as u32);
             let root = tree.insert_root(root_agent);
+
+            // Expand root and inject Dirichlet exploration noise for diverse self-play
+            let eval = model.evaluate(&state);
+            tree.expand_node(root, &legal);
+            backup.init_root(&mut tree, root, &eval);
+            add_root_dirichlet_noise(&mut tree, root, 0.3, 0.25, &mut rng);
 
             SequentialScheduler.search(
                 &mut tree,
