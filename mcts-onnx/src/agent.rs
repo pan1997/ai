@@ -6,7 +6,7 @@ use mcts_engine::backup::VectorBackup;
 use mcts_engine::scheduler::SequentialScheduler;
 use mcts_engine::selection::{MultiAgentPuctSelection, MultiAgentPuctStats};
 use mcts_engine::tree_store::TreeStore;
-use mcts_traits::{Agent, AgentDynamics, AgentId, TensorRepresentable};
+use mcts_traits::{Agent, AgentDynamics, TensorRepresentable};
 use std::path::Path;
 
 /// AlphaZero MCTS agent evaluating tree leaves via an ONNX neural network model.
