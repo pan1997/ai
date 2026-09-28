@@ -93,7 +93,8 @@ where
         }
 
         self.tree.clear();
-        let root = self.tree.insert_root(AgentId(0));
+        let agent = self.dynamics.current_agent(state);
+        let root = self.tree.insert_root(agent);
 
         let selection = MultiAgentPuctSelection::<2> { c_puct: self.c_puct };
         let backup = VectorBackup::<2>::default();
