@@ -201,7 +201,7 @@ class TournamentEvaluator:
     def _parse_standings(self, output: str, agent_prefix: str) -> Optional[Dict[str, float]]:
         for match in self.STANDINGS_REGEX.finditer(output):
             agent_name = match.group(2)
-            if agent_prefix in agent_name:
+            if agent_prefix.lower() in agent_name.lower():
                 games = int(match.group(3))
                 wins = int(match.group(4))
                 loss = int(match.group(5))

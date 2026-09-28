@@ -90,6 +90,25 @@ Pos  Agent                           Games   Wins   Loss   Draw    Win %       X
     assert parsed["draw"] == 10
     assert parsed["draw_rate"] == 1.0
 
+    # Also test Connect 4 display format
+    c4_output = """
+==========================================================================================
+                                    FINAL STANDINGS                                       
+==========================================================================================
+Pos  Agent                           Games   Wins   Loss   Draw    Win %     Red W%     Yel W%
+--------------------------------------------------------------------------------------------
+1    AlphaZero(50)                      20     18      1      1    90.0%      90.0%      90.0%
+2    Tactical                           20      1     18      1     5.0%       5.0%       5.0%
+==========================================================================================
+"""
+    c4_parsed = evaluator._parse_standings(c4_output, "alphazero")
+    assert c4_parsed is not None
+    assert c4_parsed["games"] == 20
+    assert c4_parsed["wins"] == 18
+    assert c4_parsed["loss"] == 1
+    assert c4_parsed["draw"] == 1
+    assert c4_parsed["win_rate"] == 0.9
+
 
 def test_experiment_orchestrator_short_run():
     with tempfile.TemporaryDirectory() as tmpdir:
