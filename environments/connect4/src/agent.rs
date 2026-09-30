@@ -55,9 +55,16 @@ impl<const R: usize, const C: usize> mcts_traits::Agent<Connect4State<R, C>, usi
             let _ = stdout.flush();
 
             let mut input = String::new();
-            if stdin.lock().read_line(&mut input).is_err() {
-                println!("Error reading input, please try again.");
-                continue;
+            match stdin.lock().read_line(&mut input) {
+                Ok(0) => {
+                    println!("\nEOF received. Exiting game.");
+                    std::process::exit(0);
+                }
+                Err(_) => {
+                    println!("Error reading input, please try again.");
+                    continue;
+                }
+                _ => {}
             }
 
             let trimmed = input.trim();
@@ -491,6 +498,8 @@ pub enum Connect4AgentSpec {
     Random,
     /// Greedy tactical heuristic (immediate win, block 1-ply win, center preference).
     Tactical,
+    /// Interactive human player via standard input.
+    Human,
     /// Standard zero-sum adversarial MCTS.
     Mcts {
         /// Number of MCTS simulation sweeps per move decision.
@@ -548,6 +557,7 @@ impl Connect4AgentSpec {
         };
 
         match parts[0].trim().to_lowercase().as_str() {
+            "human" | "person" | "user" => Ok(Self::Human),
             "random" | "rand" => Ok(Self::Random),
             "tactical" | "heur" | "heuristic" => Ok(Self::Tactical),
             "alphazero" => {
@@ -586,7 +596,7 @@ impl Connect4AgentSpec {
                 Ok(Self::MacroRandom { iters, rollouts })
             }
             other => Err(format!(
-                "Unknown agent type '{other}'. Supported: mcts[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]], alphazero:<path>[:sims], tactical, random"
+                "Unknown agent type '{other}'. Supported: human, mcts[:iters[:rollouts]], macro-tactical[:iters[:rollouts]], macro-random[:iters[:rollouts]], alphazero:<path>[:sims], tactical, random"
             )),
         }
     }
@@ -594,6 +604,7 @@ impl Connect4AgentSpec {
     /// Returns a human-readable display name summarizing type and hyperparameters.
     pub fn display_name(&self) -> String {
         match self {
+            Self::Human => "Human".to_string(),
             Self::Random => "Random".to_string(),
             Self::Tactical => "Tactical".to_string(),
             Self::AlphaZero { sims, .. } => format!("AlphaZero({sims})"),
@@ -620,6 +631,7 @@ impl Connect4AgentSpec {
         verbose: bool,
     ) -> BoxAgent<R, C> {
         match self {
+            Self::Human => Box::new(HumanAgent::new(name)),
             Self::Random => Box::new(RandomAgent::new(name)),
             Self::Tactical => Box::new(TacticalAgent::new(name)),
             Self::AlphaZero { model_path, sims } => {
