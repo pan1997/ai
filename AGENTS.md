@@ -13,19 +13,24 @@ mcts-traits/            --> Zero-dependency traits and interfaces (abstractions 
 mcts-engine/            --> Core Structure-of-Arrays (SoA) engine, selection, backup, and schedulers
 mcts-envs/              --> Reference environments, benchmark games, and heuristic/rollout evaluators
 mcts-utils/             --> Graphviz DOT/SVG/PNG rendering, pruning, and explicit MDP/POMDP validation tools
-environments/connect4/  --> Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players
+mcts-onnx/              --> ONNX Runtime client, micro-batcher, model hot-swapper, and trajectory spooler
+environments/connect4/  --> Dedicated Connect 4 game engine, MCTS/AlphaZero agents, and CLI players
+environments/tictactoe/ --> Dedicated Tic-Tac-Toe game engine, MCTS/AlphaZero agents, and CLI players
 environments/blokus/    --> Dedicated Blokus (Duo & Classic) game engine, multi-agent MCTS agents, and CLI players
 environments/tzf8/      --> Dedicated 2048 Expectimax game engine, chance-node MCTS agents, and CLI players
 environments/hex/       --> Dedicated Hex game engine, DSU connectivity tracking, MCTS agents, and CLI players
 environments/sequence/  --> Dedicated Sequence game engine, ISMCTS agents, and interactive CLI players
+learner/                --> Python/PyTorch AlphaZero training daemon, replay buffer, and orchestrator
 ```
 
 ### Dependency Rules
-1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, `mcts-utils`, `connect4`, `blokus`, `tzf8`, `hex`, or `sequence`.
-2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`, `mcts-utils`, `connect4`, `blokus`, `tzf8`, `hex`, or `sequence`.
+1. `mcts-traits` **must never** depend on `mcts-engine`, `mcts-envs`, `mcts-utils`, `mcts-onnx`, or any environment crates.
+2. `mcts-engine` depends **only** on `mcts-traits` and minimal math/random crates (`rand`, `rand_distr`). It must never depend on `mcts-envs`, `mcts-utils`, `mcts-onnx`, or any environment crates.
 3. `mcts-envs` depends on `mcts-traits` and optionally `mcts-engine` (for testing and integration).
 4. `mcts-utils` depends on `mcts-traits` and `mcts-engine`.
-5. Environment crates in `environments/` (e.g. `connect4`, `blokus`, `tzf8`, `hex`, `sequence`) depend on `mcts-traits` and `mcts-engine`.
+5. `mcts-onnx` depends on `mcts-traits` and `mcts-engine` (plus runtime dependencies `ort`, `flume`, `notify`, `ndarray`, `byteorder`).
+6. Environment crates in `environments/` depend on `mcts-traits`, `mcts-engine`, and optionally `mcts-onnx` (for AlphaZero agents and self-play binaries).
+7. `learner/` is fully decoupled from the Rust crates at compile time, communicating solely through the filesystem wire format (`spool/` directory and `.onnx` weight checkpoints).
 
 ---
 

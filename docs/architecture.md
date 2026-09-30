@@ -6,18 +6,29 @@ This document details the architectural principles, memory layouts, and design c
 
 ## 1. Tripartite Crate Hierarchy
 
-The workspace is organized into nine decoupled crates:
+The workspace is organized into eleven decoupled Rust crates and a dedicated Python training package:
 
 ```
 +-------------------------------------------------------------+
 |              Dedicated Game & Benchmark Crates              |
-|  - connect4:   Connect 4 game engine, MCTS & CLI agents     |
+|  - connect4:   Connect 4 engine, AlphaZero & CLI agents     |
+|  - tictactoe:  Tic-Tac-Toe engine, AlphaZero & CLI agents   |
 |  - blokus:     Blokus Classic (4P) & Duo (2P), polyomino reg|
 |  - tzf8:       Dedicated 2048 Expectimax engine & tournament|
 |  - hex:        Dedicated Hex engine, DSU tracking & arena   |
 |  - sequence:   Dedicated Sequence board/card engine & ISMCTS|
 |  - mcts-envs:  Reference environments, baseline evaluators  |
 |  - mcts-utils: Graphviz DOT/SVG/PNG rendering & MDP/POMDP   |
++------------------------------+------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|              mcts-onnx & Python PyTorch Learner             |
+|  - mcts-onnx:  In-process ONNX Runtime evaluator, dynamic   |
+|                micro-batcher, model hot-swapper, and binary |
+|                trajectory spooler                           |
+|  - learner:    Autonomous Python PyTorch daemon, experience |
+|                replay buffer, ResNet, MLflow tracking       |
 +------------------------------+------------------------------+
                                |
                                v
@@ -43,7 +54,8 @@ The workspace is organized into nine decoupled crates:
 ### Decoupling Rationale
 - **Zero Heavy Dependencies in Traits**: `mcts-traits` compiles in milliseconds and has zero mandatory runtime dependencies. This allows external libraries, neural network backends (e.g. PyTorch / ONNX / Candle / Burn), or game simulators to integrate without pulling in search engine implementation details.
 - **Engine Agnostic to Game Details**: `mcts-engine` knows nothing about grids, cards, or board games. It operates strictly on generic types `Action`, `Reward`, `Stats`, and optional `StepDelta`.
-- **Decoupled Game Environments & Utilities**: Reference environments, benchmark games (`connect4`, `blokus`, `tzf8`, `hex`, `sequence`, `mcts-envs`), and visualization utilities (`mcts-utils`) depend on traits and engine interfaces, without introducing cyclic coupling.
+- **Decoupled Game Environments & Utilities**: Reference environments, benchmark games (`connect4`, `tictactoe`, `blokus`, `tzf8`, `hex`, `sequence`, `mcts-envs`), and visualization utilities (`mcts-utils`) depend on traits and engine interfaces, without introducing cyclic coupling.
+- **Zero-Coupling Deep Learning Pipeline**: `mcts-onnx` bridges the search tree with ONNX Runtime models via zero-copy tensor encoding (`TensorRepresentable`), while `learner/` trains models asynchronously in Python without embedding Python runtimes into Rust threads.
 
 ---
 

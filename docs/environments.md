@@ -18,9 +18,11 @@ Implemented in [`connect4`](file:///home/pankaj/Projects/ai/environments/connect
   - `World` & `TurnBasedWorld`: Ground-truth 2-player match referee with simultaneous joint-action interface and single-action step.
   - `TurnBasedDynamics<Connect4World>`: Reusable ego-centric planning dynamics.
   - `MacroConnect4Dynamics`: Round-based lookahead absorbing opponent policies.
+  - `TensorRepresentable`: Planar float tensor encoding (3 channels: Red pieces, Yellow pieces, Active player indicator).
 - **CLI Utilities**:
-  - `connect4-play`: Interactive terminal game supporting human vs AI, AI vs AI, and custom board dimensions. Options: `--board <RxC>` (default: `6x7`, supported: `6x7`, `7x8`, `7x9`, `8x8`, `11x15`, `11x19`), `--mode`, `--iters`, `--rollouts`, `--c-puct`, `--quiet`.
-  - `connect4-tournament`: Round-robin tournament arena between arbitrary agent specifications (`random`, `tactical`, `mcts:<iters>:<rollouts>`, `macro-tactical:<iters>`, `macro-random:<iters>`). Options: `--board <RxC>` (default: `6x7`, supported: `6x7`, `7x8`, `7x9`, `8x8`, `11x15`, `11x19`), `--agents`, `--games`, `--c-puct`, `--verbose`.
+  - `connect4-play`: Interactive terminal game supporting human vs AI, AI vs AI, AlphaZero ONNX inference, and custom board dimensions. Options: `--board <RxC>`, `--mode <human-ai|ai-human|ai-ai|human-human>`, `--p1 <spec>`, `--p2 <spec>`, `--model-path <path>`, `--sims <N>`, `--iters <N>`, `--rollouts <N>`, `--c-puct <F>`, `--quiet`. Supports agent specs like `human`, `alphazero`, `alphazero:<path>:<sims>`, `mcts:<iters>:<rollouts>`, `tactical`, `random`.
+  - `connect4-tournament`: Round-robin tournament arena between arbitrary agent specifications (`random`, `tactical`, `mcts:<iters>:<rollouts>`, `alphazero:<path>:<sims>`, `macro-tactical:<iters>`, `macro-random:<iters>`). Options: `--board <RxC>`, `--agents <csv>`, `--p1 <spec>`, `--p2 <spec>`, `--games <N>`, `--c-puct <F>`, `--verbose`.
+  - `connect4-selfplay`: High-throughput vectorized AlphaZero self-play worker with `MultiGameScheduler` and binary trajectory spooling. Options: `--spool-dir`, `--model-path`, `--games`, `--sims`, `--parallel-games`, `--c-puct`, `--worker-id`, `--dirichlet-alpha`, `--dirichlet-epsilon`.
 - **Reward Encoding**:
   - Red Win: `[+1.0, -1.0]`
   - Yellow Win: `[-1.0, +1.0]`
@@ -28,7 +30,30 @@ Implemented in [`connect4`](file:///home/pankaj/Projects/ai/environments/connect
 
 ---
 
-### 1.2 Hex (`hex` Crate)
+### 1.2 Tic-Tac-Toe (`tictactoe` Crate)
+
+Implemented in [`tictactoe`](file:///home/pankaj/Projects/ai/environments/tictactoe).
+
+- **Type**: 2-Player Zero-Sum, Turn-Based, Perfect Information.
+- **Board**: Standard $3 \times 3$ grid with 9 cells indexed $0 \dots 8$.
+- **Action Space**: Cell index $c \in \{0, \dots, 8\}$.
+- **Win Condition**: 3 identical tokens horizontally, vertically, or diagonally.
+- **Traits Implemented**:
+  - `World` & `TurnBasedWorld`: Ground-truth 2-player referee with simultaneous joint-action interface and single-action step.
+  - `TurnBasedDynamics<TicTacToeWorld>`: In-place ego-centric planning dynamics.
+  - `TensorRepresentable`: Planar float tensor encoding of shape `(3, 3, 3)` (Channel 0: X pieces, Channel 1: O pieces, Channel 2: Active player indicator).
+- **CLI Utilities**:
+  - `tictactoe-play`: Interactive terminal game supporting human vs AI, AI vs AI, AlphaZero models, and ANSI board visualization. Options: `--mode`, `--p1`, `--p2`, `--model-path`, `--sims`, `--iters`, `--rollouts`.
+  - `tictactoe-tournament`: Round-robin benchmark arena executing tournaments between agent specifications (`random`, `mcts:<sims>`, `alphazero:<path>:<sims>`). Options: `--agents`, `--p1`, `--p2`, `--games`, `--verbose`.
+  - `tictactoe-selfplay`: High-throughput parallel self-play generator streaming binary chunks into a spool directory for PyTorch training. Options: `--spool-dir`, `--model-path`, `--games`, `--sims`, `--parallel-games`, `--worker-id`.
+- **Reward Encoding**:
+  - Player X Win: `[+1.0, -1.0]`
+  - Player O Win: `[-1.0, +1.0]`
+  - Draw: `[0.0, 0.0]`
+
+---
+
+### 1.3 Hex (`hex` Crate)
 
 Implemented in [`hex`](file:///home/pankaj/Projects/ai/environments/hex) (with backwards-compatible re-exports in [`mcts-envs/src/hex.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/hex.rs)).
 
@@ -56,7 +81,7 @@ Implemented in [`hex`](file:///home/pankaj/Projects/ai/environments/hex) (with b
 
 ---
 
-### 1.3 2048 / Tzf8 (`tzf8` Crate)
+### 1.4 2048 / Tzf8 (`tzf8` Crate)
 
 Implemented in [`tzf8`](file:///home/pankaj/Projects/ai/environments/tzf8) (with a lightweight reference version in [`mcts-envs/src/tzf8.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/tzf8.rs)).
 
@@ -86,7 +111,7 @@ Implemented in [`tzf8`](file:///home/pankaj/Projects/ai/environments/tzf8) (with
 
 ---
 
-### 1.4 Kuhn Poker (`KuhnWorld` & `KuhnAgentDynamics`)
+### 1.5 Kuhn Poker (`KuhnWorld` & `KuhnAgentDynamics`)
 
 Implemented in [`mcts-envs/src/kuhn_poker.rs`](file:///home/pankaj/Projects/ai/mcts-envs/src/kuhn_poker.rs).
 
@@ -101,7 +126,7 @@ Implemented in [`mcts-envs/src/kuhn_poker.rs`](file:///home/pankaj/Projects/ai/m
 
 ---
 
-### 1.5 Blokus Classic & Duo (`BlokusWorld<B, P>` & `TurnBasedDynamics<BlokusWorld<B, P>>`)
+### 1.6 Blokus Classic & Duo (`BlokusWorld<B, P>` & `TurnBasedDynamics<BlokusWorld<B, P>>`)
 
 Implemented in [`blokus`](file:///home/pankaj/Projects/ai/environments/blokus).
 
@@ -121,7 +146,7 @@ Implemented in [`blokus`](file:///home/pankaj/Projects/ai/environments/blokus).
 
 ---
 
-### 1.6 Sequence (`sequence` Crate)
+### 1.7 Sequence (`sequence` Crate)
 
 Implemented in [`environments/sequence`](file:///home/pankaj/Projects/ai/environments/sequence).
 

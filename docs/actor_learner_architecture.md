@@ -327,6 +327,21 @@ impl<S, E: StateEncoder<S>> Model<S> for OnnxModelClient<S, E> {
 
 ---
 
+### 4.4 Synchronous Direct Batched Self-Play (`DirectOnnxModel` & `MultiGameScheduler`)
+
+While the channel-based `OnnxModelClient` decouples independent worker threads, the repository also implements an ultra-low-latency synchronous execution mode: **`DirectOnnxModel`** combined with **`MultiGameScheduler`**.
+
+In self-play generation (`mcts-onnx::selfplay`):
+1. **Parallel Game Vectorization**: Rather than running independent search threads that compete for inference locks, a single self-play process simulates $B$ concurrent games (e.g. $B = 32$ or $64$) synchronously using [`MultiGameScheduler`](mcts_engine::scheduler::MultiGameScheduler).
+2. **Lockless Synchronous Batches**: In each simulation pass, `MultiGameScheduler` selects candidate leaf states across all $B$ games simultaneously and passes `&[&State]` directly to `DirectOnnxModel::evaluate_batch`.
+3. **Zero Channel Hops**:
+   - The thread directly encodes $B$ observation planar tensors into a contiguous NCHW buffer.
+   - Executes `session.run()` once for the entire batch.
+   - Decodes policy logits and multi-agent value vectors in-place.
+4. **Hot-Swap Integration**: Before each batched inference step, `DirectOnnxModel::check_reload()` drains the non-blocking `reload_rx` channel. When updated weights arrive, the active `ort::Session` is replaced in $O(1)$ time without interrupting the generation cycle.
+
+---
+
 ## 5. Atomic Model Hot-Swapping & Filesystem Synchronization
 
 To allow training in Python while Rust continues self-play uninterrupted:

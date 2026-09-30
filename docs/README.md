@@ -5,13 +5,23 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 ```
        +-------------------------------------------------------------+
        |             Game Environments & Benchmark Arenas            |
-       |  - connect4:   Dedicated Connect 4 game engine, agents & CLI|
+       |  - connect4:   Connect 4 engine, AlphaZero/MCTS & CLI players|
+       |  - tictactoe:  Tic-Tac-Toe engine, AlphaZero & CLI players   |
        |  - blokus:     Blokus Classic & Duo multi-agent engine & CLI|
        |  - tzf8:       Dedicated 2048 Expectimax engine & tournament|
        |  - hex:        Dedicated Hex engine, DSU tracking & arena   |
        |  - sequence:   Dedicated Sequence board/card engine & ISMCTS|
        |  - mcts-envs:  Reference environments, baseline evaluators  |
        |  - mcts-utils: Graphviz DOT/SVG/PNG rendering & MDP/POMDP   |
+       +------------------------------+------------------------------+
+                                      |
+                                      v
+       +-------------------------------------------------------------+
+       |            mcts-onnx & Python PyTorch learner               |
+       |  - mcts-onnx:  ONNX Runtime micro-batcher, model watcher,   |
+       |                and zero-copy binary trajectory spooler      |
+       |  - learner:    Autonomous PyTorch training daemon, replay   |
+       |                buffer, and AlphaZero experiment orchestrator|
        +------------------------------+------------------------------+
                                       |
                                       v
@@ -37,9 +47,11 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 - **Decoupled Architecture**:
   - `mcts-traits`: Zero-dependency, unopinionated trait interfaces. No blanket trait bounds; algorithms dictate their own requirements.
   - `mcts-engine`: High-throughput selection, backup, and scheduling engines.
-  - `connect4`, `blokus`, `tzf8`, `hex`, & `sequence`: Dedicated production-grade game engines, Expectimax/ISMCTS planners, and tournament CLI players.
+  - `connect4`, `tictactoe`, `blokus`, `tzf8`, `hex`, & `sequence`: Dedicated production-grade game engines, AlphaZero/Expectimax/ISMCTS planners, and tournament CLI players.
   - `mcts-envs`: Reference environments and baseline rollout models for rapid benchmarking and verification.
   - `mcts-utils`: Graphviz DOT/SVG/PNG tree visualization, sub-tree pruning, and bipartite MDP/POMDP validation tools.
+  - `mcts-onnx`: Zero-copy ONNX Runtime evaluator, dynamic micro-batcher, model hot-swapper, and binary trajectory spooler.
+  - `learner`: Fully decoupled Python/PyTorch training daemon with replay buffer, dual-headed ConvNet, MLflow logging, and experiment orchestrator.
 - **Modern Search Algorithms**:
   - **UCT**: Classic exploration/exploitation formula with configurable constant.
   - **Dynamic Min-Max Normalization**: Dynamically rescales arbitrary $Q$-value scales to $[0, 1]$ (`NormalizedUctSelection`, `NormalizedPuctSelection`), essential for games with unbounded score metrics (such as 2048) or non-standard heuristics.
@@ -66,13 +78,16 @@ A modular, zero-allocation, Structure-of-Arrays (SoA) Monte Carlo Tree Search li
 |---|---|---|
 | [`mcts-traits`](file:///home/pankaj/Projects/ai/mcts-traits) | `mcts-traits/` | Core abstractions: `Agent`, `AgentDynamics`, `BatchedAgentDynamics`, `Model`, `BatchedModel`, `World`, `TurnBasedWorld`, `TurnBasedDynamics`, `Evaluation`, `AgentId`. |
 | [`mcts-engine`](file:///home/pankaj/Projects/ai/mcts-engine) | `mcts-engine/` | SoA `TreeStore`, `MatchDriver`, `UctSelection`, `NormalizedUctSelection`, `MultiAgentPuctSelection`, `NormalizedPuctSelection`, `IsmctsSelection`, `GumbelPuctSelection`, `VectorBackup`, `SingleAgentBackup`, schedulers (`SequentialScheduler`, `BatchedScheduler`, `MultiGameScheduler`, `IsmctsScheduler`), and tournament arenas. |
-| [`connect4`](file:///home/pankaj/Projects/ai/environments/connect4) | `environments/connect4/` | Dedicated Connect 4 game engine, MCTS agents, and interactive CLI players (`connect4-play`, `connect4-tournament`). |
+| [`connect4`](file:///home/pankaj/Projects/ai/environments/connect4) | `environments/connect4/` | Dedicated Connect 4 game engine, MCTS/AlphaZero agents, and CLI players (`connect4-play`, `connect4-tournament`, `connect4-selfplay`). |
+| [`tictactoe`](file:///home/pankaj/Projects/ai/environments/tictactoe) | `environments/tictactoe/` | Dedicated 3x3 Tic-Tac-Toe engine, MCTS/AlphaZero agents, and CLI players (`tictactoe-play`, `tictactoe-tournament`, `tictactoe-selfplay`). |
 | [`blokus`](file:///home/pankaj/Projects/ai/environments/blokus) | `environments/blokus/` | Dedicated Blokus (Classic & Duo) engine, polyomino registry, heuristic models, and CLI players (`blokus-play`, `blokus-tournament`). |
 | [`tzf8`](file:///home/pankaj/Projects/ai/environments/tzf8) | `environments/tzf8/` | Dedicated 2048 Expectimax engine, chance-node agents, and arena tournament runner (`tzf8-play`, `tzf8-tournament`). |
 | [`hex`](file:///home/pankaj/Projects/ai/environments/hex) | `environments/hex/` | Dedicated Hex game engine, DSU connectivity tracking, shortest-path heuristic, and tournament arena (`hex-play`, `hex-tournament`). |
 | [`sequence`](file:///home/pankaj/Projects/ai/environments/sequence) | `environments/sequence/` | Dedicated Sequence game engine, 2-6 players, team coordination, ISMCTS & opponent-modeled agents, CLI players (`sequence-play`, `sequence-tournament`). |
 | [`mcts-envs`](file:///home/pankaj/Projects/ai/mcts-envs) | `mcts-envs/` | Reference environments (Kuhn Poker, Hex/2048 re-exports), plus rollout and baseline uniform evaluators. |
 | [`mcts-utils`](file:///home/pankaj/Projects/ai/mcts-utils) | `mcts-utils/` | Graphviz DOT/SVG/PNG rendering, tree pruning, visit filters, and POMDP/MDP validation examples. |
+| [`mcts-onnx`](file:///home/pankaj/Projects/ai/mcts-onnx) | `mcts-onnx/` | ONNX Runtime inference client, dynamic micro-batcher, model hot-swapper, and binary trajectory spooler. |
+| [`learner`](file:///home/pankaj/Projects/ai/learner) | `learner/` | Python PyTorch AlphaZero trainer, experience replay buffer, dual-headed ResNet, MLflow tracking, and experiment supervisor. |
 
 ---
 
@@ -88,6 +103,7 @@ Explore the detailed topic guides:
 - [Getting Started & Tutorials](file:///home/pankaj/Projects/ai/docs/getting_started.md): Practical code walkthrough for setting up an environment, configuring MCTS, and running search sweeps.
 - [Single-Tree ISMCTS Task Specification](file:///home/pankaj/Projects/ai/docs/tasks/task_single_tree_ismcts.md): Architectural roadmap and mathematical specification for implementing true single-tree Information Set MCTS with availability counts and per-trajectory belief sampling.
 - [Actor-Learner Pipeline Task Specification](file:///home/pankaj/Projects/ai/docs/tasks/task_actor_learner_pipeline.md): Actionable implementation plan for the asynchronous Rust MCTS self-play $\leftrightarrow$ PyTorch training daemon, `mcts-onnx` dynamic micro-batcher, and binary trajectory spooling.
+- [Code Quality & Performance Audit](file:///home/pankaj/Projects/ai/docs/code_quality_and_performance_audit.md): In-depth adversarial review detailing backpressure handling, hot-path allocations, circular replay buffer design, and Clippy cleanup catalog.
 - [Agent & Contributor Guide (`AGENTS.md`)](file:///home/pankaj/Projects/ai/AGENTS.md): Conventions, developer workflows, and guidance for autonomous coding agents.
 
 ---

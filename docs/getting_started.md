@@ -16,11 +16,15 @@ mcts-engine = { path = "path/to/mcts-engine" }
 
 # Game environments (choose as needed)
 connect4    = { path = "path/to/connect4" }
+tictactoe   = { path = "path/to/tictactoe" }
 blokus      = { path = "path/to/blokus" }
 tzf8        = { path = "path/to/tzf8" }
 hex         = { path = "path/to/hex" }
 sequence    = { path = "path/to/sequence" }
 mcts-envs   = { path = "path/to/mcts-envs" }
+
+# Optional neural network inference and self-play spooling
+mcts-onnx   = { path = "path/to/mcts-onnx" }
 ```
 
 ---

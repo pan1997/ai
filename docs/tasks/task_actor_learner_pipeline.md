@@ -1,8 +1,8 @@
 # Task: Implement Asynchronous Actor-Learner Training Pipeline (Rust Self-Play $\leftrightarrow$ PyTorch Learner)
 
 **Issue / Task ID**: `TASK-ACTOR-LEARNER-001`  
-**Status**: Open  
-**Component**: `mcts-traits`, `mcts-engine`, `mcts-onnx` (new crate), `environments/connect4`, `python/learner`  
+**Status**: Completed  
+**Component**: `mcts-traits`, `mcts-engine`, `mcts-onnx`, `environments/connect4`, `environments/tictactoe`, `learner`  
 **Tags**: `reinforcement-learning`, `alphazero`, `onnx`, `dynamic-batching`, `gpu-training`  
 **Parent RFC**: [`docs/actor_learner_architecture.md`](file:///home/pankaj/Projects/ai/docs/actor_learner_architecture.md)
 
@@ -12,8 +12,8 @@
 
 This task implements an asynchronous, filesystem-decoupled **AlphaZero / MuZero Actor-Learner Pipeline** connecting Rust high-throughput MCTS self-play workers with a Python PyTorch neural network training daemon:
 
-1. **Rust Actors (`mcts-onnx`)**: Multi-threaded self-play search workers running MCTS in Rust, querying GPU tensor inference through a lockless dynamic micro-batcher backed by ONNX Runtime (`ort`), and spooling game trajectories to disk in a compact, fixed-stride binary wire format.
-2. **Python Learner (`python/learner`)**: An autonomous PyTorch training service that ingests binary trajectory chunks into a replay buffer via zero-copy memory mapping (`numpy.frombuffer`), optimizes dual-headed policy/value losses, and exports updated ONNX weights using atomic file replacement (`os.replace`).
+1. **Rust Actors (`mcts-onnx`)**: Multi-threaded self-play search workers running MCTS in Rust, querying GPU tensor inference through either a lockless dynamic micro-batcher or direct batched inference (`DirectOnnxModel` with `MultiGameScheduler`), and spooling game trajectories to disk in a compact, fixed-stride binary wire format.
+2. **Python Learner (`learner/`)**: An autonomous PyTorch training service that ingests binary trajectory chunks into a replay buffer via zero-copy memory mapping (`numpy.frombuffer`), optimizes dual-headed policy/value losses, logs metrics with MLflow, and exports updated ONNX weights using atomic file replacement (`os.replace`).
 3. **Model Hot-Swapper**: Background filesystem watcher (`notify`) detecting updated model weights and hot-swapping `ort::Session` instances in $O(1)$ time without interrupting active search threads.
 
 ```
